@@ -43,6 +43,12 @@ Last updated: 2026-11-22.
   (`crates/gui`, `wowprogramming gui`) with a console panel.
 - Key bindings from `Bindings_Standard.xml`; P runs `TOGGLESPELLBOOK`.
 - In-game capture scripts in `tools/capture/`.
+- Control bridge (`control.rs`): `run --serve` or `gui` listen on
+  127.0.0.1:47811; `wowprogramming ctl <command>` sends `exec`, `eval`,
+  `key`, `click`, `hover`, `under`, `tree`, `screenshot`, `quit`.
+  Drive the sandbox through this instead of reading screenshots.
+- Scenarios: a folder with `scenario.toml` (Blizzard addons and files to
+  load) and `scenario.lua` (game state; replays captured API answers).
 - The spellbook frame loads and renders its art; it has no spells yet.
 
 ## What does not work yet
@@ -54,9 +60,8 @@ Last updated: 2026-11-22.
 
 ## Next steps
 
-1. Add a control bridge so an agent can drive a running sandbox with
-   short text commands (`wowprogramming ctl`).
-2. Write `scenarios/evoker/` from the captures and the replay helper.
+1. Save the user's capture text as `scenarios/evoker/capture.txt` and
+   `scenarios/evoker/client_constants.txt`; the scenario replays them.
 3. Iterate until P opens the spellbook with Evoker spells, icons and tabs;
    compare frame rectangles with the capture.
 

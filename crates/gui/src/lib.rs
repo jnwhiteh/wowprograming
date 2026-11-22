@@ -13,6 +13,7 @@ use eframe::egui::{
     self, Color32, FontData, FontDefinitions, FontFamily, FontId, Key, Mesh, Pos2, Rect, Shape,
     TextureHandle, TextureOptions, Vec2, text::LayoutJob,
 };
+use wowprogramming_engine::control::{Action, ControlServer};
 use wowprogramming_engine::gamedata::ImageKey;
 use wowprogramming_engine::scene::{Item, Quad, Scene, TextItem};
 use wowprogramming_engine::{Engine, Output};
@@ -35,10 +36,11 @@ pub struct App {
     last_tick: Instant,
     scroll_to_bottom: bool,
     show_hover: bool,
+    control: Option<ControlServer>,
 }
 
 /// Open the window and run until it closes.
-pub fn run(engine: Engine) -> Result<(), String> {
+pub fn run(engine: Engine, control: Option<ControlServer>) -> Result<(), String> {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([1600.0, 1100.0])
@@ -48,7 +50,11 @@ pub fn run(engine: Engine) -> Result<(), String> {
     eframe::run_native(
         "WowProgramming",
         options,
-        Box::new(|_cc| Ok(Box::new(App::new(engine)))),
+        Box::new(|_cc| {
+            let mut app = App::new(engine);
+            app.control = control;
+            Ok(Box::new(app))
+        }),
     )
     .map_err(|e| e.to_string())
 }
@@ -66,6 +72,7 @@ impl App {
             last_tick: Instant::now(),
             scroll_to_bottom: true,
             show_hover: false,
+            control: None,
         };
         app.push_log(
             "Press P to open the spellbook. Type /dump <expr>, /run <code> or Lua here.".into(),
@@ -467,6 +474,21 @@ impl eframe::App for App {
         self.last_tick = now;
         self.engine.tick(dt);
         self.drain_output();
+        if let Some(server) = &mut self.control {
+            let (shown, action) = server.poll(&mut self.engine);
+            for line in shown {
+                let color = match &line {
+                    Output::Error(_) => Color32::from_rgb(255, 110, 110),
+                    _ => Color32::from_gray(200),
+                };
+                self.push_log(line.to_string(), color);
+            }
+            match action {
+                Action::Quit => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
+                Action::Tick(s) => self.engine.tick(s),
+                Action::None => {}
+            }
+        }
 
         let mut input_has_focus = false;
         egui::Panel::bottom("console")

@@ -1,0 +1,16 @@
+# Blizzard UI needed to open the spellbook. The client loads more at
+# startup; this is the part the spellbook depends on.
+blizzard_addons = [
+    "Blizzard_SharedXML",
+    "Blizzard_SharedXMLGame",
+    "Blizzard_FrameXMLBase",
+    "Blizzard_UIPanelTemplates",
+    "Blizzard_FrameXMLUtil",
+    "Blizzard_UIParentPanelManager",
+    "Blizzard_GameTooltip",
+    "Blizzard_DeprecatedSpecialization",
+]
+# Load-on-demand addons whose [Bootstrap] files run at startup.
+bootstrap_addons = ["Blizzard_PlayerSpells"]
+# Single files from addons that are too large to load whole.
+blizzard_files = ["Blizzard_ActionBar/Shared/ActionButtonUtil.lua"]

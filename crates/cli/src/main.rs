@@ -25,6 +25,14 @@ enum Command {
     Gui(RunArgs),
     /// Run a Lua file in the sandbox's Lua environment, without addons.
     Lua { file: PathBuf },
+    /// Send a command to a running sandbox (see `ctl help`).
+    Ctl {
+        /// Control port of the sandbox.
+        #[arg(long, default_value_t = wowprogramming_engine::control::DEFAULT_PORT)]
+        port: u16,
+        /// The command and its arguments.
+        command: Vec<String>,
+    },
     /// Show whether files exist in the game data, by path or FileDataID.
     Casc {
         /// Game install folder (defaults to game_dir from the config file).
@@ -77,6 +85,12 @@ struct RunArgs {
     /// Do not load third-party addons.
     #[arg(long)]
     no_addons: bool,
+    /// Port for the control bridge (`wowprogramming ctl`). 0 turns it off.
+    #[arg(long, default_value_t = wowprogramming_engine::control::DEFAULT_PORT)]
+    control_port: u16,
+    /// Keep running without a console, until `ctl quit` (for tools).
+    #[arg(long)]
+    serve: bool,
     /// Headless only: render the UI to this PNG file before exiting,
     /// without opening a window.
     #[arg(long)]
@@ -125,6 +139,18 @@ fn main() -> ExitCode {
         },
         Command::Lua { file } => run_lua_file(&file),
         Command::Casc { game_dir, files } => casc_info(game_dir, &files),
+        Command::Ctl { port, command } => {
+            match wowprogramming_engine::control::send(port, &command.join(" ")) {
+                Ok(reply) => {
+                    print!("{reply}");
+                    ExitCode::SUCCESS
+                }
+                Err(e) => {
+                    eprintln!("cannot reach sandbox on port {port}: {e}");
+                    ExitCode::FAILURE
+                }
+            }
+        }
     }
 }
 
@@ -190,12 +216,54 @@ fn build_config(args: &RunArgs) -> Result<(EngineConfig, Option<PathBuf>), Strin
         config.bootstrap_addons = args.bootstrap.clone();
     }
     config.scenario = args.scenario.clone().or(file.scenario.map(rel));
+    if let Some(dir) = config.scenario.clone() {
+        apply_scenario_settings(&mut config, &dir)?;
+        if !args.blizzard.is_empty() {
+            config.blizzard_addons = args.blizzard.clone();
+        }
+        if !args.bootstrap.is_empty() {
+            config.bootstrap_addons = args.bootstrap.clone();
+        }
+    }
     let game_dir = if args.no_game_data {
         None
     } else {
         file.game_dir.map(rel)
     };
     Ok((config, game_dir))
+}
+
+/// Settings from a scenario's `scenario.toml`: which Blizzard addons and
+/// files to load. Command line options still win.
+#[derive(Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+struct ScenarioConfig {
+    blizzard_addons: Option<Vec<String>>,
+    bootstrap_addons: Option<Vec<String>>,
+    blizzard_files: Option<Vec<String>>,
+    screen: Option<(f64, f64)>,
+}
+
+fn apply_scenario_settings(config: &mut EngineConfig, dir: &Path) -> Result<(), String> {
+    let path = dir.join("scenario.toml");
+    let Ok(text) = std::fs::read_to_string(&path) else {
+        return Ok(());
+    };
+    let sc: ScenarioConfig =
+        toml::from_str(&text).map_err(|e| format!("{}: {e}", path.display()))?;
+    if let Some(v) = sc.blizzard_addons {
+        config.blizzard_addons = v;
+    }
+    if let Some(v) = sc.bootstrap_addons {
+        config.bootstrap_addons = v;
+    }
+    if let Some(v) = sc.blizzard_files {
+        config.blizzard_files = v;
+    }
+    if let Some(v) = sc.screen {
+        config.screen = v;
+    }
+    Ok(())
 }
 
 /// Open the game data, or explain why it is not available.
@@ -246,9 +314,10 @@ fn run(config: EngineConfig, game_dir: Option<PathBuf>, args: &RunArgs) -> ExitC
         print_output(&engine);
     }
 
+    let mut control = start_control(args.control_port, args.seconds.is_none());
     match args.seconds {
         Some(seconds) => run_headless(&mut engine, seconds),
-        None => run_console(&mut engine),
+        None => run_console(&mut engine, control.as_mut(), args.serve),
     }
     if let Some(path) = &args.screenshot {
         match engine.save_screenshot(path, args.screenshot_scale) {
@@ -274,7 +343,8 @@ fn run_gui(config: EngineConfig, game_dir: Option<PathBuf>, args: &RunArgs) -> E
     for line in &args.exec {
         engine.run_command(line);
     }
-    match wowprogramming_gui::run(engine) {
+    let control = start_control(args.control_port, true);
+    match wowprogramming_gui::run(engine, control) {
         Ok(()) => ExitCode::SUCCESS,
         Err(err) => {
             eprintln!("window error: {err}");
@@ -292,18 +362,46 @@ fn run_headless(engine: &mut Engine, seconds: f64) {
     }
 }
 
-/// Real-time loop with a console on stdin.
-fn run_console(engine: &mut Engine) {
-    let (tx, rx) = mpsc::channel();
-    std::thread::spawn(move || {
-        for line in std::io::stdin().lock().lines() {
-            let Ok(line) = line else { break };
-            if tx.send(line).is_err() {
-                break;
-            }
+fn start_control(port: u16, wanted: bool) -> Option<wowprogramming_engine::control::ControlServer> {
+    if port == 0 || !wanted {
+        return None;
+    }
+    match wowprogramming_engine::control::ControlServer::start(port) {
+        Ok(server) => {
+            eprintln!(
+                "Control bridge on 127.0.0.1:{} (wowprogramming ctl)",
+                server.port
+            );
+            Some(server)
         }
-    });
-    eprintln!("Console ready. Type /quit to exit, /reload to reload, or any Lua code.");
+        Err(e) => {
+            eprintln!("warning: no control bridge on port {port}: {e}");
+            None
+        }
+    }
+}
+
+/// Real-time loop with a console on stdin (unless serving) and the
+/// control bridge.
+fn run_console(
+    engine: &mut Engine,
+    mut control: Option<&mut wowprogramming_engine::control::ControlServer>,
+    serve: bool,
+) {
+    let (tx, rx) = mpsc::channel();
+    if !serve {
+        std::thread::spawn(move || {
+            for line in std::io::stdin().lock().lines() {
+                let Ok(line) = line else { break };
+                if tx.send(line).is_err() {
+                    break;
+                }
+            }
+        });
+        eprintln!("Console ready. Type /quit to exit, /reload to reload, or any Lua code.");
+    } else {
+        eprintln!("Serving. Stop with: wowprogramming ctl quit");
+    }
     let mut last = Instant::now();
     loop {
         match rx.recv_timeout(Duration::from_secs_f64(FRAME_TIME)) {
@@ -315,7 +413,28 @@ fn run_console(engine: &mut Engine) {
                 engine.run_command(trimmed);
             }
             Err(mpsc::RecvTimeoutError::Timeout) => {}
-            Err(mpsc::RecvTimeoutError::Disconnected) => break,
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                if !serve {
+                    break;
+                }
+            }
+        }
+        if let Some(server) = control.as_deref_mut() {
+            use wowprogramming_engine::control::Action;
+            let (shown, action) = server.poll(engine);
+            for line in shown {
+                eprintln!("{line}");
+            }
+            match action {
+                Action::Quit => break,
+                Action::Tick(s) => {
+                    let frames = (s / FRAME_TIME).round().max(1.0) as u64;
+                    for _ in 0..frames {
+                        engine.tick(FRAME_TIME);
+                    }
+                }
+                Action::None => {}
+            }
         }
         let now = Instant::now();
         engine.tick(now.duration_since(last).as_secs_f64());

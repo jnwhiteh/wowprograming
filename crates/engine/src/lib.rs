@@ -5,6 +5,7 @@ pub mod addons;
 pub mod api;
 pub mod apidoc;
 pub mod bindings;
+pub mod control;
 pub mod frames;
 pub mod gamedata;
 pub mod input;
@@ -471,16 +472,67 @@ fn install_global_strings(lua: &Lua) -> mlua::Result<()> {
 }
 
 /// Run a scenario's `scenario.lua`, which sets up game state before any
-/// addon loads. The scenario folder is passed as the first argument.
+/// addon loads. It receives the scenario folder and a helper table (see
+/// `lua/scenario.lua`).
 fn load_scenario(lua: &Lua, dir: &std::path::Path) {
     let path = dir.join("scenario.lua");
-    match std::fs::read(&path) {
-        Ok(code) => {
-            let name = format!("@{}", path.display());
-            natives::run_chunk(lua, &code, &name, dir.to_string_lossy().to_string());
+    let code = match std::fs::read(&path) {
+        Ok(code) => code,
+        Err(err) => {
+            state(lua).warn(format!("cannot read {}: {err}", path.display()));
+            return;
         }
-        Err(err) => state(lua).warn(format!("cannot read {}: {err}", path.display())),
-    }
+    };
+    let helpers = match scenario_helpers(lua, dir) {
+        Ok(h) => h,
+        Err(err) => {
+            state(lua).warn(format!("scenario helpers: {err}"));
+            return;
+        }
+    };
+    let name = format!("@{}", path.display());
+    natives::run_chunk(
+        lua,
+        &code,
+        &name,
+        (dir.to_string_lossy().to_string(), helpers),
+    );
+}
+
+fn scenario_helpers(lua: &Lua, dir: &std::path::Path) -> mlua::Result<Table> {
+    let dir = dir.to_path_buf();
+    let read_file = lua.create_function(move |lua, name: String| {
+        if name.contains("..") || name.starts_with('/') || name.contains('\\') {
+            return Err(mlua::Error::runtime(
+                "scenario files must be inside the scenario folder",
+            ));
+        }
+        match std::fs::read(dir.join(&name)) {
+            Ok(bytes) => Ok(Value::String(lua.create_string(bytes)?)),
+            Err(_) => Ok(Value::Nil),
+        }
+    })?;
+    let decode_base64 =
+        lua.create_function(|lua, s: mlua::LuaString| {
+            match api::base64_decode(&s.to_string_lossy()) {
+                Some(b) => Ok(Value::String(lua.create_string(b)?)),
+                None => Ok(Value::Nil),
+            }
+        })?;
+    let decompress =
+        lua.create_function(
+            |lua, s: mlua::LuaString| match api::decompress_any(&s.as_bytes()) {
+                Some(b) => Ok(Value::String(lua.create_string(b)?)),
+                None => Ok(Value::Nil),
+            },
+        )?;
+    let decode_json: mlua::Function = lua
+        .globals()
+        .get::<Table>("C_EncodingUtil")?
+        .get("DeserializeJSON")?;
+    lua.load(include_str!("lua/scenario.lua"))
+        .set_name("=[scenario]")
+        .call((read_file, decode_base64, decompress, decode_json))
 }
 
 /// Create globals that FrameXML normally defines, when the Blizzard addons

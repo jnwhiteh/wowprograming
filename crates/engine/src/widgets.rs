@@ -224,6 +224,11 @@ pub fn method_groups(lua: &Lua) -> Result<HashMap<&'static str, Table>> {
     groups.insert("StatusBar", value_methods(lua, false)?);
     groups.insert("ScrollFrame", scroll_frame_methods(lua)?);
     groups.insert("AnimCommon", anim_common_methods(lua)?);
+    let tooltip: Table = lua
+        .load(include_str!("lua/tooltip.lua"))
+        .set_name("=[C]")
+        .call(())?;
+    groups.insert("GameTooltip", tooltip);
     groups.insert("AnimationGroup", anim_group_methods(lua)?);
     groups.insert("Animation", animation_methods(lua)?);
     Ok(groups)
