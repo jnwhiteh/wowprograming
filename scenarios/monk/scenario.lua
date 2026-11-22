@@ -44,3 +44,18 @@ for _, name in ipairs({ "MainActionBar", "MultiBarBottomLeft", "MultiBarBottomRi
     local bar = CreateFrame("Frame", name, UIParent)
     bar.SetShowGrid = function() end
 end
+
+-- Class colors and names from the capture, when it has them.
+if capture and capture.meta and capture.meta.classColors then
+    local colors, names = capture.meta.classColors, capture.meta.localizedClasses
+    S.Set("C_ClassColor.GetClassColor", function(class)
+        local c = colors[class]
+        if c and CreateColor then return CreateColor(c.r, c.g, c.b, c.a) end
+        return c
+    end)
+    if names then
+        S.Set("LocalizedClassList", function(female)
+            return female and capture.meta.localizedClassesFemale or names
+        end)
+    end
+end

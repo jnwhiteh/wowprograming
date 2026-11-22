@@ -95,6 +95,7 @@ for i = 1, numSpecs do
 	local specID = rec("GetSpecializationInfo", i)
 	rec("C_SpecializationInfo.GetSpecializationInfo", i)
 	rec("GetSpecializationInfoForClassID", classID, i)
+	rec("GetSpecializationRoleEnum", i)
 	if specID then
 		rec("GetSpecializationInfoByID", specID)
 		rec("C_SpecializationInfo.GetClassIDFromSpecID", specID)
@@ -267,6 +268,15 @@ local function finish()
 		end
 		return nil
 	end
+
+	-- Class colors and localized class names.
+	local classColors = {}
+	for class, c in pairs(RAID_CLASS_COLORS or {}) do
+		classColors[class] = { r = c.r, g = c.g, b = c.b, a = c.a or 1 }
+	end
+	meta.classColors = classColors
+	meta.localizedClasses = LocalizedClassList and LocalizedClassList() or nil
+	meta.localizedClassesFemale = LocalizedClassList and LocalizedClassList(true) or nil
 
 	local data = plain({ meta = meta, calls = calls, atlases = atlases, frames = frames, errors = errors }, {})
 	local json = C_EncodingUtil.SerializeJSON(data)
