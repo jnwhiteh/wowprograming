@@ -64,11 +64,14 @@ function S.Replay(calls)
         container[key] = function(...)
             local rec = records[argKey(...)]
             if rec == nil then
-                -- Try without trailing nil arguments.
-                local n = select("#", ...)
+                -- Calls often pass optional arguments the capture did not
+                -- use: try shorter argument lists.
                 local args = { ... }
-                while n > 0 and args[n] == nil do n = n - 1 end
-                rec = records[argKey(unpack(args, 1, n))]
+                local n = select("#", ...) - 1
+                while rec == nil and n >= 0 do
+                    rec = records[argKey(unpack(args, 1, n))]
+                    n = n - 1
+                end
             end
             if rec ~= nil then return unpackRecord(rec) end
             if fallback then return fallback(...) end

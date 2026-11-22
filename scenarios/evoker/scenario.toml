@@ -9,8 +9,18 @@ blizzard_addons = [
     "Blizzard_UIParentPanelManager",
     "Blizzard_GameTooltip",
     "Blizzard_DeprecatedSpecialization",
+    "Blizzard_Flyout",
 ]
 # Load-on-demand addons whose [Bootstrap] files run at startup.
 bootstrap_addons = ["Blizzard_PlayerSpells"]
 # Single files from addons that are too large to load whole.
-blizzard_files = ["Blizzard_ActionBar/Shared/ActionButtonUtil.lua"]
+blizzard_files = [
+    "Blizzard_ActionBar/Shared/ActionButtonUtil.lua",
+    "Blizzard_ActionBar/Mainline/AssistedCombatManager.lua",
+    "Blizzard_MicroMenu/Shared/MicroMenuUtil.lua",
+    "Blizzard_MicroMenu/Mainline/MainMenuBarMicroButtons.lua",
+    "Blizzard_MicroMenu/Mainline/MainMenuBarMicroButtons.xml",
+    "Blizzard_GroupFinder/Mainline/LFGList.lua",
+    "Blizzard_ActionBar/Shared/MultiActionBars.lua",
+    "Blizzard_ActionBarController/ActionBarController.lua",
+]

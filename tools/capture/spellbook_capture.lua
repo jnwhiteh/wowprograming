@@ -245,7 +245,30 @@ local function finish()
 		table.insert(errors, "PlayerSpellsFrame did not open")
 	end
 
-	local data = { meta = meta, calls = calls, atlases = atlases, frames = frames, errors = errors }
+	-- Keep only plain values: some results (atlas info, mixin tables) carry
+	-- functions, which the serializer rejects.
+	local function plain(v, seen)
+		local t = type(v)
+		if t == "string" or t == "number" or t == "boolean" then
+			return v
+		elseif t == "table" then
+			if seen[v] then return nil end
+			seen[v] = true
+			local out = {}
+			for k, val in pairs(v) do
+				local kt = type(k)
+				if kt == "string" or kt == "number" then
+					local pv = plain(val, seen)
+					if pv ~= nil then out[k] = pv end
+				end
+			end
+			seen[v] = nil
+			return out
+		end
+		return nil
+	end
+
+	local data = plain({ meta = meta, calls = calls, atlases = atlases, frames = frames, errors = errors }, {})
 	local json = C_EncodingUtil.SerializeJSON(data)
 	local packed = C_EncodingUtil.EncodeBase64(C_EncodingUtil.CompressString(json))
 

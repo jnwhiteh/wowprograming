@@ -11,10 +11,11 @@ Last updated: 2026-11-22.
 ## Current state
 
 - **Goal in progress:** a native GUI app that loads Blizzard's spellbook
-  (Blizzard_PlayerSpells) for an Evoker and opens it with **P**. This pulls
-  in parts of M2 (XML, layout), M4 (game data) and M5 (API stubs).
-- **Branch:** `spellbook-gui`, from `main`. `main` now includes M1
-  (fast-forward merge). Nothing is pushed.
+  and opens it with **P**. It works for the **Monk** scenario: P opens the
+  spellbook with the Monk spells, icons, category tabs (Monk, General) and
+  frame tabs (Specialization, Spellbook).
+- **Branch:** `spellbook-gui`, from `main`. `main` includes M1. Nothing is
+  pushed.
 - **Tests:** `cargo test`, `cargo fmt --check` and
   `cargo clippy --all-targets -- -D warnings` pass.
 
@@ -53,17 +54,28 @@ Last updated: 2026-11-22.
 
 ## What does not work yet
 
-- Scenario replay of captured API data (waiting for the captures).
-- Named colours, client-only enums and constants (second capture).
+- Evoker scenario: no `capture.txt` yet (user must run
+  `tools/capture/spellbook_capture.lua` on the Evoker).
+- Class colors and `LocalizedClassList`: not captured yet. Next capture
+  should export `RAID_CLASS_COLORS`, `LocalizedClassList()` and
+  `GetSpecializationRoleEnum(i)`.
 - Masks, additive blending in the window, flipbook animations, tooltips.
+- Startup errors from unrelated Blizzard code (store, edit mode,
+  `SettingsPanel` in the micro menu).
+- Frame rectangles are not yet compared with the captured ones
+  (`frames` in the capture; screen 2866.67x1200 for the Monk).
 - Taint and secret values.
 
 ## Next steps
 
-1. Save the user's capture text as `scenarios/evoker/capture.txt` and
-   `scenarios/evoker/client_constants.txt`; the scenario replays them.
-3. Iterate until P opens the spellbook with Evoker spells, icons and tabs;
-   compare frame rectangles with the capture.
+1. Check the Monk spellbook in the GUI: General tab, paging, the
+   Specialization tab. Fix errors through the control bridge.
+2. Compare sandbox rectangles with `capture.frames` and fix layout
+   differences.
+3. Capture the Evoker and class data (see above).
+4. Fix the drawing gaps listed above.
+
+How to run: see [running-the-gui.md](running-the-gui.md).
 
 ## Decisions
 
@@ -119,7 +131,17 @@ Things that cost time once and should not cost it again.
   `State::script_table`), not in Rust fields.
 - DB2 files have no path hashes in the root file; open them by FileDataID
   (UiTextureAtlas 897470, UiTextureAtlasMember 897532, GlobalStrings 1394440).
-- Never open a GUI window on the user's desktop for testing.
+- Never open a GUI window on the user's desktop for testing. Use
+  `run --serve` and `ctl`. Under Xvfb the window also needs
+  `libxkbcommon-x11-0`, which is not installed yet.
+- Read capture text from the Windows clipboard with
+  `powershell.exe -NoProfile -Command "Get-Clipboard -Raw"`; put scripts on
+  it with `clip.exe < file`. Don't make the user paste large text.
+- Captured return values often come back with extra optional arguments in
+  the call; the replay retries with fewer trailing arguments.
+- Many client functions are undocumented (glyphs, Kiosk, action bar
+  highlights). Add them to `api.rs`; scan Blizzard files for undefined
+  globals with `ctl eval` instead of fixing one error per run.
 
 - Blizzard's error handler calls `addframetext` and `C_Log.LogErrorMessage`.
   If a native function that an error handler needs is missing, Lua drops

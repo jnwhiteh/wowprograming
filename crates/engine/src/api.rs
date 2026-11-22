@@ -112,6 +112,26 @@ pub fn install(lua: &Lua) -> Result<()> {
         "IsMetaKeyDown",
         "IsModifiedClick",
         "IsMouseButtonDown",
+        "CanAutoSetGamePadCursorControl",
+        "IsGamePadFreelookEnabled",
+        "IsKioskModeEnabled",
+        "IsTrialAccount",
+        "IsVeteranTrialAccount",
+        "IsRestrictedAccount",
+        "IsCommunitiesUIDisabledByTrialAccount",
+        "HasCompletedAnyAchievement",
+        "HasAttachedGlyph",
+        "IsSpellValidForPendingGlyph",
+        "HasPendingGlyphCast",
+        "IsPendingGlyphRemoval",
+        "IsCastingGlyph",
+        "IsCharacterNewlyBoosted",
+        "PetHasSpellbook",
+        "InClickBindingMode",
+        "IsSpecializationActivateSpell",
+        "IsInGroup",
+        "IsInRaid",
+        "IsPartyWorldPVP",
     ] {
         g.set(name, lua.create_function(|_, _: MultiValue| Ok(false))?)?;
     }
@@ -177,6 +197,43 @@ pub fn install(lua: &Lua) -> Result<()> {
         })?,
     )?;
 
+    lua.load(include_str!("lua/extensions.lua"))
+        .set_name("=[C]")
+        .exec()?;
+    // Undocumented client functions the UI calls at load time.
+    g.set(
+        "RegisterStaticConstants",
+        lua.create_function(|_, _: MultiValue| Ok(()))?,
+    )?;
+    g.set("GetMaxBattlefieldID", lua.create_function(|_, ()| Ok(0))?)?;
+    for name in [
+        "ClearOnBarHighlightMarks",
+        "UpdateOnBarHighlightMarksBySpell",
+        "UpdateOnBarHighlightMarksByFlyout",
+        "UpdateOnBarHighlightMarksByPetAction",
+        "SetGamePadCursorControl",
+    ] {
+        g.set(name, lua.create_function(|_, _: MultiValue| Ok(()))?)?;
+    }
+    for name in ["GetNumSubgroupMembers", "GetNumGroupMembers"] {
+        g.set(name, lua.create_function(|_, _: MultiValue| Ok(0))?)?;
+    }
+    namespace(lua, "C_AdventureJournal")?
+        .set("CanBeShown", lua.create_function(|_, ()| Ok(false))?)?;
+    for name in [
+        "GetGuildLogoInfo",
+        "GetPendingGlyphName",
+        "GetCurrentGlyphNameForSpell",
+    ] {
+        g.set(name, lua.create_function(|_, _: MultiValue| Ok(()))?)?;
+    }
+    // The client's Kiosk namespace (demo kiosks); the sandbox is never one.
+    let kiosk = namespace(lua, "Kiosk")?;
+    kiosk.set("IsEnabled", lua.create_function(|_, ()| Ok(false))?)?;
+    kiosk.set(
+        "IsCompetitiveModeEnabled",
+        lua.create_function(|_, ()| Ok(false))?,
+    )?;
     install_texture_api(lua)?;
     install_encoding_api(lua)?;
     install_xml_util(lua)?;
