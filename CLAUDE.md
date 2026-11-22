@@ -1,7 +1,14 @@
 # Project notes
 
-A sandbox that runs World of Warcraft addons outside the game. Read
-`docs/scope.md` first for the design and roadmap.
+A sandbox that runs World of Warcraft addons outside the game.
+
+Read these first:
+
+1. `docs/status.md`: current state, branches, decisions, next steps.
+2. `docs/scope.md`: goals, design, roadmap and backlog.
+
+Keep `docs/status.md` current. Update it in the same commit as the work it
+describes, following the rules at the end of that file.
 
 ## Paths
 

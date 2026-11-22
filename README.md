@@ -7,7 +7,8 @@ The sandbox emulates what the game client provides to addon code: the Lua
 SavedVariables. It reads textures, fonts and other data from a local game
 install. Addon UIs can be viewed and clicked in a web browser.
 
-Status: early setup. See [docs/scope.md](docs/scope.md) for goals, design and
+Status: see [docs/status.md](docs/status.md) for the current state and
+[docs/scope.md](docs/scope.md) for goals, design and
 roadmap.
 
 ## Requirements
