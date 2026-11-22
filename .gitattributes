@@ -1,0 +1,11 @@
+# Normalise line endings so Windows and WSL checkouts agree.
+* text=auto eol=lf
+
+*.bat  text eol=crlf
+*.cmd  text eol=crlf
+*.ps1  text eol=crlf
+
+*.png  binary
+*.blp  binary
+*.ttf  binary
+*.db2  binary
