@@ -1,0 +1,10 @@
+# Copy to config.local.toml and adjust. config.local.toml is not committed.
+
+# Game install folder for the flavor to emulate.
+game_dir = "/mnt/d/World of Warcraft/_retail_"
+
+# Blizzard UI source checkout for the same flavor.
+ui_source_dir = "../wow-ui-source-retail"
+
+# Folder that holds the addons to load.
+addons_dir = "/mnt/d/World of Warcraft/_retail_/Interface/AddOns"

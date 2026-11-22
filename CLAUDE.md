@@ -7,8 +7,8 @@ A sandbox that runs World of Warcraft addons outside the game. Read
 
 - Retail client: `/mnt/d/World of Warcraft/_retail_` (Windows: `D:\World of Warcraft\_retail_`).
 - CASC data: `/mnt/d/World of Warcraft/Data`.
-- Blizzard UI source: `../wow-ui-source`, one branch per flavor (`live` is Retail).
-  Do not change its checked-out branch. Use a worktree if another branch is needed.
+- Blizzard UI source for Retail: `../wow-ui-source-retail` (branch `live`).
+  `../wow-ui-source` has the other flavors. Do not change the checked-out branch of either.
 - Installed addons for testing: `_retail_/Interface/AddOns`.
 
 ## Rules
@@ -20,3 +20,11 @@ A sandbox that runs World of Warcraft addons outside the game. Read
 - Code must build on Linux, macOS and Windows.
 - Commit to `main` for small changes. Use feature branches for larger work.
   Never force-push.
+
+## Build
+
+- Rust comes from Homebrew in WSL. Non-interactive shells need
+  `export PATH=/home/linuxbrew/.linuxbrew/bin:$PATH`.
+- `cargo fmt`, `cargo clippy --all-targets -- -D warnings` and `cargo test`
+  must pass before each commit. CI runs them on Linux, Windows and macOS.
+- Run a Lua file in the sandbox: `cargo run -- lua path/to/file.lua`.

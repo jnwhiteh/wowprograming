@@ -1,0 +1,10 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+edition = "2024"
+repository = "https://github.com/jnwhiteh/wowprograming"
+
+[workspace.dependencies]
+wowprogramming-lua = { path = "crates/lua" }

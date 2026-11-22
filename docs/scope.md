@@ -31,7 +31,7 @@ prototypes can be shown without the game running.
 |---|---|---|
 | Retail client | `/mnt/d/World of Warcraft/_retail_` (build 12.1.5.70961) | Game data through CASC: textures (BLP), DB2 tables, fonts, models |
 | CASC storage | `/mnt/d/World of Warcraft/Data` | Shared by all installed flavors |
-| Blizzard UI source | `../wow-ui-source` (branches `live`, `classic`, `forever`, ...) | Blizzard's own Lua and XML: SharedXML, FrameXML, templates, mixins |
+| Blizzard UI source | `../wow-ui-source-retail` (branch `live`, build 12.1.5.70961). Other flavors are branches of `../wow-ui-source` | Blizzard's own Lua and XML: SharedXML, FrameXML, templates, mixins |
 | API documentation | `Blizzard_APIDocumentationGenerated` (643 files) | Machine-readable signatures for every `C_*` function, event and enum |
 | Installed addons | `_retail_/Interface/AddOns` | Real-world test cases (BugSack, Clique, Baganator, ...) |
 
@@ -39,10 +39,9 @@ Notes:
 
 - The `Fonts` folder in the install holds only cached `.slug` files. The
   real `.ttf` fonts must be read from CASC.
-- The UI source checkout is currently on `forever`. The sandbox should take
-  a path to a UI source tree and not depend on which branch is checked out.
-  A `git worktree` per flavor (for example `../wow-ui-source-live`) is the
-  simplest approach.
+- The sandbox takes a path to a UI source tree for one flavor, so it does
+  not depend on which branch a checkout is on. `../wow-ui-source-retail`
+  is the Retail tree.
 
 ## The key design idea
 
@@ -94,7 +93,8 @@ renderer-neutral scene: a sorted list of textured quads and text runs with
 resolved screen rectangles. Renderers only draw the scene and send mouse
 and keyboard input back.
 
-Tentative workspace layout (names are placeholders):
+Planned workspace layout. Crates are named `wowprogramming-<part>`; the
+command line tool is `wowprogramming`.
 
 ```
 crates/
@@ -109,7 +109,7 @@ web/           browser viewer (TypeScript, canvas)
 docs/
 ```
 
-## Language recommendation: Rust
+## Language: Rust (decided)
 
 Rust is the better fit, mainly because of the Lua runtime.
 
@@ -154,7 +154,8 @@ Two stages:
 
 Each milestone ends with something that runs.
 
-**M0: Project setup.** Cargo workspace, CI on Linux, Windows and macOS,
+**M0: Project setup (done).** Cargo workspace, Lua 5.1 runtime that
+removes the libraries the game hides, CI on Linux, Windows and macOS,
 config file for paths (game install, UI source tree), this document.
 
 **M1: Headless addon runtime.**
@@ -218,8 +219,6 @@ frames. WebAssembly export. Classic flavors.
 
 ## Open questions
 
-1. Confirm Rust.
-2. Name for the tool and its crates.
-3. Should scenarios be written in Lua (familiar to addon authors) or in a
+1. Should scenarios be written in Lua (familiar to addon authors) or in a
    data format such as TOML?
-4. Which real addons should be the first test targets after hello world?
+2. Which real addons should be the first test targets after hello world?
