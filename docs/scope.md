@@ -162,8 +162,12 @@ config file for paths (game install, UI source tree), this document.
 - Lua 5.1 with WoW additions: `strsplit`, `strjoin`, `strtrim`, `tinsert`,
   `tremove`, `wipe`, `bit`, `format`, `date`, `time`, `GetTime`,
   `debugprofilestop`, `print`, `geterrorhandler`, `hooksecurefunc`, ...
-- TOC parsing (including `## Interface`, `## Dependencies`,
-  `## SavedVariables`, `[Family]` and `[Game]` file conditions).
+- TOC parsing: one `<Name>.toc` per addon, `## Key: Value` metadata,
+  dependencies and SavedVariables. Trailing `[...]` tags on file lines are
+  removed and ignored.
+- Script watchdog: a script that runs too long fails with
+  `script ran too long`, even inside `pcall` or a coroutine. Lua memory
+  is capped.
 - Addon load order, `ADDON_LOADED`, `PLAYER_LOGIN`, `PLAYER_ENTERING_WORLD`.
 - `CreateFrame`, `RegisterEvent`, `SetScript`, `OnEvent`, `OnUpdate`.
 - SavedVariables written on exit and read on load.
@@ -201,9 +205,25 @@ config file for paths (game install, UI source tree), this document.
   fire events.
 - Test: real installed addons load without errors.
 
+**Visual goal: Character Frame and spellbook.** After M5, load Blizzard's
+own Character Frame (`Blizzard_UIPanels_Game`) and spellbook
+(`Blizzard_PlayerSpells`) and show them in the browser. This needs the
+loader to pick `<Name>_Mainline.toc` for Blizzard addons that have no plain
+`.toc`.
+
 **M6 and later.** Fake units and combat log scenarios. `PlayerModel` and
 `ModelScene` with M2 rendering in a native `wgpu` window. Taint and secure
 frames. WebAssembly export. Classic flavors.
+
+## Backlog
+
+Not needed yet. Each item is added when a concrete goal requires it.
+
+- TOC path placeholders (`[Family]`, `[Game]`, `[TextLocale]`) and load
+  conditions (`AllowLoadGameType`, `ExcludeLoadGameType`,
+  `AllowLoadTextLocale`).
+- Flavor-specific TOC files for third-party addons
+  (`<Name>_Mainline.toc`, `<Name>_Classic.toc`, ...).
 
 ## Risks
 
