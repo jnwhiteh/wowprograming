@@ -8,3 +8,4 @@ repository = "https://github.com/jnwhiteh/wowprograming"
 
 [workspace.dependencies]
 wowprogramming-lua = { path = "crates/lua" }
+wowprogramming-engine = { path = "crates/engine" }

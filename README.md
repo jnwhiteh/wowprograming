@@ -20,9 +20,27 @@ No game files are stored in this repository.
 
 ## Development
 
-Build and test with `cargo build` and `cargo test`. Run a Lua file in the
-sandbox with `cargo run -- lua path/to/file.lua`. Copy
+Build and test with `cargo build` and `cargo test`. Copy
 `config.example.toml` to `config.local.toml` to set local paths.
+
+Run the sandbox with a console:
+
+```
+cargo run -- run
+```
+
+The console accepts slash commands (`/reload`, `/dump expr`, `/run code`,
+and commands that addons register) and plain Lua code. Type `/quit` to
+exit; SavedVariables are written to `.sandbox/WTF`.
+
+Useful options:
+
+```
+cargo run -- run --addon HelloWorld          # load only this addon
+cargo run -- run --exec "/hello" --seconds 2 # run without a console
+cargo run -- run --no-blizzard               # skip Blizzard addons
+cargo run -- lua path/to/file.lua            # run one Lua file
+```
 
 Work goes on `main` for small changes and on feature branches for larger
 pieces of work. Do not force-push.

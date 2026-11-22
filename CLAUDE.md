@@ -27,4 +27,8 @@ A sandbox that runs World of Warcraft addons outside the game. Read
   `export PATH=/home/linuxbrew/.linuxbrew/bin:$PATH`.
 - `cargo fmt`, `cargo clippy --all-targets -- -D warnings` and `cargo test`
   must pass before each commit. CI runs them on Linux, Windows and macOS.
-- Run a Lua file in the sandbox: `cargo run -- lua path/to/file.lua`.
+- Run the sandbox without a console: `cargo run -- run --seconds 1 --exec "/dump 1"`.
+  Always wrap runs that execute Lua (tests, the sandbox) in `timeout`, so a
+  runaway script cannot hang the session.
+- The test that loads Blizzard code reads `../wow-ui-source-retail` (or
+  `WOWPROGRAMMING_UI_SOURCE`) and is skipped when it is missing, as on CI.

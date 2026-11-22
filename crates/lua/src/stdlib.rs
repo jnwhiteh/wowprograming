@@ -231,12 +231,48 @@ fn install_debug(lua: &Lua) -> Result<()> {
     Ok(())
 }
 
+/// Chunk name of the engine's dispatcher, which calls Lua code on behalf
+/// of the engine. Stack traces stop at this boundary.
+pub const DISPATCH_CHUNK: &str = "=[dispatch]";
+
+/// How a chunk name appears in messages: `@file` as `file`, `=name` as
+/// `name`, and source code as `[string "first line"]`.
+pub fn chunk_display(source: &str) -> String {
+    if let Some(rest) = source
+        .strip_prefix('@')
+        .or_else(|| source.strip_prefix('='))
+    {
+        return rest.to_string();
+    }
+    let first = source.lines().next().unwrap_or("");
+    if first.len() < source.len() {
+        format!("[string \"{first}...\"]")
+    } else {
+        format!("[string \"{first}\"]")
+    }
+}
+
 /// Build a stack trace in the client's `debugstack` format. Level 1 is the
-/// function that called `debugstack`.
+/// function that called `debugstack`. The trace stops where the engine
+/// called into Lua.
 pub fn debugstack(lua: &Lua, start: usize, top: usize, bottom: usize) -> String {
     let mut lines = Vec::new();
     let mut level = start;
-    while let Some(line) = lua.inspect_stack(level, describe_frame) {
+    while let Some((line, boundary)) = lua.inspect_stack(level, |d| {
+        let boundary = d.source().source.as_deref() == Some(DISPATCH_CHUNK);
+        (describe_frame(d), boundary)
+    }) {
+        if boundary {
+            // Drop the native and tail-call frames between the dispatcher
+            // and the Lua code it called.
+            while lines
+                .last()
+                .is_some_and(|l: &String| l.starts_with("[C]") || l.starts_with("(tail call)"))
+            {
+                lines.pop();
+            }
+            break;
+        }
         lines.push(line);
         level += 1;
     }
@@ -256,9 +292,9 @@ fn describe_frame(debug: &mlua::debug::Debug) -> String {
     let names = debug.names();
     let src = match source.source.as_deref() {
         Some("=(tail call)") => return "(tail call): ?".to_string(),
-        Some(s) if s.starts_with('@') || s.starts_with('=') => s[1..].to_string(),
-        Some(s) if source.what == "C" => format!("[{s}]"),
-        Some(s) => format!("[string \"{}\"]", s.lines().next().unwrap_or("")),
+        // Engine helpers written in Lua show as native code.
+        Some("=[C]") if source.what != "C" => return "[C]: ?".to_string(),
+        Some(s) => chunk_display(s),
         None => "?".to_string(),
     };
     let location = match debug.current_line() {

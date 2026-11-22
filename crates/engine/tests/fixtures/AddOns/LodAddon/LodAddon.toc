@@ -1,0 +1,4 @@
+## Interface: 120105
+## LoadOnDemand: 1
+
+LodAddon.lua

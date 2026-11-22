@@ -158,10 +158,12 @@ Each milestone ends with something that runs.
 removes the libraries the game hides, CI on Linux, Windows and macOS,
 config file for paths (game install, UI source tree), this document.
 
-**M1: Headless addon runtime.**
-- Lua 5.1 with WoW additions: `strsplit`, `strjoin`, `strtrim`, `tinsert`,
-  `tremove`, `wipe`, `bit`, `format`, `date`, `time`, `GetTime`,
-  `debugprofilestop`, `print`, `geterrorhandler`, `hooksecurefunc`, ...
+**M1: Headless addon runtime (done on branch `m1-addon-runtime`).**
+- Lua 5.1 with the natively implemented WoW additions: `strsplit`,
+  `strjoin`, `strconcat`, `string.trim`, `table.wipe`, `bit`, `Mixin`,
+  `CreateFromMixins`, `debugstack`, `GetTime`, `debugprofilestop`, print
+  and error handlers, `securecall`, `hooksecurefunc`, `C_Timer`, `C_Log`,
+  `C_AddOns`. Aliases such as `tinsert` come from Blizzard's `Compat.lua`.
 - TOC parsing: one `<Name>.toc` per addon, `## Key: Value` metadata,
   dependencies and SavedVariables. Trailing `[...]` tags on file lines are
   removed and ignored.
@@ -173,7 +175,14 @@ config file for paths (game install, UI source tree), this document.
 - SavedVariables written on exit and read on load.
 - Slash commands and a console to type them.
 - Load `Blizzard_SharedXMLBase` from the UI source.
+- Pulled forward because SharedXMLBase needs them at load time: `Enum` and
+  `Constants` built from the API documentation, and `C_CurveUtil`.
 - Test: a hello-world addon prints on login and keeps a counter across runs.
+
+Result: SharedXMLBase and Blizzard_ScriptErrors load without Lua errors
+(their XML files are skipped). Real addons such as BugSack stop at their
+first unit or locale API call (`UnitNameUnmodified`, `GetLocale`), which
+M5 provides.
 
 **M2: XML and layout.**
 - XML loading against the UI schema: templates, `inherits`, `mixin`,
@@ -224,6 +233,15 @@ Not needed yet. Each item is added when a concrete goal requires it.
   `AllowLoadTextLocale`).
 - Flavor-specific TOC files for third-party addons
   (`<Name>_Mainline.toc`, `<Name>_Classic.toc`, ...).
+- `C_UIColor.GetColors()` returns nothing until DB2 reading (M4) can read
+  the `GlobalColor` table. Until then named colors such as
+  `NORMAL_FONT_COLOR` do not exist.
+- Lua shortens chunk names longer than 60 characters in its own error
+  messages (`...erface/AddOns/...`). Fixing this needs our own copy of the
+  Lua 5.1 source with a larger `LUA_IDSIZE`, which taint support will need
+  anyway.
+- Exact order of the login events (`PLAYER_LOGIN`, `PLAYER_ENTERING_WORLD`,
+  `VARIABLES_LOADED`) should be checked against the client.
 
 ## Risks
 

@@ -1,0 +1,11 @@
+[package]
+name = "wowprogramming-engine"
+version = "0.1.0"
+edition.workspace = true
+repository.workspace = true
+
+[dependencies]
+wowprogramming-lua.workspace = true
+
+[dev-dependencies]
+tempfile = "3.27.0"

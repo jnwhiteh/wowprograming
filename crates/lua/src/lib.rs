@@ -30,14 +30,28 @@ pub struct Runtime {
     watchdog: Rc<Watchdog>,
 }
 
-struct Watchdog {
+/// Time budget for calls into Lua. Shared between the runtime and code that
+/// calls Lua from inside Rust callbacks.
+pub struct Watchdog {
     timeout: Cell<Duration>,
     deadline: Cell<Option<Instant>>,
 }
 
 impl Watchdog {
-    fn tripped(&self) -> bool {
+    /// True when the current call has run past its deadline.
+    pub fn tripped(&self) -> bool {
         self.deadline.get().is_some_and(|d| Instant::now() >= d)
+    }
+
+    /// Run `f` with a deadline. Nested calls share the outer deadline.
+    pub fn guarded<R>(&self, f: impl FnOnce() -> R) -> R {
+        let outer = self.deadline.get();
+        if outer.is_none() {
+            self.deadline.set(Some(Instant::now() + self.timeout.get()));
+        }
+        let result = f();
+        self.deadline.set(outer);
+        result
     }
 }
 
@@ -55,17 +69,56 @@ fn make_timeout_uncatchable(lua: &Lua, watchdog: &Rc<Watchdog>) -> Result<()> {
     for (table, name) in targets {
         let original: Function = table.get(name)?;
         let watchdog = Rc::clone(watchdog);
-        let wrapper = lua.create_function(move |_, args: MultiValue| {
-            let results: MultiValue = original.call(args)?;
+        let wrapper = lua.create_function(move |lua, args: MultiValue| {
+            let mut results: MultiValue = original.call(args)?;
             let failed = matches!(results.front(), Some(Value::Boolean(false)));
             if failed && watchdog.tripped() {
                 return Err(mlua::Error::runtime(SCRIPT_TIMEOUT_MESSAGE));
+            }
+            if failed && let Some(Value::Error(err)) = results.get(1) {
+                let message = Value::String(lua.create_string(error_message(err))?);
+                results[1] = message;
             }
             Ok(results)
         })?;
         table.set(name, wrapper)?;
     }
     Ok(())
+}
+
+/// The message for an error raised by a Rust function, in the form a C Lua
+/// function would give it (for example `bad argument #2 to '?' (number
+/// expected, got nil)`). Inside Lua such errors are `Value::Error` objects,
+/// which Lua code cannot use as strings.
+pub fn error_message(err: &mlua::Error) -> String {
+    use mlua::Error;
+    match err {
+        Error::RuntimeError(msg) => msg.clone(),
+        Error::CallbackError { cause, .. } => error_message(cause),
+        Error::WithContext { cause, .. } => error_message(cause),
+        Error::BadArgument { to, pos, cause, .. } => format!(
+            "bad argument #{pos} to '{}' ({})",
+            to.as_deref().unwrap_or("?"),
+            error_message(cause)
+        ),
+        Error::FromLuaConversionError { from, to, .. } => {
+            format!("{} expected, got {from}", lua_type_name(to))
+        }
+        other => other.to_string(),
+    }
+}
+
+/// Map a Rust type name from a conversion error to the Lua type name.
+fn lua_type_name(rust: &str) -> &str {
+    match rust {
+        "f32" | "f64" | "i8" | "i16" | "i32" | "i64" | "isize" | "u8" | "u16" | "u32" | "u64"
+        | "usize" | "Integer" | "Number" => "number",
+        "String" | "LuaString" | "&str" | "BString" => "string",
+        "Table" => "table",
+        "Function" => "function",
+        "bool" => "boolean",
+        other => other,
+    }
 }
 
 impl Runtime {
@@ -110,14 +163,13 @@ impl Runtime {
     /// Run `f` under the watchdog. Every call from the engine into Lua must
     /// go through this. Nested calls share the outer deadline.
     pub fn guarded<R>(&self, f: impl FnOnce(&Lua) -> Result<R>) -> Result<R> {
-        let outer = self.watchdog.deadline.get();
-        if outer.is_none() {
-            let deadline = Instant::now() + self.watchdog.timeout.get();
-            self.watchdog.deadline.set(Some(deadline));
-        }
-        let result = f(&self.lua);
-        self.watchdog.deadline.set(outer);
-        result
+        self.watchdog.guarded(|| f(&self.lua))
+    }
+
+    /// A shared handle to the watchdog, for calls into Lua made from inside
+    /// Rust callbacks.
+    pub fn watchdog(&self) -> Rc<Watchdog> {
+        Rc::clone(&self.watchdog)
     }
 
     /// Run a chunk of Lua code under the watchdog. `name` is used in error

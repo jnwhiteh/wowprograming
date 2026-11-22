@@ -1,0 +1,7 @@
+## Interface: 120105
+## Title: Hello World
+## Notes: Prints a greeting and counts logins.
+## Version: 1.0
+## SavedVariables: HelloWorldDB
+
+HelloWorld.lua
