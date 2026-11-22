@@ -21,8 +21,18 @@ struct Cli {
 enum Command {
     /// Load addons and open a console. Type /quit to exit.
     Run(RunArgs),
+    /// Load addons and open a window that shows the UI, with a console.
+    Gui(RunArgs),
     /// Run a Lua file in the sandbox's Lua environment, without addons.
     Lua { file: PathBuf },
+    /// Show whether files exist in the game data, by path or FileDataID.
+    Casc {
+        /// Game install folder (defaults to game_dir from the config file).
+        #[arg(long)]
+        game_dir: Option<PathBuf>,
+        /// Paths or FileDataIDs.
+        files: Vec<String>,
+    },
 }
 
 #[derive(clap::Args)]
@@ -54,6 +64,26 @@ struct RunArgs {
     /// Run this many seconds of game time without a console, then exit.
     #[arg(long)]
     seconds: Option<f64>,
+    /// Scenario folder with a scenario.lua that sets up game state.
+    #[arg(long)]
+    scenario: Option<PathBuf>,
+    /// Load-on-demand Blizzard addon whose [Bootstrap] files run at startup.
+    /// Can be repeated.
+    #[arg(long = "bootstrap", value_name = "NAME")]
+    bootstrap: Vec<String>,
+    /// Do not read textures, atlases and fonts from the game install.
+    #[arg(long)]
+    no_game_data: bool,
+    /// Do not load third-party addons.
+    #[arg(long)]
+    no_addons: bool,
+    /// Headless only: render the UI to this PNG file before exiting,
+    /// without opening a window.
+    #[arg(long)]
+    screenshot: Option<PathBuf>,
+    /// Pixels per UI unit for --screenshot.
+    #[arg(long, default_value_t = 0.75)]
+    screenshot_scale: f64,
 }
 
 /// Settings read from the config file. Relative paths are relative to the
@@ -61,12 +91,14 @@ struct RunArgs {
 #[derive(Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 struct FileConfig {
-    #[allow(dead_code)]
     game_dir: Option<PathBuf>,
     ui_source_dir: Option<PathBuf>,
     addons_dir: Option<PathBuf>,
     wtf_dir: Option<PathBuf>,
     blizzard_addons: Option<Vec<String>>,
+    bootstrap_addons: Option<Vec<String>>,
+    blizzard_files: Option<Vec<String>>,
+    scenario: Option<PathBuf>,
     account: Option<String>,
     realm: Option<String>,
     character: Option<String>,
@@ -78,17 +110,25 @@ fn main() -> ExitCode {
     let cli = Cli::parse();
     match cli.command {
         Command::Run(args) => match build_config(&args) {
-            Ok(config) => run(config, &args),
+            Ok((config, game_dir)) => run(config, game_dir, &args),
+            Err(err) => {
+                eprintln!("{err}");
+                ExitCode::from(2)
+            }
+        },
+        Command::Gui(args) => match build_config(&args) {
+            Ok((config, game_dir)) => run_gui(config, game_dir, &args),
             Err(err) => {
                 eprintln!("{err}");
                 ExitCode::from(2)
             }
         },
         Command::Lua { file } => run_lua_file(&file),
+        Command::Casc { game_dir, files } => casc_info(game_dir, &files),
     }
 }
 
-fn build_config(args: &RunArgs) -> Result<EngineConfig, String> {
+fn build_config(args: &RunArgs) -> Result<(EngineConfig, Option<PathBuf>), String> {
     let config_path = args.config.clone().or_else(|| {
         let default = PathBuf::from("config.local.toml");
         default.exists().then_some(default)
@@ -106,9 +146,14 @@ fn build_config(args: &RunArgs) -> Result<EngineConfig, String> {
     };
     let rel = |p: PathBuf| if p.is_absolute() { p } else { base.join(p) };
 
+    let addons_dir = if args.no_addons {
+        None
+    } else {
+        args.addons_dir.clone().or(file.addons_dir.map(rel))
+    };
     let mut config = EngineConfig {
         ui_source_dir: args.ui_source.clone().or(file.ui_source_dir.map(rel)),
-        addons_dir: args.addons_dir.clone().or(file.addons_dir.map(rel)),
+        addons_dir,
         ..EngineConfig::default()
     };
     if let Some(wtf) = args.wtf_dir.clone().or(file.wtf_dir.map(rel)) {
@@ -135,7 +180,45 @@ fn build_config(args: &RunArgs) -> Result<EngineConfig, String> {
     if let Some(v) = file.character {
         config.character = v;
     }
-    Ok(config)
+    if let Some(list) = file.bootstrap_addons {
+        config.bootstrap_addons = list;
+    }
+    if let Some(list) = file.blizzard_files {
+        config.blizzard_files = list;
+    }
+    if !args.bootstrap.is_empty() {
+        config.bootstrap_addons = args.bootstrap.clone();
+    }
+    config.scenario = args.scenario.clone().or(file.scenario.map(rel));
+    let game_dir = if args.no_game_data {
+        None
+    } else {
+        file.game_dir.map(rel)
+    };
+    Ok((config, game_dir))
+}
+
+/// Open the game data, or explain why it is not available.
+fn open_game_data(
+    dir: Option<&Path>,
+) -> Option<std::rc::Rc<wowprogramming_engine::gamedata::GameData>> {
+    let dir = dir?;
+    let started = Instant::now();
+    match wowprogramming_engine::gamedata::GameData::open(dir) {
+        Ok(gd) => {
+            eprintln!(
+                "Game data: {} ({} atlases) in {:.1}s",
+                gd.build_name(),
+                gd.atlas_count(),
+                started.elapsed().as_secs_f64()
+            );
+            Some(std::rc::Rc::new(gd))
+        }
+        Err(e) => {
+            eprintln!("warning: no game data from {}: {e}", dir.display());
+            None
+        }
+    }
 }
 
 fn print_output(engine: &Engine) {
@@ -147,8 +230,9 @@ fn print_output(engine: &Engine) {
     }
 }
 
-fn run(config: EngineConfig, args: &RunArgs) -> ExitCode {
-    let mut engine = match Engine::new(config) {
+fn run(config: EngineConfig, game_dir: Option<PathBuf>, args: &RunArgs) -> ExitCode {
+    let gamedata = open_game_data(game_dir.as_deref());
+    let mut engine = match Engine::with_gamedata(config, gamedata) {
         Ok(engine) => engine,
         Err(err) => {
             eprintln!("cannot start sandbox: {err}");
@@ -166,9 +250,37 @@ fn run(config: EngineConfig, args: &RunArgs) -> ExitCode {
         Some(seconds) => run_headless(&mut engine, seconds),
         None => run_console(&mut engine),
     }
+    if let Some(path) = &args.screenshot {
+        match engine.save_screenshot(path, args.screenshot_scale) {
+            Ok(()) => eprintln!("Saved {}", path.display()),
+            Err(e) => eprintln!("cannot write {}: {e}", path.display()),
+        }
+    }
     engine.shutdown();
     print_output(&engine);
     ExitCode::SUCCESS
+}
+
+fn run_gui(config: EngineConfig, game_dir: Option<PathBuf>, args: &RunArgs) -> ExitCode {
+    let gamedata = open_game_data(game_dir.as_deref());
+    let mut engine = match Engine::with_gamedata(config, gamedata) {
+        Ok(engine) => engine,
+        Err(err) => {
+            eprintln!("cannot start sandbox: {err}");
+            return ExitCode::FAILURE;
+        }
+    };
+    engine.start();
+    for line in &args.exec {
+        engine.run_command(line);
+    }
+    match wowprogramming_gui::run(engine) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(err) => {
+            eprintln!("window error: {err}");
+            ExitCode::FAILURE
+        }
+    }
 }
 
 /// Advance game time as fast as possible, in fixed frames.
@@ -228,4 +340,39 @@ fn run_lua_file(path: &Path) -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+fn casc_info(game_dir: Option<PathBuf>, files: &[String]) -> ExitCode {
+    let dir = game_dir.or_else(|| {
+        let text = std::fs::read_to_string("config.local.toml").ok()?;
+        toml::from_str::<FileConfig>(&text).ok()?.game_dir
+    });
+    let Some(gd) = open_game_data(dir.as_deref()) else {
+        eprintln!("no game data; pass --game-dir");
+        return ExitCode::FAILURE;
+    };
+    for f in files {
+        let id = f.parse::<u32>().ok().or_else(|| gd.file_id(f));
+        match id.and_then(|id| gd.read_file(id).map(|d| (id, d))) {
+            Some((id, data)) => {
+                let head: String = data
+                    .iter()
+                    .take(16)
+                    .map(|b| {
+                        if b.is_ascii_graphic() {
+                            *b as char
+                        } else {
+                            '.'
+                        }
+                    })
+                    .collect();
+                println!(
+                    "{f}: FileDataID {id}, {} bytes, starts {head:?}",
+                    data.len()
+                );
+            }
+            None => println!("{f}: not found"),
+        }
+    }
+    ExitCode::SUCCESS
 }

@@ -1,0 +1,9 @@
+[package]
+name = "wowprogramming-gui"
+version = "0.1.0"
+edition.workspace = true
+repository.workspace = true
+
+[dependencies]
+eframe = { version = "0.37.0", default-features = false, features = ["default_fonts", "glow", "wayland", "x11"] }
+wowprogramming-engine.workspace = true

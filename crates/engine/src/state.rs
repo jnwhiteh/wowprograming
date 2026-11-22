@@ -10,7 +10,7 @@ use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::Instant;
 
-use mlua::{AppDataRefMut, Function, Lua, Table, Value};
+use mlua::{AppDataRefMut, Function, Lua, Table};
 use wowprogramming_lua::{Watchdog, mlua};
 
 use crate::toc::Toc;
@@ -41,32 +41,159 @@ impl std::fmt::Display for Output {
 
 pub type FrameId = usize;
 
-/// Marker stored at index `[0]` of every frame table.
+/// Marker stored at index `[0]` of every widget table.
 pub struct FrameRef(pub FrameId);
 
-#[derive(Default)]
-pub struct Script {
-    pub handler: Option<Function>,
-    pub hooks: Vec<Function>,
-}
-
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Point {
-    pub point: String,
-    pub relative_to: Value,
-    pub relative_point: String,
+    pub point: &'static str,
+    /// The region the point is relative to. `None` means the parent.
+    pub relative: Option<FrameId>,
+    pub relative_point: &'static str,
     pub x: f64,
     pub y: f64,
 }
 
+/// The image shown by a texture.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub enum TexFile {
+    #[default]
+    None,
+    /// A path such as `Interface\Buttons\WHITE8X8`.
+    Path(String),
+    /// A FileDataID.
+    Id(i64),
+    /// A solid colour from `SetColorTexture`.
+    Color([f32; 4]),
+}
+
+#[derive(Clone, Debug)]
+pub struct TexState {
+    pub file: TexFile,
+    pub atlas: Option<String>,
+    /// Texture coordinates of the corners: UL, LL, UR, LR as (x, y) pairs.
+    pub coords: [f32; 8],
+    pub vertex_color: [f32; 4],
+    pub desaturation: f32,
+    pub blend_mode: String,
+    pub horiz_tile: bool,
+    pub vert_tile: bool,
+    pub rotation: f32,
+    pub gradient: Option<([f32; 4], [f32; 4], bool)>,
+}
+
+impl Default for TexState {
+    fn default() -> Self {
+        Self {
+            file: TexFile::None,
+            atlas: None,
+            coords: [0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0],
+            vertex_color: [1.0; 4],
+            desaturation: 0.0,
+            blend_mode: "BLEND".into(),
+            horiz_tile: false,
+            vert_tile: false,
+            rotation: 0.0,
+            gradient: None,
+        }
+    }
+}
+
+/// Font attributes. `None` fields come from the font object, if any.
+#[derive(Clone, Debug, Default)]
+pub struct FontAttrs {
+    pub path: Option<String>,
+    pub height: Option<f64>,
+    pub flags: Option<String>,
+    pub color: Option<[f32; 4]>,
+    pub shadow_color: Option<[f32; 4]>,
+    pub shadow_offset: Option<(f64, f64)>,
+    pub justify_h: Option<String>,
+    pub justify_v: Option<String>,
+    pub spacing: Option<f64>,
+    /// Font object (a `Font` widget) that supplies unset attributes.
+    pub font_object: Option<FrameId>,
+}
+
+#[derive(Clone, Debug)]
+pub struct TextState {
+    pub text: String,
+    pub max_lines: i64,
+    pub word_wrap: bool,
+    pub non_space_wrap: bool,
+    pub text_scale: f64,
+    pub alpha_gradient: Option<(i64, i64)>,
+}
+
+impl Default for TextState {
+    fn default() -> Self {
+        Self {
+            text: String::new(),
+            max_lines: 0,
+            word_wrap: true,
+            non_space_wrap: false,
+            text_scale: 1.0,
+            alpha_gradient: None,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct ButtonState {
+    pub enabled: bool,
+    pub pushed: bool,
+    pub locked_highlight: bool,
+    pub checked: bool,
+    pub normal: Option<FrameId>,
+    pub pushed_tex: Option<FrameId>,
+    pub disabled: Option<FrameId>,
+    pub highlight: Option<FrameId>,
+    pub checked_tex: Option<FrameId>,
+    pub disabled_checked: Option<FrameId>,
+    pub font_string: Option<FrameId>,
+    pub normal_font: Option<FrameId>,
+    pub highlight_font: Option<FrameId>,
+    pub disabled_font: Option<FrameId>,
+    pub pushed_offset: (f64, f64),
+    pub clicks: Vec<String>,
+    pub motion_scripts_while_disabled: bool,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct AnimState {
+    pub playing: bool,
+    pub paused: bool,
+    pub elapsed: f64,
+    pub duration: f64,
+    pub start_delay: f64,
+    pub end_delay: f64,
+    pub order: i64,
+    pub looping: String,
+    pub reverse: bool,
+    pub target: Option<FrameId>,
+    pub child_key: Option<String>,
+    pub target_key: Option<String>,
+    pub from_alpha: f64,
+    pub to_alpha: f64,
+    pub set_to_final_alpha: bool,
+}
+
+/// One widget: a frame, region, font object or animation. Its Lua table
+/// and script handlers live in Lua tables owned by [`State`], because mlua
+/// limits how many Lua values Rust may hold at once.
 pub struct FrameData {
     pub object_type: &'static str,
     pub name: Option<String>,
-    pub table: Table,
     pub parent: Option<FrameId>,
+    /// Child frames (not regions).
     pub children: Vec<FrameId>,
+    /// Textures, font strings and other regions owned by this frame.
+    pub regions: Vec<FrameId>,
+    /// Animation groups (for frames and regions) or animations (for groups).
+    pub anims: Vec<FrameId>,
     pub shown: bool,
-    pub scripts: HashMap<String, Script>,
+    /// Names of scripts that have a handler or hooks.
+    pub scripts: Vec<String>,
     pub events: Vec<String>,
     pub unit_filters: HashMap<String, Vec<String>>,
     pub all_events: bool,
@@ -76,12 +203,102 @@ pub struct FrameData {
     pub points: Vec<Point>,
     pub alpha: f64,
     pub scale: f64,
-    pub strata: String,
+    pub strata: &'static str,
+    pub strata_explicit: bool,
     pub level: i64,
+    pub toplevel: bool,
     pub mouse_enabled: bool,
+    pub mouse_motion: bool,
+    pub mouse_over: bool,
     pub movable: bool,
+    pub clips_children: bool,
+    pub ignore_parent_alpha: bool,
+    pub ignore_parent_scale: bool,
+    pub hit_insets: [f64; 4],
     pub attributes: Option<Table>,
     pub forbidden: bool,
+    pub draw_layer: u8,
+    pub sublevel: i64,
+    pub tex: Option<Box<TexState>>,
+    pub font: Option<Box<FontAttrs>>,
+    pub text: Option<Box<TextState>>,
+    pub button: Option<Box<ButtonState>>,
+    pub anim: Option<Box<AnimState>>,
+    /// Slider and status bar values: min, max, value.
+    pub value: (f64, f64, f64),
+    pub status_texture: Option<FrameId>,
+    pub orientation: String,
+    pub scroll_child: Option<FrameId>,
+    pub scroll: (f64, f64),
+    pub focus: bool,
+    pub masks: Vec<FrameId>,
+}
+
+impl FrameData {
+    pub fn new(object_type: &'static str) -> FrameData {
+        FrameData {
+            object_type,
+            name: None,
+            parent: None,
+            children: Vec::new(),
+            regions: Vec::new(),
+            anims: Vec::new(),
+            shown: true,
+            scripts: Vec::new(),
+            events: Vec::new(),
+            unit_filters: HashMap::new(),
+            all_events: false,
+            id: 0,
+            width: 0.0,
+            height: 0.0,
+            points: Vec::new(),
+            alpha: 1.0,
+            scale: 1.0,
+            strata: "MEDIUM",
+            strata_explicit: false,
+            level: 0,
+            toplevel: false,
+            mouse_enabled: false,
+            mouse_motion: false,
+            mouse_over: false,
+            movable: false,
+            clips_children: false,
+            ignore_parent_alpha: false,
+            ignore_parent_scale: false,
+            hit_insets: [0.0; 4],
+            attributes: None,
+            forbidden: false,
+            draw_layer: 2,
+            sublevel: 0,
+            tex: None,
+            font: None,
+            text: None,
+            button: None,
+            anim: None,
+            value: (0.0, 0.0, 0.0),
+            status_texture: None,
+            orientation: "HORIZONTAL".into(),
+            scroll_child: None,
+            scroll: (0.0, 0.0),
+            focus: false,
+            masks: Vec::new(),
+        }
+    }
+
+    pub fn has_script(&self, name: &str) -> bool {
+        self.scripts.iter().any(|s| s == name)
+    }
+
+    pub fn is_region(&self) -> bool {
+        matches!(
+            self.object_type,
+            "Texture" | "FontString" | "MaskTexture" | "Line"
+        )
+    }
+
+    pub fn is_frame(&self) -> bool {
+        !self.is_region() && self.anim.is_none() && self.object_type != "Font"
+    }
 }
 
 pub struct Timer {
@@ -120,6 +337,8 @@ pub struct Addon {
     pub kind: AddonKind,
     pub load_state: LoadState,
     pub namespace: Option<Table>,
+    /// The `[Bootstrap]` files have run.
+    pub bootstrapped: bool,
 }
 
 /// Where SavedVariables files live.
@@ -132,6 +351,10 @@ pub struct WtfPaths {
 }
 
 pub struct State {
+    /// Widget tables, indexed by widget id + 1.
+    pub objects: Table,
+    /// Script handlers: widget id + 1 -> { [name] = { handler = f, hooks = {...} } }.
+    pub script_table: Table,
     pub output: Vec<Output>,
     pub watchdog: Rc<Watchdog>,
     pub frames: Vec<FrameData>,
@@ -148,9 +371,33 @@ pub struct State {
     pub ui_source_dir: Option<PathBuf>,
     pub wtf: WtfPaths,
     pub warned_templates: Vec<String>,
+    /// Bumped whenever something changes that can move a region, so cached
+    /// rectangles are recomputed.
+    pub layout_generation: u64,
+    pub rect_cache: Vec<Option<(u64, Option<crate::layout::Rect>)>>,
+    /// Size of the screen in UI units (the size of UIParent at scale 1).
+    pub screen: (f64, f64),
+    pub xml: crate::xml::XmlState,
+    pub cvars: HashMap<String, String>,
+    pub gamedata: Option<Rc<crate::gamedata::GameData>>,
+    pub fonts: crate::text::FontCache,
+    pub focus: Option<FrameId>,
+    pub mouse_focus: Option<FrameId>,
+    pub bindings: HashMap<String, Function>,
+    /// Mouse position in screen units.
+    pub mouse: (f64, f64),
+    /// Order in which frames were last raised, for frames at the same level.
+    pub raise_counter: u64,
 }
 
 impl State {
+    /// The Lua table of a widget.
+    pub fn table(&self, id: FrameId) -> Table {
+        self.objects
+            .raw_get(id as i64 + 1)
+            .expect("widget table missing")
+    }
+
     pub fn warn(&mut self, msg: impl Into<String>) {
         self.output.push(Output::Warning(msg.into()));
     }

@@ -1,11 +1,16 @@
--- Builds the Enum and Constants globals from the API documentation files.
+-- Builds globals from the API documentation files:
+--   Enum and Constants, and stubs for documented functions and widget
+--   methods that return typed default values.
 -- Arguments: a list of { name, code } pairs for the documentation files,
--- and the function that compiles a chunk (loadstring).
--- Returns Enum, Constants and a list of error messages.
+-- the function that compiles a chunk (loadstring), and a table that records
+-- the names of stubs when they are called.
+-- Returns Enum, Constants, a list of error messages, the function stubs
+-- (global name -> function, or namespace name -> table of functions) and
+-- the widget method stubs (documentation table name -> table of functions).
 
-local files, loadstring = ...
-local setmetatable, setfenv, pcall, ipairs, table, tostring, type =
-      setmetatable, setfenv, pcall, ipairs, table, tostring, type
+local files, loadstring, calledStubs = ...
+local setmetatable, setfenv, pcall, ipairs, pairs, table, tostring, type, select, unpack =
+      setmetatable, setfenv, pcall, ipairs, pairs, table, tostring, type, select, unpack
 
 -- Run every file with APIDocumentation:AddDocumentationTable collecting the
 -- tables, and the given values as Enum and Constants.
@@ -64,9 +69,11 @@ local function resolve(v)
     return v.Value
 end
 
+local finalDocs
 local function collectConstants(constantsEnv, errors)
     local result = {}
-    for _, doc in ipairs(collect(Enum, constantsEnv, errors)) do
+    local docs = collect(Enum, constantsEnv, errors)
+    for _, doc in ipairs(docs) do
         for _, t in ipairs(doc.Tables or {}) do
             if t.Type == "Constants" then
                 local values = result[t.Name] or {}
@@ -77,6 +84,7 @@ local function collectConstants(constantsEnv, errors)
             end
         end
     end
+    finalDocs = docs
     return result
 end
 
@@ -85,4 +93,85 @@ end
 local errors = {}
 local Constants = collectConstants(collectConstants(placeholder, nil), errors)
 
-return Enum, Constants, errors
+-- Stubs ----------------------------------------------------------------------
+
+local structures = {}
+for _, doc in ipairs(finalDocs) do
+    for _, t in ipairs(doc.Tables or {}) do
+        if t.Type == "Structure" then structures[t.Name] = t end
+    end
+end
+
+local numberTypes = {
+    number = true, luaIndex = true, size = true, uiUnit = true, fileID = true,
+    time_t = true, BigUInteger = true, BigInteger = true, Seconds = true,
+    normalizedValue = true, SingleColorValue = true, FragmentID = true,
+    BagIndex = true, uiMapID = true, Milliseconds = true,
+    float = true, double = true, int = true,
+}
+local stringTypes = {
+    string = true, cstring = true, WOWGUID = true, textureAtlas = true,
+    textureKit = true, mouseButton = true, stringView = true, ClubId = true,
+    ClubStreamId = true, UnitToken = true, UnitTokenVariant = true,
+    FramePoint = true, FrameStrata = true, DrawLayer = true, kstringClubId = true,
+}
+
+local default
+local function structDefault(def, depth)
+    local t = {}
+    for _, field in ipairs(def.Fields or {}) do
+        t[field.Name] = default(field, depth + 1)
+    end
+    return t
+end
+
+function default(arg, depth)
+    if arg.Nilable then return nil end
+    if arg.Default ~= nil and type(arg.Default) ~= "table" then return arg.Default end
+    local ty = arg.Type
+    if ty == "table" then return {} end
+    if ty == "bool" then return false end
+    if numberTypes[ty] then return 0 end
+    if stringTypes[ty] then return "" end
+    local meta = Enum[ty .. "Meta"]
+    if Enum[ty] then return meta and meta.MinValue or 0 end
+    local s = structures[ty]
+    if s and depth < 4 then return structDefault(s, depth) end
+    return nil
+end
+
+local function makeStub(fullName, fn)
+    local returns = {}
+    for i, r in ipairs(fn.Returns or {}) do returns[i] = r end
+    local n = #returns
+    return function()
+        calledStubs[fullName] = (calledStubs[fullName] or 0) + 1
+        if n == 0 then return end
+        local out = {}
+        for i = 1, n do out[i] = default(returns[i], 0) end
+        return unpack(out, 1, n)
+    end
+end
+
+local functionStubs, widgetStubs = {}, {}
+for _, doc in ipairs(finalDocs) do
+    if doc.Type == "ScriptObject" then
+        local methods = widgetStubs[doc.Name] or {}
+        for _, fn in ipairs(doc.Functions or {}) do
+            methods[fn.Name] = makeStub(doc.Name .. ":" .. fn.Name, fn)
+        end
+        widgetStubs[doc.Name] = methods
+    elseif doc.Namespace then
+        local ns = functionStubs[doc.Namespace] or {}
+        for _, fn in ipairs(doc.Functions or {}) do
+            ns[fn.Name] = makeStub(doc.Namespace .. "." .. fn.Name, fn)
+        end
+        functionStubs[doc.Namespace] = ns
+    else
+        for _, fn in ipairs(doc.Functions or {}) do
+            functionStubs[fn.Name] = makeStub(fn.Name, fn)
+        end
+    end
+end
+
+return Enum, Constants, errors, functionStubs, widgetStubs

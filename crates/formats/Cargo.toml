@@ -1,0 +1,10 @@
+[package]
+name = "wowprogramming-formats"
+version = "0.1.0"
+edition.workspace = true
+repository.workspace = true
+
+[dependencies]
+
+[dev-dependencies]
+wowprogramming-casc = { path = "../casc" }

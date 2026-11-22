@@ -1,0 +1,8 @@
+[package]
+name = "wowprogramming-casc"
+version = "0.1.0"
+edition.workspace = true
+repository.workspace = true
+
+[dependencies]
+flate2 = "1"

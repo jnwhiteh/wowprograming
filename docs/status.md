@@ -10,59 +10,55 @@ Last updated: 2026-11-22.
 
 ## Current state
 
-- **Milestone:** M1 (headless addon runtime) is finished. M2 (XML and
-  layout) has not started.
-- **Branch:** M1 is on `m1-addon-runtime`, ahead of `main`. It
-  is **not merged** into `main` and **not pushed**. The user decides when to
-  merge and push.
-- **Tests:** 44 pass (`cargo test`). `cargo fmt --check` and
-  `cargo clippy --all-targets -- -D warnings` are clean.
-- **CI:** a GitHub Actions workflow (Linux, Windows, macOS) exists but has
-  never run, because nothing has been pushed.
+- **Goal in progress:** a native GUI app that loads Blizzard's spellbook
+  (Blizzard_PlayerSpells) for an Evoker and opens it with **P**. This pulls
+  in parts of M2 (XML, layout), M4 (game data) and M5 (API stubs).
+- **Branch:** `spellbook-gui`, from `main`. `main` now includes M1
+  (fast-forward merge). Nothing is pushed.
+- **Tests:** `cargo test`, `cargo fmt --check` and
+  `cargo clippy --all-targets -- -D warnings` pass.
 
 ## What works
 
-- Lua 5.1 (the real C implementation, through `mlua`) with the libraries
-  the game hides removed, and the native WoW additions (`strsplit`,
-  `bit`, `Mixin`, `debugstack`, ...).
-- A watchdog: any call into Lua that runs longer than 5 seconds fails
-  with `script ran too long`, even inside `pcall` or a coroutine. Lua
-  memory is capped at 1 GB.
-- Loading addons from `<Name>.toc`: dependencies first, load on demand,
-  `(addonName, namespace)` per file, `ADDON_LOADED`, login events.
-- Frames from `CreateFrame`: events, scripts, `HookScript`, `OnShow` and
-  `OnHide` through the hierarchy, stored size and anchors (no layout).
-- `GetTime`, `C_Timer` and `OnUpdate` on a deterministic engine clock.
-- SavedVariables, read on load and written on exit and `/reload`.
-- Error and print handlers that match the client, including Blizzard's own
-  error handler from `Blizzard_ScriptErrors`.
-- `Enum` and `Constants` built from the API documentation files.
-- Blizzard addons loaded from the UI source:
-  `Blizzard_SharedXMLBase` and `Blizzard_ScriptErrors` load without Lua
-  errors. Their XML files are skipped.
-- Command line: `wowprogramming run` (console or `--seconds N` headless)
-  and `wowprogramming lua <file>`. See the README.
+- Everything from M1 (Lua 5.1 runtime, watchdog, addon loading, frames,
+  timers, SavedVariables, console).
+- TOC: `<Name>_Mainline.toc`, `[Family]`/`[Game]` placeholders, Retail load
+  conditions, `[Bootstrap]` files.
+- XML loader (`xml.rs`): templates, `inherits`, intrinsics, mixins,
+  parent keys and arrays, key values, scripts (method, function, body,
+  prepend/append), layers, anchors (applied after the tree is built),
+  fonts and font families, button textures and text, animations.
+- Widgets (`widgets.rs`): frames, textures, font strings, fonts, buttons,
+  check buttons, edit boxes, sliders, status bars, scroll frames, animation
+  groups. Missing methods get generated stubs from the widget API docs.
+- Layout (`layout.rs`): rectangles from anchors, sizes and scales; text
+  measurement and wrapping with the game fonts (`text.rs`).
+- Game data (`crates/casc`, `crates/formats`, `gamedata.rs`): local CASC
+  reader, BLP decoding, DB2 (WDC5) reading. Atlases come from
+  UiTextureAtlas/UiTextureAtlasMember; global strings from GlobalStrings.db2.
+- Stubs for every documented `C_*` and global function; `/stubs` lists the
+  stubs that were called.
+- Scene (`scene.rs`), software renderer for headless screenshots
+  (`render.rs`, `run --screenshot out.png`), native window
+  (`crates/gui`, `wowprogramming gui`) with a console panel.
+- Key bindings from `Bindings_Standard.xml`; P runs `TOGGLESPELLBOOK`.
+- In-game capture scripts in `tools/capture/`.
+- The spellbook frame loads and renders its art; it has no spells yet.
 
 ## What does not work yet
 
-- XML files are skipped (M2). Frame templates passed to `CreateFrame` are
-  ignored with a warning.
-- No layout, textures, font strings or rendering (M2, M3).
-- No game data: CASC, BLP, DB2 (M4). `C_UIColor.GetColors()` returns an
-  empty list, so named colors such as `NORMAL_FONT_COLOR` are missing.
-- Most of the game API is missing (M5). Real addons stop at their first
-  unit or locale call: BugSack and !BugGrabber fail on
-  `UnitNameUnmodified` and `GetLocale`.
-- Taint and secret values are not emulated. `issecure()` returns true.
+- Scenario replay of captured API data (waiting for the captures).
+- Named colours, client-only enums and constants (second capture).
+- Masks, additive blending in the window, flipbook animations, tooltips.
+- Taint and secret values.
 
 ## Next steps
 
-1. The user decides whether to merge `m1-addon-runtime` into `main`.
-2. Start M2 on a new branch, `m2-xml-layout`: XML loading (templates,
-   `inherits`, `mixin`, `KeyValues`, `Scripts`, `Layers`, `Anchors`),
-   textures and font strings as regions, and anchor-based layout. The
-   first target is to load the three XML files in `Blizzard_SharedXMLBase`
-   and then `Blizzard_SharedXML`.
+1. Add a control bridge so an agent can drive a running sandbox with
+   short text commands (`wowprogramming ctl`).
+2. Write `scenarios/evoker/` from the captures and the replay helper.
+3. Iterate until P opens the spellbook with Evoker spells, icons and tabs;
+   compare frame rectangles with the capture.
 
 ## Decisions
 
@@ -112,6 +108,13 @@ Decisions already made with the user. Do not reopen them without a reason.
 ## Lessons learned
 
 Things that cost time once and should not cost it again.
+
+- mlua can hold only about 8000 Lua values from Rust at once. Widget
+  tables and script handlers live in Lua tables (`State::objects`,
+  `State::script_table`), not in Rust fields.
+- DB2 files have no path hashes in the root file; open them by FileDataID
+  (UiTextureAtlas 897470, UiTextureAtlasMember 897532, GlobalStrings 1394440).
+- Never open a GUI window on the user's desktop for testing.
 
 - Blizzard's error handler calls `addframetext` and `C_Log.LogErrorMessage`.
   If a native function that an error handler needs is missing, Lua drops

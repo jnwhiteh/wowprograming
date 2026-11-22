@@ -429,7 +429,7 @@ fn errors_from_native_functions_are_strings() {
     let engine = started(&[], wtf.path());
     let (ok, msg, kind): (bool, String, String) = engine
         .eval(
-            r#"local ok, msg = pcall(function() CreateFrame("Frame"):SetSize("x") end)
+            r#"local ok, msg = pcall(function() CreateFrame("Frame"):SetScale("x") end)
                return ok, msg, type(msg)"#,
         )
         .unwrap();

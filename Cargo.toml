@@ -9,3 +9,6 @@ repository = "https://github.com/jnwhiteh/wowprograming"
 [workspace.dependencies]
 wowprogramming-lua = { path = "crates/lua" }
 wowprogramming-engine = { path = "crates/engine" }
+wowprogramming-casc = { path = "crates/casc" }
+wowprogramming-formats = { path = "crates/formats" }
+wowprogramming-gui = { path = "crates/gui" }
