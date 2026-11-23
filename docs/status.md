@@ -179,40 +179,41 @@ Last updated: 2026-11-23.
 
 ## Next steps
 
-All of these use existing data. No new capture is needed.
+Goal: character select, then the world (branch `character-select`).
+The spellbook and HUD items from before are on hold; they are listed at
+the end.
 
-Close the spellbook milestone:
+1. **Glue mode.** Start in the glue environment: load the 66 Blizzard
+   addons whose TOC has `AllowLoad: Glue` or `Both` (GlueParent,
+   GlueXML, CharacterSelectNavBar, ...), not the game ones. Skip the
+   login and realm screens with the client functions they ask
+   (`C_Login.IsLauncherLogin`, `C_Login.GetState`,
+   `C_RealmList.GetRealmInfo`).
+2. **Character list.** `GetNumCharacters`, `GetCharacterInfoTable`,
+   `GetCharacterInfoByGUID`, `SelectCharacter`, from Syndicator's
+   SavedVariables (15 characters), the trace profiles (level, zone) and
+   `character-list-order.txt` (order, GUIDs). Read them at run time from
+   the WTF folder; do not copy personal data into the repo beyond what
+   the captures already hold.
+3. **Character select layout.** Compare with the screenshots
+   (2880x1440 area centred on 3440x1440).
+4. **Enter World.** `EnterWorld` shows the loading screen (art from the
+   LoadingScreens DB2 for the character's map), then switches to the game
+   environment and loads the full default UI with the scenario of that
+   character (Monk, Evoker, Paladin; others get described units). Send
+   the login events in the traced order (see "Real login order").
+5. **World view.** Draw a simple 3D scene behind the UI, on the
+   character select screen and in the world. The approach is not decided
+   yet (game models through DB2 FileDataIDs, or own artwork).
 
-1. Check the captured tooltips and spec sample abilities in the
-   spellbook.
-2. Give health a value consistent with the captured maximum (health was
-   secret during the capture, so no capture can provide it).
-3. Act on the user's report from the first window run.
+On hold (from the spellbook and HUD goals): check the captured tooltips
+and sample abilities; health consistent with the captured maximum; HUD
+problems (first action button key label, white chat background, stray
+"Issue Reporter" button, outlined text width); compare party frames with
+the capture; a raid scenario; capture addon support for raid units and
+trait data.
 
-HUD goal, with described units:
-
-4. Compare `scenarios/hud` with the captured `trees` for PlayerFrame and
-   the action bars (the parts the captures have).
-5. Fix the known HUD problems: no key label on the first action button,
-   white chat frame background, stray "Issue Reporter" button, the width
-   of outlined key labels.
-6. Compare the party frames in `scenarios/evoker` with the captured
-   `CompactPartyFrame` tree.
-7. Add a raid scenario with described units (IsInRaid, raid1..N) for
-   CompactRaidFrameContainer. Then cooldown swipes.
-8. Reduce the full-UI startup errors that repeat every tick
-   (PersonalResourceDisplay).
-
-Prepare the capture addon for the next round of captures:
-
-9. Record `raid1`..`raid40` units and raid group calls (the unit list in
-   `Capture.lua` stops at `party4`).
-10. Record trait data (`C_ClassTalents`, `C_Traits`) for the Talents tab.
-11. Update the "Wanted captures" table in [capture.md](capture.md).
-
-How to run: see [running-the-gui.md](running-the-gui.md). The spellbook
-and HUD scenarios take about 20 s to start; a helper that restarts a
-`--serve` sandbox and waits for the bridge saves time.
+How to run: see [running-the-gui.md](running-the-gui.md).
 
 ## Decisions
 
