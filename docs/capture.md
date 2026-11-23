@@ -21,6 +21,12 @@ The sandbox replays it in a scenario.
    clears the taint that the recording leaves behind (the recording
    replaces API functions for a moment; protected actions can fail until
    the reload).
+   Error popups (for example from BugGrabber) are expected between
+   `/wpcapture` and `/reload`. The addon calls Blizzard's event handlers
+   from addon code, so they run tainted. Tainted code gets health and power
+   as secret values, and Blizzard's comparisons of those fail ("attempt to
+   compare a secret number value"). These errors stop at the reload. Only
+   a missing "capture done" line means the capture failed.
 6. Repeat for other characters. Each character has its own entry in the
    file.
 

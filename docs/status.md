@@ -24,8 +24,10 @@ Last updated: 2026-11-23.
   needed) and the main action bar with spell icons and key labels.
 - **Data:** the user was asked to run the WowProgrammingCapture addon on
   the Monk and the Evoker (2026-11-23). If
-  `WTF/Account/TEHDROOD/SavedVariables/WowProgrammingCapture.lua` exists in
-  the game folder, import it first (see [capture.md](capture.md)).
+  `WTF/Account/TEHDROOD/SavedVariables/WowProgrammingCapture.lua` holds
+  more than an empty table, import it first (see [capture.md](capture.md)).
+  The first run saved nothing: a missing font file stopped the last step.
+  The addon is fixed; the user must copy it into the game again.
 - **Branch:** `spellbook-gui`, from `main`. Nothing is pushed. Commit
   each tested step on this branch without asking (the user's rule for
   this project); still ask before pushing or merging.

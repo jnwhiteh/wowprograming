@@ -233,13 +233,17 @@ local function eventCalls()
 end
 
 -- Call the OnEvent handler of every frame registered for each event.
+-- EventRegistry's frame is skipped: its callbacks include protected setup
+-- (the macro execution callback on PLAYER_ENTERING_WORLD) and systems that
+-- refuse tainted callers (the cooldown viewer).
 local function refreshFrames()
 	local list = eventCalls()
+	local skip = EventRegistry and EventRegistry.frameEventFrame
 	local frame = EnumerateFrames()
 	local handled = 0
 	while frame do
 		local okForbidden, forbidden = pcall(frame.IsForbidden, frame)
-		if okForbidden and not forbidden then
+		if okForbidden and not forbidden and frame ~= skip then
 			local okScript, onEvent = pcall(frame.GetScript, frame, "OnEvent")
 			if okScript and onEvent then
 				for _, call in ipairs(list) do
@@ -346,7 +350,6 @@ local FRAME_TREES = {
 
 local FONT_FILES = {
 	"Fonts\\FRIZQT__.TTF", "Fonts\\ARIALN.TTF", "Fonts\\MORPHEUS.TTF", "Fonts\\skurri.ttf",
-	"Fonts\\FRIENDS.TTF",
 }
 local FONT_SIZES = { 8, 9, 10, 11, 12, 13, 14, 15, 16, 18, 20, 22, 24, 28, 32 }
 local SAMPLES = { "Page 1/5", "Spellbook", "Blackout Kick", "Crackling Jade Lightning",
@@ -358,7 +361,8 @@ local function measureFonts()
 	fs:SetWordWrap(false)
 	for _, path in ipairs(FONT_FILES) do
 		for _, size in ipairs(FONT_SIZES) do
-			if fs:SetFont(path, size, "") then
+			local okFont, set = pcall(fs.SetFont, fs, path, size, "")
+			if okFont and set then
 				local entry = { advance = {}, repeated = {}, samples = {} }
 				fs:SetText("A")
 				entry.height = round(fs:GetStringHeight())
@@ -583,30 +587,38 @@ local function characterKey()
 	return (name or "?") .. "-" .. (realm or GetRealmName() or "?")
 end
 
-local function finish(started)
-	stopRecording()
+-- Runs one step of finish; a failing step is logged and the rest go on.
+local function step(name, fn, ...)
+	local r = pack(pcall(fn, ...))
+	if not r[1] then
+		table.insert(errors, name .. ": " .. tostring(r[2]))
+		return nil
+	end
+	return unpack(r, 2, r.n)
+end
 
+local function captureTrees()
 	local trees, atlases = {}, {}
 	for _, name in ipairs(FRAME_TREES) do
 		local f = _G[name]
 		if type(f) == "table" and f.GetObjectType then
 			local list = {}
-			recordObject(list, atlases, f, 0)
+			local ok, err = pcall(recordObject, list, atlases, f, 0)
+			if not ok then table.insert(errors, "tree " .. name .. ": " .. tostring(err)) end
 			if #list > 0 then trees[name] = list end
 		end
 	end
+	return trees, atlases
+end
 
-	local ok, err = pcall(explicitCalls)
-	if not ok then table.insert(errors, "explicit calls: " .. tostring(err)) end
-
-	local constants, enums = captureConstants()
-	local version, build, date, tocVersion = GetBuildInfo()
+local function captureMeta(started)
+	local version, build, _, tocVersion = GetBuildInfo()
 	local physicalWidth, physicalHeight = GetPhysicalScreenSize()
 	local classColors = {}
 	for class, c in pairs(RAID_CLASS_COLORS or {}) do
 		classColors[class] = { r = c.r, g = c.g, b = c.b, a = c.a or 1 }
 	end
-	data.meta = {
+	return {
 		captureVersion = VERSION,
 		version = version, build = build, tocVersion = tocVersion,
 		locale = GetLocale(),
@@ -624,21 +636,37 @@ local function finish(started)
 		groupSize = GetNumGroupMembers(),
 		seconds = debugprofilestop() - started,
 	}
+end
+
+local function finish(started)
+	stopRecording()
+
+	local trees, atlases = step("trees", captureTrees)
+	trees, atlases = trees or {}, atlases or {}
+	step("explicit calls", explicitCalls)
+	local constants, enums = step("constants", captureConstants)
+	data.meta = step("meta", captureMeta, started)
 	data.trees = trees
 	-- The spellbook tree under its old name, for tools/compare.
 	data.frames = trees.PlayerSpellsFrame
 	data.atlases = atlases
 	data.constants = constants
 	data.enums = enums
-	data.cvars = captureCVars()
-	data.fonts = measureFonts()
+	data.cvars = step("cvars", captureCVars)
+	data.fonts = step("fonts", measureFonts)
 
 	if PlayerSpellsFrame and PlayerSpellsFrame:IsShown() then
 		HideUIPanel(PlayerSpellsFrame)
 	end
 
-	local json = C_EncodingUtil.SerializeJSON(plain(data, {}))
-	local packed = C_EncodingUtil.EncodeBase64(C_EncodingUtil.CompressString(json))
+	local okPack, packed = pcall(function()
+		local json = C_EncodingUtil.SerializeJSON(plain(data, {}))
+		return C_EncodingUtil.EncodeBase64(C_EncodingUtil.CompressString(json))
+	end)
+	if not okPack then
+		print("|cff33ff99WowProgramming|r capture failed to encode the data: " .. tostring(packed))
+		return
+	end
 	WowProgrammingCaptureDB[characterKey()] = {
 		version = VERSION,
 		time = time(),
