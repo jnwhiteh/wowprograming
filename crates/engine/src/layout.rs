@@ -306,7 +306,13 @@ pub fn size(st: &mut State, id: FrameId) -> (f64, f64) {
     if !has_two_h && !has_two_v && !(is_text && (w <= 0.0 || h <= 0.0)) {
         return (w, h);
     }
-    match rect(st, id) {
+    // A hidden font string reports its text size, not the size its anchors
+    // would give. Inferred from one capture: the spellbook's assistant
+    // label is measured this way before the spellbook is shown, and its
+    // frame takes the text width. Hidden frames still use their anchors
+    // (UIParent is hidden while loading and must report the screen size).
+    let laid_out = !is_text || crate::frames::is_visible(&st.frames, id);
+    match laid_out.then(|| rect(st, id)).flatten() {
         Some(r) => {
             let es = effective_scale(st, id);
             (r.width / es, r.height / es)

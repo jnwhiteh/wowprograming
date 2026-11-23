@@ -233,10 +233,14 @@ fn draw_text(band: &mut Band, font: &FontArc, t: &TextItem) {
                     } else {
                         run.color.map(|r| r[3]).unwrap_or(1.0)
                     };
-                for ch in run.text.chars() {
+                for (i, ch) in run.text.chars().enumerate() {
                     let id = font.glyph_id(ch);
                     let glyph = id.with_scale_and_position(scale, point(x, baseline));
-                    x += scaled.h_advance(id);
+                    // Place glyphs where the engine measured them.
+                    x += match run.advances.get(i) {
+                        Some(a) => (a * band.scale) as f32,
+                        None => scaled.h_advance(id),
+                    };
                     let Some(outline) = font.outline_glyph(glyph) else {
                         continue;
                     };

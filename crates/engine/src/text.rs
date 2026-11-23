@@ -5,7 +5,7 @@
 
 use std::collections::HashMap;
 
-use ab_glyph::{Font, FontArc, PxScale, ScaleFont};
+use ab_glyph::{Font, FontArc, PxScale};
 
 use crate::gamedata::GameData;
 use crate::state::{FrameId, State};
@@ -142,6 +142,9 @@ pub fn resolve_font(st: &State, id: FrameId) -> ResolvedFont {
 pub struct Run {
     pub text: String,
     pub color: Option<[f32; 4]>,
+    /// How far the pen moves after each character (kerning included), in
+    /// the font string's units, or in screen units inside a scene.
+    pub advances: Vec<f64>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -261,12 +264,28 @@ fn parse_markup(text: &str) -> Vec<Glyph> {
     out
 }
 
-/// Measures glyph advances for one font and size.
+/// Measures text for one font and size, as the client does.
+///
+/// The client's rules, found by comparing captured string widths with the
+/// font files (see `docs/status.md`):
+///
+/// - Glyphs are drawn at the font height in whole physical pixels
+///   (rounded to the nearest pixel).
+/// - Each glyph advances by its font advance at that size, rounded up to a
+///   whole pixel.
+/// - Kerning pairs move the next glyph, truncated toward zero to whole
+///   pixels.
+/// - A string ends at the right edge of the last glyph's outline, rounded
+///   up, plus one pixel. A glyph without an outline (a space) ends at its
+///   advance.
+/// - A shadow to the right widens the string by its offset in whole
+///   pixels (1 unit at 1.2 pixels per unit adds 1 pixel).
 pub struct Measurer {
     font: Option<FontArc>,
     height: f64,
-    /// Physical pixels per unit: advances are rounded to whole pixels, as
-    /// hinted glyphs are in the client. Zero leaves them unrounded.
+    /// Extra width from the shadow, in string units.
+    shadow: f64,
+    /// Physical pixels per unit. Zero measures in units, unrounded.
     pixels_per_unit: f64,
 }
 
@@ -279,37 +298,64 @@ pub fn em_scale(font: &FontArc, em: f32) -> PxScale {
     }
 }
 
-/// A font height rounded down to whole physical pixels, given the
-/// physical pixels per unit.
+/// A font height rounded to whole physical pixels, given the physical
+/// pixels per unit. The client rounds to the nearest pixel (size 13 at 1.2
+/// pixels per unit is drawn at 16 pixels).
 pub fn snap_height(height: f64, pixels_per_unit: f64) -> f64 {
     if pixels_per_unit <= 0.0 || height * pixels_per_unit < 1.0 {
         return height;
     }
-    (height * pixels_per_unit + 1e-6).floor() / pixels_per_unit
+    (height * pixels_per_unit + 0.5).floor() / pixels_per_unit
 }
 
 impl Measurer {
     pub fn new(st: &mut State, font: &ResolvedFont) -> Measurer {
         let gd = st.gamedata.clone();
         let f = st.fonts.get(&font.path, gd.as_deref());
+        let ppu = font.pixels_per_unit;
+        let dx = font.shadow_offset.0.max(0.0);
+        let shadow = if ppu > 0.0 {
+            (dx * ppu + 0.5).floor() / ppu
+        } else {
+            dx
+        };
         Measurer {
             font: f,
             height: font.line_height,
-            pixels_per_unit: font.pixels_per_unit,
+            shadow,
+            pixels_per_unit: ppu,
         }
     }
 
-    pub fn char_width(&self, c: char) -> f64 {
+    /// Font units to physical pixels (or to string units, unrounded,
+    /// without a pixel scale).
+    fn px_per_font_unit(&self, font: &FontArc) -> f64 {
+        let upem = font.units_per_em().unwrap_or(1000.0).max(1.0) as f64;
+        let ppem = if self.pixels_per_unit > 0.0 {
+            (self.height * self.pixels_per_unit).round()
+        } else {
+            self.height
+        };
+        ppem / upem
+    }
+
+    /// Pixels to string units, rounded with `round` first when there is a
+    /// pixel scale.
+    fn units(&self, px: f64, round: fn(f64) -> f64) -> f64 {
+        if self.pixels_per_unit > 0.0 {
+            round(px - 1e-6) / self.pixels_per_unit
+        } else {
+            px
+        }
+    }
+
+    /// How far the pen moves after `c`.
+    pub fn advance(&self, c: char) -> f64 {
         match &self.font {
             Some(font) => {
-                let scaled = font.as_scaled(em_scale(font, self.height as f32));
-                let advance = scaled.h_advance(font.glyph_id(c)) as f64;
-                let ppu = self.pixels_per_unit;
-                if ppu > 0.0 {
-                    (advance * ppu).round() / ppu
-                } else {
-                    advance
-                }
+                let px =
+                    font.h_advance_unscaled(font.glyph_id(c)) as f64 * self.px_per_font_unit(font);
+                self.units(px, f64::ceil)
             }
             None => {
                 if c == ' ' {
@@ -321,9 +367,69 @@ impl Measurer {
         }
     }
 
-    pub fn width(&self, s: &str) -> f64 {
-        s.chars().map(|c| self.char_width(c)).sum()
+    /// Kerning between `a` and the following `b`.
+    pub fn kern(&self, a: char, b: char) -> f64 {
+        let Some(font) = &self.font else { return 0.0 };
+        let k = font.kern_unscaled(font.glyph_id(a), font.glyph_id(b)) as f64;
+        if k == 0.0 {
+            return 0.0;
+        }
+        let px = k * self.px_per_font_unit(font);
+        if self.pixels_per_unit > 0.0 {
+            px.trunc() / self.pixels_per_unit
+        } else {
+            px
+        }
     }
+
+    /// Where a string ends after its last glyph `c`, from the pen position.
+    pub fn ink_end(&self, c: char) -> f64 {
+        let Some(font) = &self.font else {
+            return self.advance(c);
+        };
+        match font.outline(font.glyph_id(c)) {
+            Some(o) => {
+                let px = o.bounds.max.x as f64 * self.px_per_font_unit(font);
+                if self.pixels_per_unit > 0.0 {
+                    // A small tolerance: outlines that end on a pixel edge
+                    // do not take another pixel.
+                    ((px - 0.02).ceil() + 1.0) / self.pixels_per_unit
+                } else {
+                    px
+                }
+            }
+            None => self.advance(c),
+        }
+    }
+
+    pub fn width(&self, s: &str) -> f64 {
+        let chars: Vec<char> = s.chars().collect();
+        chars_width(self, &chars)
+    }
+}
+
+/// Pen advance after each character, including kerning with the next one.
+fn pen_advances(m: &Measurer, chars: &[char]) -> Vec<f64> {
+    (0..chars.len())
+        .map(|i| {
+            let k = chars.get(i + 1).map_or(0.0, |&n| m.kern(chars[i], n));
+            m.advance(chars[i]) + k
+        })
+        .collect()
+}
+
+/// Width of a sequence of characters, as the client measures a string.
+fn chars_width(m: &Measurer, chars: &[char]) -> f64 {
+    let Some((&last, rest)) = chars.split_last() else {
+        return 0.0;
+    };
+    let pen: f64 = pen_advances(m, chars)[..rest.len()].iter().sum();
+    pen + m.ink_end(last) + m.shadow
+}
+
+fn glyphs_width(m: &Measurer, glyphs: &[Glyph]) -> f64 {
+    let chars: Vec<char> = glyphs.iter().map(|g| g.c).collect();
+    chars_width(m, &chars)
 }
 
 /// Break text into lines. `max_width` of `None` means no wrapping.
@@ -339,20 +445,25 @@ pub fn layout_lines(
     let glyphs = parse_markup(text);
     let mut lines: Vec<Vec<Glyph>> = Vec::new();
     let mut current: Vec<Glyph> = Vec::new();
-    let mut width = 0.0;
+    // Pen position after the last glyph of `current`.
+    let mut pen = 0.0;
     let mut last_space: Option<usize> = None;
     let wrap = max_width.filter(|w| *w > 0.0 && word_wrap);
+    let pen_of = |glyphs: &[Glyph]| -> f64 {
+        let chars: Vec<char> = glyphs.iter().map(|g| g.c).collect();
+        pen_advances(m, &chars).iter().sum()
+    };
 
     for g in glyphs {
         if g.c == '\n' {
             lines.push(std::mem::take(&mut current));
-            width = 0.0;
+            pen = 0.0;
             last_space = None;
             continue;
         }
-        let w = m.char_width(g.c);
+        let kern = current.last().map_or(0.0, |p| m.kern(p.c, g.c));
         if let Some(maxw) = wrap
-            && width + w > maxw + 0.01
+            && pen + kern + m.ink_end(g.c) + m.shadow > maxw + 0.01
             && !current.is_empty()
             && g.c != ' '
         {
@@ -363,6 +474,9 @@ pub fn layout_lines(
                 Some(sp) => {
                     let rest = current.split_off(sp + 1);
                     current.pop();
+                    while current.last().is_some_and(|g| g.c == ' ') {
+                        current.pop();
+                    }
                     lines.push(std::mem::take(&mut current));
                     current = rest;
                     true
@@ -374,15 +488,15 @@ pub fn layout_lines(
                 None => false,
             };
             if broke {
-                width = current.iter().map(|g| m.char_width(g.c)).sum();
+                pen = pen_of(&current);
                 last_space = None;
             }
         }
         if g.c == ' ' {
             last_space = Some(current.len());
         }
+        pen += current.last().map_or(0.0, |p| m.kern(p.c, g.c)) + m.advance(g.c);
         current.push(g);
-        width += w;
     }
     lines.push(current);
 
@@ -391,34 +505,27 @@ pub fn layout_lines(
         lines.truncate(max_lines);
         truncated = true;
     }
-    let mut out: Vec<Line> = lines
-        .into_iter()
-        .map(|mut l| {
-            while l.last().is_some_and(|g| g.c == ' ') {
-                l.pop();
-            }
-            to_line(m, &l)
-        })
-        .collect();
+    let mut out: Vec<Line> = lines.iter().map(|l| to_line(m, l)).collect();
     // Without wrapping, a line wider than the box ends in an ellipsis.
     let limit = max_width.filter(|w| *w > 0.0);
     if let Some(maxw) = limit {
-        for line in out.iter_mut() {
+        for (line, glyphs) in out.iter_mut().zip(&lines) {
             if line.width > maxw + 0.5 {
-                *line = ellipsize(m, line, maxw);
+                *line = ellipsize(m, glyphs, maxw);
             }
         }
     }
-    if truncated && let Some(last) = out.last_mut() {
+    if truncated && let Some(last) = lines.last() {
         let maxw = limit.unwrap_or(f64::MAX);
-        let mut l = last.clone();
-        l.runs.push(Run {
-            text: "...".into(),
-            color: None,
-        });
-        l.width += m.width("...");
-        *last = if l.width > maxw {
-            ellipsize(m, &l, maxw)
+        let mut glyphs = last.clone();
+        while glyphs.last().is_some_and(|g| g.c == ' ') {
+            glyphs.pop();
+        }
+        glyphs.extend(dots());
+        let l = to_line(m, &glyphs);
+        let n = out.len();
+        out[n - 1] = if l.width > maxw {
+            ellipsize(m, last, maxw)
         } else {
             l
         };
@@ -426,57 +533,64 @@ pub fn layout_lines(
     out
 }
 
+/// The ellipsis that ends cut text, in the font's colour.
+fn dots() -> [Glyph; 3] {
+    [Glyph {
+        c: '.',
+        color: None,
+    }; 3]
+}
+
 fn to_line(m: &Measurer, glyphs: &[Glyph]) -> Line {
+    let chars: Vec<char> = glyphs.iter().map(|g| g.c).collect();
+    let advances = pen_advances(m, &chars);
     let mut runs: Vec<Run> = Vec::new();
-    let mut width = 0.0;
-    for g in glyphs {
-        width += m.char_width(g.c);
+    for (g, adv) in glyphs.iter().zip(advances) {
         match runs.last_mut() {
-            Some(r) if r.color == g.color => r.text.push(g.c),
+            Some(r) if r.color == g.color => {
+                r.text.push(g.c);
+                r.advances.push(adv);
+            }
             _ => runs.push(Run {
                 text: g.c.to_string(),
                 color: g.color,
+                advances: vec![adv],
             }),
         }
     }
-    Line { runs, width }
+    Line {
+        runs,
+        width: chars_width(m, &chars),
+    }
 }
 
-fn ellipsize(m: &Measurer, line: &Line, max_width: f64) -> Line {
-    let budget = max_width - m.width("...");
-    let mut out = Line {
-        runs: Vec::new(),
-        width: 0.0,
-    };
-    'outer: for run in &line.runs {
-        let mut text = String::new();
-        for c in run.text.chars() {
-            let w = m.char_width(c);
-            if out.width + w > budget {
-                if !text.is_empty() {
-                    out.runs.push(Run {
-                        text,
-                        color: run.color,
-                    });
-                }
-                break 'outer;
+/// The longest start of `glyphs` that fits in `max_width` with an ellipsis
+/// after it.
+fn ellipsize(m: &Measurer, glyphs: &[Glyph], max_width: f64) -> Line {
+    let mut keep = glyphs.len();
+    loop {
+        let mut g: Vec<Glyph> = glyphs[..keep].to_vec();
+        g.extend(dots());
+        if keep == 0 || glyphs_width(m, &g) <= max_width + 0.01 {
+            let mut line = to_line(m, &g);
+            // The ellipsis is its own run, so callers can find it.
+            if let Some(last) = line.runs.last_mut()
+                && last.text.len() > 3
+                && last.text.ends_with("...")
+            {
+                let n = last.text.len() - 3;
+                let text = last.text.split_off(n);
+                let advances = last.advances.split_off(last.advances.len() - 3);
+                line.runs.push(Run {
+                    text,
+                    color: None,
+                    advances,
+                });
             }
-            out.width += w;
-            text.push(c);
+            return line;
         }
-        if !text.is_empty() {
-            out.runs.push(Run {
-                text,
-                color: run.color,
-            });
-        }
+        keep -= 1;
     }
-    out.runs.push(Run {
-        text: "...".into(),
-        color: None,
-    });
-    out.width += m.width("...");
-    out
 }
 
 /// Lines of a font string, wrapped at `wrap_width` (own units) if given.
@@ -558,6 +672,7 @@ mod tests {
         Measurer {
             font: None,
             height: 10.0,
+            shadow: 0.0,
             pixels_per_unit: 0.0,
         }
     }
@@ -578,6 +693,23 @@ mod tests {
         assert_eq!(plain(&lines), vec!["aaa bbb", "ccc"]);
         let lines = layout_lines(&m, "aaa bbb ccc", None, true, false, 0);
         assert_eq!(plain(&lines), vec!["aaa bbb ccc"]);
+    }
+
+    #[test]
+    fn snaps_height_to_nearest_pixel() {
+        // At 1.2 pixels per unit: 12 -> 14 px, 13 -> 16 px, 8 -> 10 px.
+        assert!((snap_height(12.0, 1.2) - 14.0 / 1.2).abs() < 1e-9);
+        assert!((snap_height(13.0, 1.2) - 16.0 / 1.2).abs() < 1e-9);
+        assert!((snap_height(8.0, 1.2) - 10.0 / 1.2).abs() < 1e-9);
+    }
+
+    #[test]
+    fn shadow_widens_strings() {
+        let mut m = measurer();
+        let plain = m.width("ab");
+        m.shadow = 1.0;
+        assert_eq!(m.width("ab"), plain + 1.0);
+        assert_eq!(m.width(""), 0.0);
     }
 
     #[test]

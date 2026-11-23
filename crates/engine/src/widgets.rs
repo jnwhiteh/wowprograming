@@ -1516,7 +1516,11 @@ fn font_string_methods(lua: &Lua) -> Result<Table> {
     });
     method!(lua, m, "GetLineHeight", |lua, this_: Value| {
         let id = this(&this_)?;
-        Ok(text::resolve_font(&state(lua), id).height)
+        // The client reports the height in whole pixels (12 at 1.2 pixels
+        // per unit gives 11.67).
+        let st = state(lua);
+        let ppu = layout::effective_scale(&st, id) * st.pixel_scale;
+        Ok(text::snap_height(text::resolve_font(&st, id).height, ppu))
     });
     method!(lua, m, "SetMaxLines", |lua, (this_, n): (Value, i64)| {
         let id = this(&this_)?;

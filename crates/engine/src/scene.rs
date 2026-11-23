@@ -414,7 +414,14 @@ fn push_text(
         out.push(TextLine {
             x,
             y_top: top - n as f64 * (size + spacing),
-            runs: line.runs.clone(),
+            runs: line
+                .runs
+                .iter()
+                .map(|r| Run {
+                    advances: r.advances.iter().map(|a| a * es).collect(),
+                    ..r.clone()
+                })
+                .collect(),
         });
         widths.push(w);
     }

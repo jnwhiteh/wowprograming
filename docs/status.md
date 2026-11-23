@@ -11,9 +11,10 @@ Last updated: 2026-11-23.
 ## Current state
 
 - **Milestone:** the spellbook GUI goal is functionally complete but not
-  closed. To close it: text width from the captured font data, a check of
-  the captured tooltips and sample abilities, and a first run of the
-  window on the user's machine (the user will test it; see
+  closed. Text width is fixed: all 48 captured spellbook rectangles match
+  the game within 0.5 units for the Monk, Evoker and Paladin. To close it: a
+  check of the captured tooltips and sample abilities, and a first run of
+  the window on the user's machine (the user will test it; see
   [running-the-gui.md](running-the-gui.md)). Then merge `spellbook-gui`
   into `main` (ask first).
 - **Goal in progress:** the spellbook as a native GUI app (P opens it).
@@ -32,14 +33,12 @@ Last updated: 2026-11-23.
   for the Monk (Ohnoregard-Draenor), the Evoker (Ohnodwagon-Draenor) and
   the Paladin (Ohnohealme-Draenor, new `scenarios/paladin`). None had a
   target or a group, so the target, party and raid frames are not in them.
-  The spellbook matches the game except for text width: the assistant
-  label (68 vs 80.8) moves the search box 12.8 units, and the page text
-  is 6.7 narrower.
+  The spellbook layout matches the game.
 - **Data collection is deferred.** The user will make new captures later
   (with a target, in a party, later in a raid). Until then, develop with
   the existing captures and described units. Prepare the capture addon
   first (see "Next steps"), so one round of captures covers everything.
-- **Branch:** `spellbook-gui`, from `main`, 13 commits ahead of it.
+- **Branch:** `spellbook-gui`, from `main`, 14 commits ahead of it.
   `origin/spellbook-gui` is 8 commits behind the local branch. Commit
   each tested step on this branch without asking (the user's rule for
   this project); still ask before pushing or merging.
@@ -83,6 +82,15 @@ Last updated: 2026-11-23.
   fire only on change. Text: whole-pixel font sizes, em-based glyphs,
   words never break without non-space wrap, fixed-height text is cut with
   an ellipsis.
+- Text width follows the client's rules, found from the captured font
+  measurements (`text.rs`, `Measurer`): glyphs are drawn at the font
+  height rounded to the *nearest* whole pixel; each advance is rounded up
+  to a whole pixel; kerning is truncated toward zero; a string ends at
+  the last glyph's outline edge (rounded up) plus one pixel; a shadow to
+  the right adds its offset in whole pixels. About 95% of single
+  characters and most captured strings match exactly; the rest are
+  within 1 to 2 pixels. The renderer places glyphs at the measured
+  advances. A hidden font string reports its text size from `GetWidth`.
 - Drawing: regions sort by strata, frame level, layer, sublevel across
   frames (so useParentLevel borders stay behind text), then reverse
   creation order within a frame. Masks, rotation, flipbooks, animations,
@@ -111,7 +119,11 @@ Last updated: 2026-11-23.
 
 ## What does not work yet
 
-- Text is about 10% narrower than in game (needs `capture.fonts`).
+- Outlined text (`OUTLINE`, action button key labels) is 5 to 7 pixels
+  narrower than in game; the outline's extra width is not modelled.
+- After `Font:SetFontObject`, the sandbox drops the font object's own
+  shadow; the game seems to keep it (ObjectiveTrackerHeaderFont strings
+  are one pixel wider in the captures).
 - Cooldown swipes, portraits (a placeholder portrait is shown), minimap,
   3D models.
 - The Talents tab (needs trait data); spec sample abilities are captured
@@ -134,33 +146,30 @@ All of these use existing data. No new capture is needed.
 
 Close the spellbook milestone:
 
-1. Text width: first confirm that the version 2 captures hold `fonts`
-   (unpack one capture; this was not checked). Then measure text with
-   the captured widths and run `tools/compare/compare_frames.lua` again.
-   The remaining spellbook differences are all text width.
-2. Check the captured tooltips and spec sample abilities in the
+1. Check the captured tooltips and spec sample abilities in the
    spellbook.
-3. Give health a value consistent with the captured maximum (health was
+2. Give health a value consistent with the captured maximum (health was
    secret during the capture, so no capture can provide it).
-4. Act on the user's report from the first window run.
+3. Act on the user's report from the first window run.
 
 HUD goal, with described units:
 
-5. Compare `scenarios/hud` with the captured `trees` for PlayerFrame and
+4. Compare `scenarios/hud` with the captured `trees` for PlayerFrame and
    the action bars (the parts the captures have).
-6. Fix the known HUD problems: no key label on the first action button,
-   white chat frame background, stray "Issue Reporter" button.
-7. Add a raid scenario with described units (IsInRaid, raid1..N) for
+5. Fix the known HUD problems: no key label on the first action button,
+   white chat frame background, stray "Issue Reporter" button, the width
+   of outlined key labels.
+6. Add a raid scenario with described units (IsInRaid, raid1..N) for
    CompactRaidFrameContainer. Then cooldown swipes.
-8. Reduce the full-UI startup errors that repeat every tick
+7. Reduce the full-UI startup errors that repeat every tick
    (PersonalResourceDisplay).
 
 Prepare the capture addon for the next round of captures:
 
-9. Record `raid1`..`raid40` units and raid group calls (the unit list in
+8. Record `raid1`..`raid40` units and raid group calls (the unit list in
    `Capture.lua` stops at `party4`).
-10. Record trait data (`C_ClassTalents`, `C_Traits`) for the Talents tab.
-11. Update the "Wanted captures" table in [capture.md](capture.md).
+9. Record trait data (`C_ClassTalents`, `C_Traits`) for the Talents tab.
+10. Update the "Wanted captures" table in [capture.md](capture.md).
 
 How to run: see [running-the-gui.md](running-the-gui.md). The spellbook
 and HUD scenarios take about 20 s to start; a helper that restarts a
@@ -192,12 +201,10 @@ Decisions already made with the user. Do not reopen them without a reason.
   same build). `../wow-ui-source` has the other flavors on other branches.
 - Pushing from WSL does not work: the SSH key needs a passphrase and `gh`
   is not logged in. The user pushes.
-- The capture addon is meant to reach the game through a junction from
+- The capture addon reaches the game through a junction from
   `_retail_/Interface/AddOns/WowProgrammingCapture` to
-  `tools/capture/WowProgrammingCapture`. On 2026-11-23 the junction was
-  still named `WowProgrammingCapture - Junction` next to an old copied
-  folder, so the game loaded the old copy. Check the name before the next
-  capture.
+  `tools/capture/WowProgrammingCapture` (fixed by the user on
+  2026-11-23).
 
 ## Code map
 
@@ -270,9 +277,16 @@ Things that cost time once and should not cost it again.
 - ab_glyph's `PxScale` is the ascent-to-descent height, and
   `pt_to_px_scale` assumes 96 DPI. FreeType (the client) sizes fonts by
   the em square: use `text::em_scale`.
-- The client draws text at `floor(size * pixels per unit)` pixels; line
-  heights in captures are that pixel size converted back (12 at 1.2 px per
-  unit gives 11.67).
+- The client draws text at `size * pixels per unit` rounded to the
+  nearest pixel (not rounded down: 13 at 1.2 gives 16 px); line heights in
+  captures are that pixel size converted back (12 at 1.2 gives 11.67).
+- To find client text rules, compare the capture's `fonts` table with the
+  font files: one character alone versus ten in a row separates the
+  advance from the end-of-string extra. The capture's test string had no
+  shadow; Blizzard's font objects do, which adds a pixel.
+- Do not make hidden frames report their own size instead of their
+  anchored size: UIParent is hidden while loading, and Blizzard code
+  divides by `UIParent:GetWidth()` (the action bar scale became 0).
 - Blizzard_PrintHandler replaces `print`; without a chat frame its output
   is lost unless the console hooks it.
 - Many old API functions moved into namespaces (`HasAction` is now
