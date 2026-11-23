@@ -10,6 +10,12 @@ Last updated: 2026-11-23.
 
 ## Current state
 
+- **Milestone:** the spellbook GUI goal is functionally complete but not
+  closed. To close it: text width from the captured font data, a check of
+  the captured tooltips and sample abilities, and a first run of the
+  window on the user's machine (the user will test it; see
+  [running-the-gui.md](running-the-gui.md)). Then merge `spellbook-gui`
+  into `main` (ask first).
 - **Goal in progress:** the spellbook as a native GUI app (P opens it).
   It works for the Monk, Evoker and Paladin scenarios: tabs, paging, maximize and
   minimize, close and Escape, spell tooltips, search (typing, preview,
@@ -29,7 +35,12 @@ Last updated: 2026-11-23.
   The spellbook matches the game except for text width: the assistant
   label (68 vs 80.8) moves the search box 12.8 units, and the page text
   is 6.7 narrower.
-- **Branch:** `spellbook-gui`, from `main`. Nothing is pushed. Commit
+- **Data collection is deferred.** The user will make new captures later
+  (with a target, in a party, later in a raid). Until then, develop with
+  the existing captures and described units. Prepare the capture addon
+  first (see "Next steps"), so one round of captures covers everything.
+- **Branch:** `spellbook-gui`, from `main`, 13 commits ahead of it.
+  `origin/spellbook-gui` is 8 commits behind the local branch. Commit
   each tested step on this branch without asking (the user's rule for
   this project); still ask before pushing or merging.
 - **Tests:** `cargo test`, `cargo fmt --check` and
@@ -119,14 +130,37 @@ Last updated: 2026-11-23.
 
 ## Next steps
 
-1. Use `capture.fonts` to measure text; compare again (the remaining
-   spellbook differences are all text width).
+All of these use existing data. No new capture is needed.
+
+Close the spellbook milestone:
+
+1. Text width: first confirm that the version 2 captures hold `fonts`
+   (unpack one capture; this was not checked). Then measure text with
+   the captured widths and run `tools/compare/compare_frames.lua` again.
+   The remaining spellbook differences are all text width.
 2. Check the captured tooltips and spec sample abilities in the
-   spellbook. Give health a value consistent with the captured maximum.
-3. HUD: compare `scenarios/hud` and the captured `trees` (PlayerFrame,
-   TargetFrame, party, action bars); add a raid scenario (IsInRaid,
-   raid1..N units) for CompactRaidFrameContainer; cooldown swipes.
-4. Try the window on the user's machine.
+   spellbook.
+3. Give health a value consistent with the captured maximum (health was
+   secret during the capture, so no capture can provide it).
+4. Act on the user's report from the first window run.
+
+HUD goal, with described units:
+
+5. Compare `scenarios/hud` with the captured `trees` for PlayerFrame and
+   the action bars (the parts the captures have).
+6. Fix the known HUD problems: no key label on the first action button,
+   white chat frame background, stray "Issue Reporter" button.
+7. Add a raid scenario with described units (IsInRaid, raid1..N) for
+   CompactRaidFrameContainer. Then cooldown swipes.
+8. Reduce the full-UI startup errors that repeat every tick
+   (PersonalResourceDisplay).
+
+Prepare the capture addon for the next round of captures:
+
+9. Record `raid1`..`raid40` units and raid group calls (the unit list in
+   `Capture.lua` stops at `party4`).
+10. Record trait data (`C_ClassTalents`, `C_Traits`) for the Talents tab.
+11. Update the "Wanted captures" table in [capture.md](capture.md).
 
 How to run: see [running-the-gui.md](running-the-gui.md). The spellbook
 and HUD scenarios take about 20 s to start; a helper that restarts a
@@ -158,6 +192,12 @@ Decisions already made with the user. Do not reopen them without a reason.
   same build). `../wow-ui-source` has the other flavors on other branches.
 - Pushing from WSL does not work: the SSH key needs a passphrase and `gh`
   is not logged in. The user pushes.
+- The capture addon is meant to reach the game through a junction from
+  `_retail_/Interface/AddOns/WowProgrammingCapture` to
+  `tools/capture/WowProgrammingCapture`. On 2026-11-23 the junction was
+  still named `WowProgrammingCapture - Junction` next to an old copied
+  folder, so the game loaded the old copy. Check the name before the next
+  capture.
 
 ## Code map
 

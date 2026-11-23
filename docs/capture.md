@@ -7,9 +7,21 @@ The sandbox replays it in a scenario.
 
 ## How to capture
 
-1. Copy the folder `tools/capture/WowProgrammingCapture` into
-   `World of Warcraft/_retail_/Interface/AddOns/`. (The sandbox never writes
-   into the game folder, so this step is manual.)
+1. Make the addon available to the game. The sandbox never writes into the
+   game folder, so this step is manual. Either copy the folder
+   `tools/capture/WowProgrammingCapture` into
+   `World of Warcraft/_retail_/Interface/AddOns/`, or (better) create a
+   junction so that the game always sees the repo version. In a Windows
+   `cmd` prompt:
+
+   ```bat
+   mklink /J "D:\World of Warcraft\_retail_\Interface\AddOns\WowProgrammingCapture" "D:\src\WowProgramming\tools\capture\WowProgrammingCapture"
+   ```
+
+   The folder or junction must be named exactly `WowProgrammingCapture`,
+   like the `.toc` file. The game ignores a folder with any other name
+   (such as `WowProgrammingCapture - Junction`), and a leftover copy with
+   the right name would load instead.
 2. Log in on the character. Make sure the addon is enabled on the character
    select screen.
 3. For unit frames: target something, ideally a training dummy or an NPC
@@ -47,7 +59,12 @@ Without `--character`, the newest capture is used. The command writes
 |---|---|---|
 | `scenarios/monk` | the Monk | target a training dummy; spellbook minimized as before |
 | `scenarios/evoker` | the Evoker | same |
-| unit and raid frames | any character | in a party of 2 to 5, with a target |
+| `scenarios/paladin` | the Paladin | same |
+| party frames | any character | in a party of 2 to 5, with a target |
+| raid frames | any character | in a raid; wait until the addon records raid units |
+
+Collection is deferred until the addon also records raid units and trait
+data (see "Next steps" in [status.md](status.md)).
 
 ## What the addon records
 
