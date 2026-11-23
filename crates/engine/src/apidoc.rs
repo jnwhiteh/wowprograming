@@ -45,6 +45,8 @@ const WIDGET_DOCS: &[(&str, &str)] = &[
     ("FrameAPICooldown", "Cooldown"),
     ("FrameAPITooltip", "GameTooltip"),
     ("SimpleModelAPI", "Model"),
+    ("SimpleModelFFXAPI", "ModelFFX"),
+    ("SimpleMapSceneAPI", "MapScene"),
     ("FrameAPICharacterModelBase", "PlayerModel"),
     ("FrameAPIDressUpModel", "PlayerModel"),
     ("FrameAPICinematicModel", "PlayerModel"),

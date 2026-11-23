@@ -1,7 +1,7 @@
 -- Helpers for scenario files. Called with the scenario folder reader and
 -- the decoders; returns the table that scenario.lua receives as its second
 -- argument.
-local readFile, decodeBase64, decompress, decodeJSON, addAtlas, returnMixins, fireEvent = ...
+local readFile, decodeBase64, decompress, decodeJSON, addAtlas, returnMixins, fireEvent, readGameFile = ...
 local type, pairs, ipairs, select, tostring, tonumber, unpack, rawget, _G =
       type, pairs, ipairs, select, tostring, tonumber, unpack, rawget, _G
 
@@ -19,6 +19,28 @@ function S.LoadCapture(name)
         if not text then error("cannot decode capture " .. name) end
     end
     return decodeJSON(text)
+end
+
+-- Read a SavedVariables file of the real game account (read only), such
+-- as "Syndicator.lua". Returns a table of the globals it defines, or nil.
+function S.ReadGameSavedVariables(file)
+    local code = readGameFile and readGameFile("SavedVariables/" .. file)
+    if not code then return nil end
+    local chunk, err = loadstring(code, "@" .. file)
+    if not chunk then
+        print("cannot read " .. file .. ": " .. tostring(err))
+        return nil
+    end
+    local env = {}
+    setfenv(chunk, env)
+    local ok, runErr = pcall(chunk)
+    if not ok then print("cannot read " .. file .. ": " .. tostring(runErr)) end
+    return env
+end
+
+-- Read a text file of the real game account (read only).
+function S.ReadGameFile(name)
+    return readGameFile and readGameFile(name)
 end
 
 local function argKey(...)

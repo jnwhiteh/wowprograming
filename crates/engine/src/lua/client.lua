@@ -271,3 +271,29 @@ end
 
 -- No mirror timers (breath, fatigue) run in the sandbox.
 function GetMirrorTimerProgress() return 0 end
+
+-- SimpleHTML font methods take an optional element first ("P", "H1",
+-- "H2", "H3"). The sandbox has one font per widget: apply them to it.
+do
+    local mt = GetSimpleHTMLMetatable and GetSimpleHTMLMetatable()
+    local methods = mt and type(mt.__index) == "table" and mt.__index
+    local elements = { P = true, H1 = true, H2 = true, H3 = true }
+    if methods then
+        for _, name in ipairs({
+            "SetTextColor", "SetSpacing", "SetFont", "SetFontObject", "SetShadowColor",
+            "SetShadowOffset", "SetJustifyH", "SetJustifyV", "SetIndentedWordWrap",
+            "GetTextColor", "GetSpacing", "GetFont", "GetFontObject", "GetShadowColor",
+            "GetShadowOffset", "GetJustifyH", "GetJustifyV", "GetIndentedWordWrap",
+        }) do
+            local f = methods[name]
+            if f then
+                methods[name] = function(self, first, ...)
+                    if type(first) == "string" and elements[first] then
+                        return f(self, ...)
+                    end
+                    return f(self, first, ...)
+                end
+            end
+        end
+    end
+end

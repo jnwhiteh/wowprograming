@@ -100,6 +100,9 @@ struct RunArgs {
     /// startup) instead of the scenario's list.
     #[arg(long)]
     full_ui: bool,
+    /// Start at character select (the glue screens) instead of in the world.
+    #[arg(long)]
+    glue: bool,
     /// Port for the control bridge (`wowprogramming ctl`). 0 turns it off.
     #[arg(long, default_value_t = wowprogramming_engine::control::DEFAULT_PORT)]
     control_port: u16,
@@ -253,12 +256,36 @@ fn build_config(args: &RunArgs) -> Result<(EngineConfig, Option<PathBuf>), Strin
         config.blizzard_addons = vec!["*".into()];
         config.blizzard_files.clear();
     }
+    if args.glue {
+        config.glue = true;
+        config.blizzard_addons = vec!["*".into()];
+        config.blizzard_files.clear();
+        config.bootstrap_addons.clear();
+    }
     let game_dir = if args.no_game_data {
         None
     } else {
         file.game_dir.map(rel)
     };
+    config.game_account_dir = game_dir.as_deref().and_then(game_account_dir);
     Ok((config, game_dir))
+}
+
+/// The game's account folder (`WTF/Account/<ACCOUNT>`). With several
+/// accounts, the one used last (newest `config-cache.wtf`).
+fn game_account_dir(game_dir: &Path) -> Option<PathBuf> {
+    let root = game_dir.join("WTF").join("Account");
+    std::fs::read_dir(root)
+        .ok()?
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| p.is_dir() && p.file_name().is_some_and(|n| n != "SavedVariables"))
+        .filter(|p| p.join("SavedVariables").is_dir())
+        .max_by_key(|p| {
+            std::fs::metadata(p.join("config-cache.wtf"))
+                .and_then(|m| m.modified())
+                .ok()
+        })
 }
 
 /// Settings from a scenario's `scenario.toml`: which Blizzard addons and

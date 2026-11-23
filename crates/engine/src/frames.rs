@@ -36,6 +36,9 @@ pub const FRAME_TYPES: &[(&str, &str)] = &[
     ("CinematicModel", "PlayerModel"),
     ("TabardModel", "PlayerModel"),
     ("ModelScene", "Frame"),
+    // Glue only: the character select 3D scene, and a model for effects.
+    ("MapScene", "Frame"),
+    ("ModelFFX", "Model"),
     ("MovieFrame", "Frame"),
     ("Browser", "Frame"),
     ("Minimap", "Frame"),
@@ -104,6 +107,8 @@ fn method_chain(object_type: &str) -> Vec<&'static str> {
                     chain.extend(["Model", "PlayerModel"])
                 }
                 "ModelScene" => chain.push("ModelScene"),
+                "MapScene" => chain.push("MapScene"),
+                "ModelFFX" => chain.extend(["Model", "ModelFFX"]),
                 "Minimap" => chain.push("Minimap"),
                 _ => {}
             }

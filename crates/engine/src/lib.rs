@@ -64,6 +64,11 @@ pub struct EngineConfig {
     pub scenario: Option<PathBuf>,
     /// Screen size in UI units.
     pub screen: (f64, f64),
+    /// Run the glue environment (character select) instead of the game.
+    pub glue: bool,
+    /// The game's own account folder (`WTF/Account/<ACCOUNT>`), read only:
+    /// scenarios read the character list from addon data there.
+    pub game_account_dir: Option<PathBuf>,
     /// Physical pixels per UI unit at scale 1. Text is drawn at whole
     /// pixel sizes, as in the client.
     pub pixel_scale: f64,
@@ -88,6 +93,8 @@ impl Default for EngineConfig {
             only_addons: None,
             scenario: None,
             screen: (1920.0, 1080.0),
+            glue: false,
+            game_account_dir: None,
             pixel_scale: 1.0,
             start_time: 1000.0,
             script_timeout: DEFAULT_SCRIPT_TIMEOUT,
@@ -140,6 +147,10 @@ impl Engine {
     }
 
     fn load_all(&mut self, reloading: bool) {
+        if self.config.glue {
+            self.load_glue();
+            return;
+        }
         let lua = self.runtime.lua();
         if let Some(dir) = &self.config.scenario {
             let full_ui = self.config.blizzard_addons.iter().any(|n| n == "*");
@@ -222,6 +233,45 @@ impl Engine {
             frames::change_visibility(lua, id, |f| f[id].shown = true);
         }
         self.fire_event("LOADING_SCREEN_DISABLED", ());
+        widgets::fire_size_changes(self.runtime.lua());
+    }
+
+    /// Start the glue environment: Blizzard's glue addons (login, realm
+    /// list, character select), no third-party addons. The client sends
+    /// FRAMES_LOADED when they are loaded; GlueParent then picks the screen
+    /// from `C_Login.GetState()` (see `lua/glue.lua`).
+    fn load_glue(&mut self) {
+        let lua = self.runtime.lua();
+        if let Err(err) = lua
+            .load(include_str!("lua/glue.lua"))
+            .set_name("=[C]")
+            .exec()
+        {
+            state(lua).warn(format!("cannot set up the glue environment: {err}"));
+        }
+        if let Some(dir) = &self.config.scenario {
+            load_scenario(lua, dir, true);
+        }
+        let mut blizzard = Vec::new();
+        for name in &self.config.blizzard_addons {
+            if name == "*" {
+                blizzard.extend(addons::startup_blizzard_addons(lua));
+            } else {
+                blizzard.push(name.clone());
+            }
+        }
+        for name in &blizzard {
+            let result = addons::load_addon(lua, name);
+            if result != LoadState::Loaded {
+                state(lua).warn(format!("Blizzard addon {name} not loaded: {result:?}"));
+            }
+        }
+        if let Err(err) = echo_prints(lua) {
+            state(lua).warn(format!("cannot hook print: {err}"));
+        }
+        self.fire_event("FRAMES_LOADED", ());
+        self.fire_event("LOGIN_STATE_CHANGED", ());
+        self.fire_event("CHARACTER_LIST_UPDATE", ());
         widgets::fire_size_changes(self.runtime.lua());
     }
 
@@ -509,7 +559,7 @@ fn build_runtime(
     let user_addons = config
         .addons_dir
         .as_deref()
-        .map(addons::discover_user_addons)
+        .map(|d| addons::discover_user_addons(d, config.glue))
         .unwrap_or_default();
     let now = Instant::now();
     runtime.lua().set_app_data(State {
@@ -539,6 +589,8 @@ fn build_runtime(
         layout_generation: 0,
         rect_cache: Vec::new(),
         screen: config.screen,
+        glue: config.glue,
+        game_account_dir: config.game_account_dir.clone(),
         pixel_scale: config.pixel_scale,
         xml: Default::default(),
         cvars: HashMap::new(),
@@ -602,10 +654,13 @@ fn build_runtime(
 /// Define the localized global strings from the game data, as the client
 /// does before any UI code runs.
 fn install_global_strings(lua: &Lua) -> mlua::Result<()> {
-    let gd = state(lua).gamedata.clone();
+    let (gd, glue) = {
+        let st = state(lua);
+        (st.gamedata.clone(), st.glue)
+    };
     let Some(gd) = gd else { return Ok(()) };
     let g = lua.globals();
-    for (key, value) in gd.global_strings() {
+    for (key, value) in gd.global_strings(glue) {
         if g.raw_get::<Value>(key.as_str())?.is_nil() {
             g.raw_set(key, value)?;
         }
@@ -669,11 +724,34 @@ fn load_scenario(lua: &Lua, dir: &std::path::Path, full_ui: bool) {
 }
 
 fn scenario_helpers(lua: &Lua, dir: &std::path::Path) -> mlua::Result<Table> {
-    let dir = dir.to_path_buf();
-    let read_file = lua.create_function(move |lua, name: String| {
+    let account_dir = state(lua).game_account_dir.clone();
+    // readGameFile(name): a file in the game's account folder, read only.
+    let read_game_file = lua.create_function(move |lua, name: String| {
+        let Some(root) = &account_dir else {
+            return Ok(Value::Nil);
+        };
         if name.contains("..") || name.starts_with('/') || name.contains('\\') {
             return Err(mlua::Error::runtime(
-                "scenario files must be inside the scenario folder",
+                "game files must be inside the account folder",
+            ));
+        }
+        match std::fs::read(root.join(&name)) {
+            Ok(bytes) => Ok(Value::String(lua.create_string(bytes)?)),
+            Err(_) => Ok(Value::Nil),
+        }
+    })?;
+    let dir = dir.to_path_buf();
+    let read_file = lua.create_function(move |lua, name: String| {
+        // Inside the scenario folder, or "../<scenario>/<file>" for a
+        // file of another scenario (such as its capture).
+        let inside = |p: &str| !p.contains("..") && !p.starts_with('/') && !p.contains('\\');
+        let ok = match name.strip_prefix("../") {
+            Some(rest) => inside(rest) && rest.contains('/'),
+            None => inside(&name),
+        };
+        if !ok {
+            return Err(mlua::Error::runtime(
+                "scenario files must be inside the scenarios folder",
             ));
         }
         match std::fs::read(dir.join(&name)) {
@@ -743,6 +821,7 @@ fn scenario_helpers(lua: &Lua, dir: &std::path::Path) -> mlua::Result<Table> {
             add_atlas,
             lua.named_registry_value::<Value>(apidoc::RETURN_MIXINS_KEY)?,
             fire_event,
+            read_game_file,
         ))
 }
 

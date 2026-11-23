@@ -7,7 +7,8 @@
 //! - `[AllowLoadGameType a, b]` and `[ExcludeLoadGameType a b]` on file lines
 //!   and metadata values; Retail matches the game types `mainline` and
 //!   `standard`.
-//! - `[AllowLoad glue]` lines are skipped (they belong to the login screen).
+//! - `[AllowLoad glue]` and `[AllowLoad game]` lines (files, dependencies)
+//!   apply only in that environment; see [`Toc::parse_for`].
 //! - `[Bootstrap]` marks files of a load-on-demand addon that run at startup.
 //!
 //! Other tags, such as `[AllowLoadEnvironment Global]`, are removed and
@@ -37,7 +38,14 @@ pub struct Toc {
 }
 
 impl Toc {
+    /// Parse for the game environment.
     pub fn parse(text: &str) -> Toc {
+        Toc::parse_for(text, false)
+    }
+
+    /// Parse for the game (`glue` false) or the glue environment (login and
+    /// character select).
+    pub fn parse_for(text: &str, glue: bool) -> Toc {
         let text = text.strip_prefix('\u{feff}').unwrap_or(text);
         let mut toc = Toc::default();
         for line in text.lines() {
@@ -45,7 +53,7 @@ impl Toc {
             if let Some(meta) = line.strip_prefix("##") {
                 if let Some((key, value)) = meta.split_once(':') {
                     let (value, tags) = split_tags(value);
-                    if tags_allow(&tags) {
+                    if tags_allow(&tags, glue) {
                         toc.metadata
                             .push((key.trim().to_string(), value.trim().to_string()));
                     }
@@ -54,7 +62,7 @@ impl Toc {
                 continue;
             } else {
                 let (file, tags) = split_tags(line);
-                if !tags_allow(&tags) {
+                if !tags_allow(&tags, glue) {
                     continue;
                 }
                 let path = file
@@ -108,6 +116,28 @@ impl Toc {
 
     /// Whether the addon may load in the emulated game client, from its
     /// `AllowLoad` and `AllowLoadGameType` metadata.
+    /// Whether the addon may load in the glue environment (login and
+    /// character select): `AllowLoad: Glue` or `Both`.
+    pub fn loadable_in_glue(&self) -> bool {
+        let environment_ok = self.get("AllowLoad").is_some_and(|v| {
+            let v = v.trim();
+            v.eq_ignore_ascii_case("glue") || v.eq_ignore_ascii_case("both")
+        });
+        let game_type_ok = self
+            .get("AllowLoadGameType")
+            .is_none_or(|v| words(v).any(|w| GAME_TYPES.iter().any(|g| g.eq_ignore_ascii_case(w))));
+        environment_ok && game_type_ok
+    }
+
+    /// Whether the addon may load in the given environment.
+    pub fn loadable_in(&self, glue: bool) -> bool {
+        if glue {
+            self.loadable_in_glue()
+        } else {
+            self.loadable_in_game()
+        }
+    }
+
     pub fn loadable_in_game(&self) -> bool {
         let environment_ok = self
             .get("AllowLoad")
@@ -164,7 +194,7 @@ fn split_tags(line: &str) -> (&str, Vec<String>) {
 }
 
 /// Evaluate load-condition tags for the emulated client.
-fn tags_allow(tags: &[String]) -> bool {
+fn tags_allow(tags: &[String], glue: bool) -> bool {
     tags.iter().all(|tag| {
         let (name, args) = tag.split_once(' ').unwrap_or((tag.as_str(), ""));
         let matches_game =
@@ -174,7 +204,12 @@ fn tags_allow(tags: &[String]) -> bool {
         } else if name.eq_ignore_ascii_case("ExcludeLoadGameType") {
             !matches_game()
         } else if name.eq_ignore_ascii_case("AllowLoad") {
-            !args.trim().eq_ignore_ascii_case("glue")
+            let env = args.trim();
+            if glue {
+                env.eq_ignore_ascii_case("glue") || env.eq_ignore_ascii_case("both")
+            } else {
+                !env.eq_ignore_ascii_case("glue")
+            }
         } else {
             true
         }
@@ -257,6 +292,15 @@ mod tests {
     fn addon_level_conditions() {
         assert!(Toc::parse("## AllowLoad: Game\n").loadable_in_game());
         assert!(!Toc::parse("## AllowLoad: Glue\n").loadable_in_game());
+        assert!(Toc::parse("## AllowLoad: Glue\n").loadable_in_glue());
+        assert!(Toc::parse("## AllowLoad: Both\n").loadable_in_glue());
+        assert!(!Toc::parse("## AllowLoad: Game\n").loadable_in_glue());
+        assert!(!Toc::parse("").loadable_in_glue());
+        let toc = "## Dep: A [AllowLoad glue]\n## Dep: B [AllowLoad game]\nx.lua [AllowLoad glue]\ny.lua\n";
+        assert_eq!(Toc::parse_for(toc, true).dependencies(), vec!["A"]);
+        assert_eq!(Toc::parse_for(toc, false).dependencies(), vec!["B"]);
+        assert_eq!(Toc::parse_for(toc, true).files, vec!["x.lua", "y.lua"]);
+        assert_eq!(Toc::parse_for(toc, false).files, vec!["y.lua"]);
         assert!(Toc::parse("## AllowLoadGameType: mainline\n").loadable_in_game());
         assert!(!Toc::parse("## AllowLoadGameType: classic\n").loadable_in_game());
         assert!(Toc::parse("## AllowLoadGameType: classic, standard\n").loadable_in_game());

@@ -403,6 +403,11 @@ pub struct State {
     /// rectangles are recomputed.
     pub layout_generation: u64,
     pub rect_cache: Vec<Option<(u64, Option<crate::layout::Rect>)>>,
+    /// The glue environment (login and character select) instead of the
+    /// game. Decides which addons may load.
+    pub glue: bool,
+    /// The game's account folder, for scenarios (read only).
+    pub game_account_dir: Option<PathBuf>,
     /// Size of the screen in UI units (the size of UIParent at scale 1).
     pub screen: (f64, f64),
     /// Physical pixels per UI unit at scale 1.

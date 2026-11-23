@@ -2530,8 +2530,16 @@ fn edit_box_methods(lua: &Lua) -> Result<Table> {
     method!(lua, m, "SetText", |lua, (this_, t): (Value, Value)| {
         let id = this(&this_)?;
         let s = lua_tostring(lua, &t)?;
+        // Setting the same text again does not count as a change (handlers
+        // that set the text from OnTextChanged would loop otherwise).
+        let unchanged = state(lua).frames[id]
+            .text
+            .as_deref()
+            .is_some_and(|t| t.text == s);
         set_text(lua, id, s);
-        fire_script(lua, id, "OnTextChanged", false);
+        if !unchanged {
+            fire_script(lua, id, "OnTextChanged", false);
+        }
         Ok(())
     });
     method!(lua, m, "GetText", |lua, this_: Value| {

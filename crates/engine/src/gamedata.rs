@@ -132,7 +132,9 @@ impl GameData {
     }
 
     /// The localized global strings of the game UI, such as `SPELLBOOK`.
-    pub fn global_strings(&self) -> Vec<(String, String)> {
+    /// With `glue`, also the strings of the login and character select
+    /// screens (all strings: the glue screens use game strings too).
+    pub fn global_strings(&self, glue: bool) -> Vec<(String, String)> {
         let Ok(data) = self.storage.read_file(GLOBAL_STRINGS) else {
             return Vec::new();
         };
@@ -149,7 +151,7 @@ impl GameData {
                     .and_then(|v| v.first())
                     .copied()
                     .unwrap_or(0);
-                flags & GLOBAL_STRINGS_GAME != 0 || flags == 0
+                glue || flags & GLOBAL_STRINGS_GAME != 0 || flags == 0
             })
             .map(|r| (table.string(r, 0), table.string(r, 1)))
             .filter(|(k, _)| !k.is_empty())

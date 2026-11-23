@@ -36,7 +36,7 @@ pub fn resolve_path(base: &Path, relative: &str) -> Option<PathBuf> {
 
 /// Read an addon folder. The folder must contain `<FolderName>_Mainline.toc`
 /// or `<FolderName>.toc`; the Retail flavor file wins.
-pub fn read_addon(dir: &Path, kind: AddonKind) -> Option<Addon> {
+pub fn read_addon(dir: &Path, kind: AddonKind, glue: bool) -> Option<Addon> {
     let name = dir.file_name()?.to_string_lossy().to_string();
     let toc_path = find_case_insensitive(dir, &format!("{name}_Mainline.toc"))
         .or_else(|| find_case_insensitive(dir, &format!("{name}.toc")))?;
@@ -44,7 +44,7 @@ pub fn read_addon(dir: &Path, kind: AddonKind) -> Option<Addon> {
     Some(Addon {
         name,
         dir: dir.to_path_buf(),
-        toc: Toc::parse(&String::from_utf8_lossy(&text)),
+        toc: Toc::parse_for(&String::from_utf8_lossy(&text), glue),
         kind,
         load_state: LoadState::NotLoaded,
         namespace: None,
@@ -54,14 +54,14 @@ pub fn read_addon(dir: &Path, kind: AddonKind) -> Option<Addon> {
 
 /// All addon folders in `dir` that have a matching TOC file, sorted by name
 /// the way the client lists them. Folders named `Blizzard_*` are skipped.
-pub fn discover_user_addons(dir: &Path) -> Vec<Addon> {
+pub fn discover_user_addons(dir: &Path, glue: bool) -> Vec<Addon> {
     let mut addons: Vec<Addon> = std::fs::read_dir(dir)
         .into_iter()
         .flatten()
         .filter_map(|e| e.ok())
         .filter(|e| e.path().is_dir())
         .filter(|e| !e.file_name().to_string_lossy().starts_with("Blizzard_"))
-        .filter_map(|e| read_addon(&e.path(), AddonKind::User))
+        .filter_map(|e| read_addon(&e.path(), AddonKind::User, glue))
         .collect();
     addons.sort_by_key(|a| a.name.to_ascii_lowercase());
     addons
@@ -76,7 +76,7 @@ fn lookup(lua: &Lua, name: &str) -> Option<usize> {
     }
     let ui = st.ui_source_dir.clone()?;
     let dir = resolve_path(&ui, &format!("Interface/AddOns/{name}"))?;
-    let addon = read_addon(&dir, AddonKind::Blizzard)?;
+    let addon = read_addon(&dir, AddonKind::Blizzard, st.glue)?;
     st.addons.push(addon);
     Some(st.addons.len() - 1)
 }
@@ -91,7 +91,11 @@ fn lookup(lua: &Lua, name: &str) -> Option<usize> {
 /// in the normal environment; see `GetGlobalEnvironment` in
 /// `lua/client.lua`.
 pub fn startup_blizzard_addons(lua: &Lua) -> Vec<String> {
-    let Some(ui) = state(lua).ui_source_dir.clone() else {
+    let (ui, glue) = {
+        let st = state(lua);
+        (st.ui_source_dir.clone(), st.glue)
+    };
+    let Some(ui) = ui else {
         return Vec::new();
     };
     let Some(dir) = resolve_path(&ui, "Interface/AddOns") else {
@@ -102,8 +106,8 @@ pub fn startup_blizzard_addons(lua: &Lua) -> Vec<String> {
         .flatten()
         .filter_map(|e| e.ok())
         .filter(|e| e.file_name().to_string_lossy().starts_with("Blizzard_"))
-        .filter_map(|e| read_addon(&e.path(), AddonKind::Blizzard))
-        .filter(|a| !a.toc.load_on_demand() && a.toc.loadable_in_game())
+        .filter_map(|e| read_addon(&e.path(), AddonKind::Blizzard, glue))
+        .filter(|a| !a.toc.load_on_demand() && a.toc.loadable_in(glue))
         .map(|a| {
             let secure = a
                 .toc
@@ -132,7 +136,7 @@ pub fn load_addon(lua: &Lua, name: &str) -> LoadState {
         if addon.load_state != LoadState::NotLoaded {
             return addon.load_state.clone();
         }
-        if !addon.toc.loadable_in_game() {
+        if !addon.toc.loadable_in(st.glue) {
             let failed = LoadState::Failed("INCOMPATIBLE".into());
             st.addons[index].load_state = failed.clone();
             return failed;
