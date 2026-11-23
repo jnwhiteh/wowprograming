@@ -31,7 +31,7 @@ pub struct Rgba {
 impl Rgba {
     pub fn new(width: usize, height: usize, rgb: [u8; 3]) -> Rgba {
         let mut data = vec![255; width * height * 4];
-        for px in data.chunks_exact_mut(4) {
+        for px in data.as_chunks_mut::<4>().0 {
             px[..3].copy_from_slice(&rgb);
         }
         Rgba {

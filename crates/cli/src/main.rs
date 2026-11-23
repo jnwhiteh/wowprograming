@@ -216,7 +216,13 @@ fn main() -> ExitCode {
                 eprintln!("{file}: not an image");
                 return ExitCode::FAILURE;
             };
-            let opaque = img.rgba.chunks_exact(4).filter(|p| p[3] > 200).count();
+            let opaque = img
+                .rgba
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .filter(|p| p[3] > 200)
+                .count();
             println!(
                 "{file}: {}x{}, {}% opaque",
                 img.width,
