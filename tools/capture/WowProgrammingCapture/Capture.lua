@@ -46,27 +46,43 @@ local function isSecret(v)
 end
 
 -- Plain values only: the serializer rejects functions and userdata, and
--- secret values must not be read.
+-- secret values must not be read. JSON has no NaN or infinity.
+--
+-- SerializeJSON writes a table as an array only if its keys are exactly
+-- 1..n, and as an object only if all keys are strings. Any other table
+-- (gaps, mixed keys) fails, so those get string keys.
 local function plain(v, seen, depth)
 	depth = depth or 0
 	if isSecret(v) then
 		return "<secret>"
 	end
 	local t = type(v)
-	if t == "string" or t == "number" or t == "boolean" then
+	if t == "string" or t == "boolean" then
+		return v
+	elseif t == "number" then
+		if v ~= v or v == math.huge or v == -math.huge then return tostring(v) end
 		return v
 	elseif t == "table" then
 		if seen[v] or depth > 12 then return nil end
 		seen[v] = true
-		local out = {}
+		local out, count, allStrings = {}, 0, true
 		for k, val in pairs(v) do
 			local kt = type(k)
 			if (kt == "string" or kt == "number") and not isSecret(k) then
 				local pv = plain(val, seen, depth + 1)
-				if pv ~= nil then out[k] = pv end
+				if pv ~= nil then
+					out[k] = pv
+					count = count + 1
+					if kt ~= "string" then allStrings = false end
+				end
 			end
 		end
 		seen[v] = nil
+		if not allStrings and #out ~= count then
+			local keyed = {}
+			for k, val in pairs(out) do keyed[tostring(k)] = val end
+			return keyed
+		end
 		return out
 	end
 	return nil
@@ -659,8 +675,23 @@ local function finish(started)
 		HideUIPanel(PlayerSpellsFrame)
 	end
 
+	-- Encode each section on its own first, so one bad section is dropped
+	-- (and named in errors) instead of losing the whole capture.
+	local clean = {}
+	for key, value in pairs(data) do
+		local okSection, err = pcall(function()
+			local p = plain(value, {})
+			C_EncodingUtil.SerializeJSON({ p })
+			clean[key] = p
+		end)
+		if not okSection then
+			table.insert(errors, "encode " .. key .. ": " .. tostring(err))
+			print("|cff33ff99WowProgramming|r capture dropped section " .. key .. ": " .. tostring(err))
+		end
+	end
+	clean.errors = plain(errors, {})
 	local okPack, packed = pcall(function()
-		local json = C_EncodingUtil.SerializeJSON(plain(data, {}))
+		local json = C_EncodingUtil.SerializeJSON(clean)
 		return C_EncodingUtil.EncodeBase64(C_EncodingUtil.CompressString(json))
 	end)
 	if not okPack then
