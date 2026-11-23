@@ -647,3 +647,33 @@ fn masks_and_atlas_coordinates_reach_the_scene() {
     assert_eq!(quad.masks.len(), 1);
     assert!((quad.masks[0].rect.width - 4.0).abs() < 1e-6);
 }
+
+#[test]
+fn replay_keeps_widget_metatables_and_keyboard_focus() {
+    // Captures can record functions that return objects the sandbox owns.
+    // The recorded copies are plain tables and must not replace them.
+    let wtf = tempfile::tempdir().unwrap();
+    let scenario = tempfile::tempdir().unwrap();
+    std::fs::write(
+        scenario.path().join("scenario.lua"),
+        r##"local dir, S = ...
+S.Replay({
+    GetFontStringMetatable = { ["#"] = 1, [""] = { n = 1, ["1"] = { __index = {} } } },
+    GetCurrentKeyBoardFocus = { ["#"] = 1, [""] = { n = 1, ["1"] = { chatFrame = {} } } },
+    GetLocale = { ["#"] = 1, [""] = { n = 1, ["1"] = "xxXX" } },
+})
+"##,
+    )
+    .unwrap();
+    let mut cfg = config(&[], wtf.path());
+    cfg.scenario = Some(scenario.path().to_path_buf());
+    let mut engine = Engine::new(cfg).unwrap();
+    engine.start();
+    let got: (String, bool, String) = engine
+        .eval(
+            "return type(GetFontStringMetatable().__index.SetText), \
+             GetCurrentKeyBoardFocus() == nil, GetLocale()",
+        )
+        .unwrap();
+    assert_eq!(got, ("function".into(), true, "xxXX".into()));
+}

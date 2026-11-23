@@ -79,9 +79,14 @@ local NO_REPLAY_NAMESPACES = { C_AddOns = true }
 local NO_REPLAY_VERBS = { "Set", "Add", "Remove", "Register", "Unregister", "Enable",
     "Disable", "Load", "Wrap", "Request" }
 
+-- Functions that return objects the sandbox owns (widget metatables, frames).
+-- A capture stores them as plain tables, which would replace the real ones.
+local NO_REPLAY_NAMES = { GetCurrentKeyBoardFocus = true }
+
 local function replayable(path)
     local namespace, name = path:match("^([^.]+)%.(.+)$")
     if namespace and NO_REPLAY_NAMESPACES[namespace] then return false end
+    if NO_REPLAY_NAMES[path] or path:match("^Get%a+Metatable$") then return false end
     name = name or path
     for _, verb in ipairs(NO_REPLAY_VERBS) do
         if name:sub(1, #verb) == verb then return false end

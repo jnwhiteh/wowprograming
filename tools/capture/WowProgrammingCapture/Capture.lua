@@ -107,6 +107,8 @@ local SKIP = {
 	RunScript = true, InCombatLockdown = true, GetCVar = true, GetCVarBool = true,
 	GetCVarDefault = true, SetCVar = true, GetText = true, issecretvalue = true,
 	canaccessvalue = true, canaccesssecrets = true, canaccesstable = true,
+	-- Return objects (a frame, widget metatables), not data.
+	GetCurrentKeyBoardFocus = true,
 }
 local SKIP_NAMESPACES = {
 	C_Timer = true, C_CVar = true, C_Log = true, C_EncodingUtil = true,
@@ -132,7 +134,7 @@ local GLOBAL_PREFIXES = {
 }
 
 local function wantGlobal(name)
-	if SKIP[name] or name:find("_") then return false end
+	if SKIP[name] or name:find("_") or name:match("^Get%a+Metatable$") then return false end
 	for _, p in ipairs(GLOBAL_PREFIXES) do
 		if name:sub(1, #p) == p then return true end
 	end

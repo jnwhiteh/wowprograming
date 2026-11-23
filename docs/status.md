@@ -41,8 +41,8 @@ Last updated: 2026-11-23.
   (with a target, later in a raid). Until then, develop with
   the existing captures and described units. Prepare the capture addon
   first (see "Next steps"), so one round of captures covers everything.
-- **Branch:** `spellbook-gui`, from `main`, 16 commits ahead of it.
-  `origin/spellbook-gui` is 10 commits behind the local branch. Commit
+- **Branch:** `spellbook-gui`, from `main`, 17 commits ahead of it.
+  `origin/spellbook-gui` is 11 commits behind the local branch. Commit
   each tested step on this branch without asking (the user's rule for
   this project); still ask before pushing or merging.
 - **Tests:** `cargo test`, `cargo fmt --check` and
@@ -136,11 +136,8 @@ Last updated: 2026-11-23.
   is the captured 898820 (the Monk's health bar looks almost empty).
 - About 55 full-UI startup errors in systems outside the goals (chat
   frames, communities, tutorials, guild UI, pet battles, LFG). The Evoker
-  scenario has about 86: being in a party runs the compact party frame
-  code, which adds four errors (`SecureUtil.lua:33` and `:56` call a
-  missing `SetText` from Edit Mode labels; `UnitFrameUtil.lua:127` calls
-  a missing `IsObjectType` from CompactArenaFrame;
-  `CompactRaidFrameManager.lua:473` has no `dividerVerticalPool`). Some
+  scenario has 59: being in a party creates more model scenes, so the
+  model camera error (`OrbitCameraMixin.lua:41`) repeats more often. Some
   repeat every tick (PersonalResourceDisplay).
 - The first action button shows no key label; the chat frame background
   is white; a stray "Issue Reporter" button shows.
@@ -167,9 +164,8 @@ HUD goal, with described units:
 5. Fix the known HUD problems: no key label on the first action button,
    white chat frame background, stray "Issue Reporter" button, the width
    of outlined key labels.
-6. Fix the four party-frame startup errors in `scenarios/evoker` (see
-   "What does not work yet"), then compare the party frames with the
-   captured `CompactPartyFrame` tree.
+6. Compare the party frames in `scenarios/evoker` with the captured
+   `CompactPartyFrame` tree.
 7. Add a raid scenario with described units (IsInRaid, raid1..N) for
    CompactRaidFrameContainer. Then cooldown swipes.
 8. Reduce the full-UI startup errors that repeat every tick
@@ -322,6 +318,12 @@ Things that cost time once and should not cost it again.
   (`C_AddOns.LoadAddOn`, `Set...`, `Register...`). Replaying those broke
   the sandbox (the spellbook never loaded), so `S.Replay` skips
   `C_AddOns` and action verbs, and skips records that hold `<secret>`.
+- A capture can record functions that return objects the sandbox owns
+  (`GetFontStringMetatable`, `GetCurrentKeyBoardFocus`). Replayed, they
+  returned empty tables: font string methods vanished, and one error
+  stopped `CompactRaidFrameManager_OnLoad` early, which caused more.
+  `S.Replay` and the capture addon skip them. If a widget method is
+  suddenly nil, check `S.replayed` for the function that returned it.
 - The capture addon runs Blizzard event handlers tainted. In the game
   this makes health and power secret and floods error addons until
   `/reload`; the data is still saved.
