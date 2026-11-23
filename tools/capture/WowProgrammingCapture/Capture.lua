@@ -492,7 +492,7 @@ local function explicitCalls()
 			rec("GetSpecializationInfoByID", specID)
 		end
 	end
-	rec("C_ClassColor.GetClassColor", select(2, UnitClass("player")))
+	rec("C_ClassColor.GetClassColor", (select(2, UnitClass("player"))))
 	-- Spellbook items: info, tooltips and descriptions.
 	local seenSpells = {}
 	local banks = { Enum.SpellBookSpellBank.Player, Enum.SpellBookSpellBank.Pet }
@@ -537,8 +537,12 @@ local function explicitCalls()
 				"GetActionUseCount", "IsUsableAction", "IsConsumableAction", "IsStackableAction",
 				"IsAttackAction", "IsAutoRepeatAction", "IsCurrentAction", "IsItemAction",
 				"IsEquippedAction", "GetActionCooldown", "GetActionCharges", "GetSpell",
-				"HasRangeRequirements", "IsAssistedCombatAction", "IsHarmfulAction", "IsHelpfulAction" }) do
+				"HasRangeRequirements", "IsAssistedCombatAction" }) do
 			rec("C_ActionBar." .. name, slot)
+		end
+		for _, useNeutral in ipairs({ false, true }) do
+			rec("C_ActionBar.IsHarmfulAction", slot, useNeutral)
+			rec("C_ActionBar.IsHelpfulAction", slot, useNeutral)
 		end
 	end
 	for _, unit in ipairs(UNITS) do
