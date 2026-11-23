@@ -19,9 +19,19 @@ pub struct Quad {
     pub additive: bool,
     pub desaturate: bool,
     pub tile: (bool, bool),
-    pub rotation: f32,
     pub clip: Option<Rect>,
+    /// Mask textures: the quad's alpha is multiplied by each mask's alpha.
+    pub masks: Vec<Mask>,
     pub id: FrameId,
+}
+
+/// A mask texture. Outside its rectangle the mask hides everything.
+#[derive(Clone, Debug)]
+pub struct Mask {
+    pub rect: Rect,
+    pub uv: [f32; 8],
+    /// `None` is a mask without a file: it only clips to its rectangle.
+    pub image: Option<ImageKey>,
 }
 
 #[derive(Clone, Debug)]
@@ -149,8 +159,24 @@ pub fn build(st: &mut State) -> Scene {
         height: st.screen.1,
         items: Vec::new(),
     };
+    crate::animfx::recompute(st);
     let order = frame_order(st);
-    for fid in order {
+    // Like the client, regions of frames at the same strata and level are
+    // drawn layer by layer across those frames (all BACKGROUND regions,
+    // then BORDER, ...). A child frame with useParentLevel, such as a
+    // tooltip's NineSlice border, therefore stays behind the parent's text.
+    // Within a frame, layer and sublevel, regions created later draw first:
+    // the action button template relies on its icon (created first) showing
+    // above the slot art.
+    struct Entry {
+        key: (usize, i64, u8, i64, usize, std::cmp::Reverse<FrameId>),
+        frame: FrameId,
+        region: Option<FrameId>,
+    }
+    let mut entries: Vec<Entry> = Vec::new();
+    let mut frame_info: std::collections::HashMap<FrameId, (f64, Option<Rect>)> =
+        std::collections::HashMap::new();
+    for (pos, fid) in order.into_iter().enumerate() {
         if !is_visible(&st.frames, fid) {
             continue;
         }
@@ -159,27 +185,53 @@ pub fn build(st: &mut State) -> Scene {
             continue;
         }
         let clip = clip_rect(st, fid);
+        frame_info.insert(fid, (alpha, clip));
+        let strata = strata_index(st.frames[fid].strata);
+        let level = st.frames[fid].level;
         if st.frames[fid].object_type == "EditBox" {
-            edit_box_text(st, fid, clip, alpha, &mut scene);
+            entries.push(Entry {
+                key: (strata, level, 3, i64::MAX, pos, std::cmp::Reverse(0)),
+                frame: fid,
+                region: None,
+            });
         }
-        let mut regions: Vec<FrameId> = st.frames[fid]
+        let regions: Vec<FrameId> = st.frames[fid]
             .regions
             .iter()
             .copied()
             .filter(|&r| st.frames[r].shown && st.frames[r].object_type != "MaskTexture")
             .filter(|&r| region_active(st, fid, r))
             .collect();
-        regions.sort_by_key(|&r| (st.frames[r].draw_layer, st.frames[r].sublevel, r));
         for r in regions {
-            let ralpha = alpha * st.frames[r].alpha;
-            if ralpha <= 0.001 {
-                continue;
-            }
-            match st.frames[r].object_type {
-                "Texture" => texture_quad(st, fid, r, clip, ralpha, &mut scene),
-                "FontString" => font_string_text(st, r, clip, ralpha, &mut scene),
-                _ => {}
-            }
+            entries.push(Entry {
+                key: (
+                    strata,
+                    level,
+                    st.frames[r].draw_layer,
+                    st.frames[r].sublevel,
+                    pos,
+                    std::cmp::Reverse(r),
+                ),
+                frame: fid,
+                region: Some(r),
+            });
+        }
+    }
+    entries.sort_by_key(|e| e.key);
+    for e in entries {
+        let (alpha, clip) = frame_info[&e.frame];
+        let Some(r) = e.region else {
+            edit_box_text(st, e.frame, clip, alpha, &mut scene);
+            continue;
+        };
+        let ralpha = alpha * crate::animfx::own_alpha(st, r);
+        if ralpha <= 0.001 {
+            continue;
+        }
+        match st.frames[r].object_type {
+            "Texture" => texture_quad(st, e.frame, r, clip, ralpha, &mut scene),
+            "FontString" => font_string_text(st, r, clip, ralpha, &mut scene),
+            _ => {}
         }
     }
     scene
@@ -224,6 +276,26 @@ fn texture_quad(
             return;
         }
     }
+    // A flipbook shows one cell of the texture.
+    let fx = st.anim_fx.get(&id);
+    if let Some(cell) = fx.and_then(|f| f.flipbook).or(tex.flipbook_frame) {
+        uv = sub_uv(&uv, cell);
+    }
+    if let Some(r) = tex.atlas_rect {
+        uv = atlas_map(&uv, r);
+    }
+    // SetRotation turns the texture coordinates around their centre.
+    let rotation = tex.rotation + fx.map(|f| f.rotation as f32).unwrap_or(0.0);
+    if rotation != 0.0 {
+        let (s, c) = (rotation.sin(), rotation.cos());
+        let cx = (uv[0] + uv[6]) / 2.0;
+        let cy = (uv[1] + uv[7]) / 2.0;
+        for i in 0..4 {
+            let (x, y) = (uv[i * 2] - cx, uv[i * 2 + 1] - cy);
+            uv[i * 2] = cx + x * c + y * s;
+            uv[i * 2 + 1] = cy - x * s + y * c;
+        }
+    }
     let vc = tex.vertex_color;
     let (image, base) = match &tex.file {
         TexFile::None => return,
@@ -237,6 +309,7 @@ fn texture_quad(
         base[2] * vc[2],
         base[3] * vc[3] * alpha as f32,
     ];
+    let masks = masks_of(st, id);
     scene.items.push(Item::Quad(Quad {
         rect,
         uv,
@@ -245,10 +318,61 @@ fn texture_quad(
         additive: tex.blend_mode == "ADD",
         desaturate: tex.desaturation > 0.5,
         tile: (tex.horiz_tile, tex.vert_tile),
-        rotation: tex.rotation,
         clip,
+        masks,
         id,
     }));
+}
+
+/// Map coordinates relative to an atlas region (left, top, right,
+/// bottom) into the file.
+fn atlas_map(uv: &[f32; 8], r: [f32; 4]) -> [f32; 8] {
+    let mut out = *uv;
+    for i in 0..4 {
+        out[i * 2] = r[0] + uv[i * 2] * (r[2] - r[0]);
+        out[i * 2 + 1] = r[1] + uv[i * 2 + 1] * (r[3] - r[1]);
+    }
+    out
+}
+
+/// Part of a texture coordinate quad: `cell` is left, top, right, bottom
+/// as fractions.
+fn sub_uv(uv: &[f32; 8], cell: [f32; 4]) -> [f32; 8] {
+    let at = |fx: f32, fy: f32| {
+        let top = (uv[0] + (uv[4] - uv[0]) * fx, uv[1] + (uv[5] - uv[1]) * fx);
+        let bot = (uv[2] + (uv[6] - uv[2]) * fx, uv[3] + (uv[7] - uv[3]) * fx);
+        (top.0 + (bot.0 - top.0) * fy, top.1 + (bot.1 - top.1) * fy)
+    };
+    let [l, t, r, b] = cell;
+    let (a, c, e, g) = (at(l, t), at(l, b), at(r, t), at(r, b));
+    [a.0, a.1, c.0, c.1, e.0, e.1, g.0, g.1]
+}
+
+fn masks_of(st: &mut State, id: FrameId) -> Vec<Mask> {
+    let ids = st.frames[id].masks.clone();
+    let mut out = Vec::new();
+    for m in ids {
+        if !st.frames[m].shown {
+            continue;
+        }
+        let rect = layout::rect(st, m).unwrap_or_default();
+        let (image, uv) = match st.frames[m].tex.as_deref() {
+            Some(t) => (
+                match &t.file {
+                    TexFile::Id(i) => Some(ImageKey::Id(*i as u32)),
+                    TexFile::Path(p) => Some(ImageKey::Path(p.clone())),
+                    _ => None,
+                },
+                match t.atlas_rect {
+                    Some(r) => atlas_map(&t.coords, r),
+                    None => t.coords,
+                },
+            ),
+            None => (None, [0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0]),
+        };
+        out.push(Mask { rect, uv, image });
+    }
+    out
 }
 
 fn push_text(
@@ -261,11 +385,16 @@ fn push_text(
     scene: &mut Scene,
 ) {
     let es = effective_scale(st, id);
-    let (font, lines) = text::font_string_lines(st, id, wrap);
+    // A font string with a fixed height shows only the lines that fit.
+    let f = &st.frames[id];
+    let fixed_height =
+        f.object_type == "FontString" && (f.height > 0.0 || layout::has_two(&f.points, false));
+    let max_height = fixed_height.then_some(rect.height / es);
+    let (font, lines) = text::font_string_lines_in(st, id, wrap, max_height);
     if lines.is_empty() {
         return;
     }
-    let size = font.height * es;
+    let size = font.line_height * es;
     let spacing = font.spacing * es;
     let total = lines.len() as f64 * size + (lines.len() as f64 - 1.0) * spacing;
     let top = match font.justify_v.as_str() {
@@ -323,22 +452,23 @@ fn font_string_text(
     };
     let es = effective_scale(st, id);
     let f = &st.frames[id];
-    let has_width = f.width > 0.0 || {
-        let mut hs = f.points.iter().map(|p| match p.point {
-            "TOPLEFT" | "LEFT" | "BOTTOMLEFT" => 0,
-            "TOP" | "CENTER" | "BOTTOM" => 1,
-            _ => 2,
-        });
-        hs.next().is_some_and(|first| hs.any(|h| h != first))
-    };
+    let has_width = f.width > 0.0 || layout::has_two(&f.points, true);
     let wrap = has_width.then_some(rect.width / es);
     push_text(st, id, rect, wrap, clip, alpha, scene);
 }
 
 fn edit_box_text(st: &mut State, id: FrameId, clip: Option<Rect>, alpha: f64, scene: &mut Scene) {
-    let Some(rect) = layout::rect(st, id) else {
+    let Some(mut rect) = layout::rect(st, id) else {
         return;
     };
+    // Text insets shrink the text area (left, right, top, bottom).
+    let es = effective_scale(st, id);
+    if let Some(i) = st.frames[id].text.as_deref().map(|t| t.insets) {
+        rect.left += i[0] * es;
+        rect.width = (rect.width - (i[0] + i[1]) * es).max(0.0);
+        rect.bottom += i[3] * es;
+        rect.height = (rect.height - (i[2] + i[3]) * es).max(0.0);
+    }
     let has_text = st.frames[id]
         .text
         .as_deref()

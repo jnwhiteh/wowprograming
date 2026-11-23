@@ -2,9 +2,11 @@
 //! emulation of the client's native API.
 
 pub mod addons;
+pub mod animfx;
 pub mod api;
 pub mod apidoc;
 pub mod bindings;
+pub mod clientnames;
 pub mod control;
 pub mod frames;
 pub mod gamedata;
@@ -46,7 +48,8 @@ pub struct EngineConfig {
     pub realm: String,
     pub character: String,
     /// Blizzard addons to load before third-party addons. Their
-    /// dependencies are loaded too.
+    /// dependencies are loaded too. `"*"` stands for every addon the
+    /// client loads at startup.
     pub blizzard_addons: Vec<String>,
     /// Load-on-demand Blizzard addons whose `[Bootstrap]` files run at
     /// startup.
@@ -61,6 +64,9 @@ pub struct EngineConfig {
     pub scenario: Option<PathBuf>,
     /// Screen size in UI units.
     pub screen: (f64, f64),
+    /// Physical pixels per UI unit at scale 1. Text is drawn at whole
+    /// pixel sizes, as in the client.
+    pub pixel_scale: f64,
     /// Value of `GetTime()` at startup.
     pub start_time: f64,
     /// Time budget for one call into Lua.
@@ -82,6 +88,7 @@ impl Default for EngineConfig {
             only_addons: None,
             scenario: None,
             screen: (1920.0, 1080.0),
+            pixel_scale: 1.0,
             start_time: 1000.0,
             script_timeout: DEFAULT_SCRIPT_TIMEOUT,
         }
@@ -135,9 +142,23 @@ impl Engine {
     fn load_all(&mut self, reloading: bool) {
         let lua = self.runtime.lua();
         if let Some(dir) = &self.config.scenario {
-            load_scenario(lua, dir);
+            let full_ui = self.config.blizzard_addons.iter().any(|n| n == "*");
+            load_scenario(lua, dir, full_ui);
         }
+        // Key bindings exist before the UI loads; UPDATE_BINDINGS follows
+        // at login.
+        if let Err(err) = bindings::load(lua) {
+            state(lua).warn(format!("cannot load key bindings: {err}"));
+        }
+        let mut blizzard = Vec::new();
         for name in &self.config.blizzard_addons {
+            if name == "*" {
+                blizzard.extend(addons::startup_blizzard_addons(lua));
+            } else {
+                blizzard.push(name.clone());
+            }
+        }
+        for name in &blizzard {
             let result = addons::load_addon(lua, name);
             if result != LoadState::Loaded {
                 state(lua).warn(format!("Blizzard addon {name} not loaded: {result:?}"));
@@ -149,11 +170,11 @@ impl Engine {
         for file in &self.config.blizzard_files {
             addons::run_blizzard_file(lua, file);
         }
+        if let Err(err) = echo_prints(lua) {
+            state(lua).warn(format!("cannot hook print: {err}"));
+        }
         if let Err(err) = ensure_framexml_globals(lua) {
             state(lua).warn(format!("cannot create FrameXML globals: {err}"));
-        }
-        if let Err(err) = bindings::load(lua) {
-            state(lua).warn(format!("cannot load key bindings: {err}"));
         }
 
         let names: Vec<String> = {
@@ -173,7 +194,32 @@ impl Engine {
 
         self.fire_event("PLAYER_LOGIN", ());
         self.fire_event("PLAYER_ENTERING_WORLD", (!reloading, reloading));
+        // The client sends the edit mode layouts at login; they place the
+        // unit frames, action bars and other HUD frames.
+        let layouts: Option<Table> = self
+            .runtime
+            .lua()
+            .load("return C_EditMode and C_EditMode.GetLayouts and C_EditMode.GetLayouts()")
+            .eval()
+            .ok()
+            .flatten();
+        if let Some(layouts) = layouts {
+            self.fire_event("EDIT_MODE_LAYOUTS_UPDATED", (layouts, false));
+        }
         self.fire_event("VARIABLES_LOADED", ());
+        self.fire_event("UPDATE_BINDINGS", ());
+        // The loading screen ends: the UI becomes visible.
+        let lua = self.runtime.lua();
+        let ui_parent = lua
+            .globals()
+            .get::<Table>("UIParent")
+            .ok()
+            .and_then(|t| frames::frame_id(&t).ok());
+        if let Some(id) = ui_parent {
+            frames::change_visibility(lua, id, |f| f[id].shown = true);
+        }
+        self.fire_event("LOADING_SCREEN_DISABLED", ());
+        widgets::fire_size_changes(self.runtime.lua());
     }
 
     /// Advance the clock by `elapsed` seconds: run due timers, then
@@ -187,6 +233,7 @@ impl Engine {
         }
         timers::run_due(lua);
         frames::run_on_update(lua, elapsed);
+        widgets::fire_size_changes(lua);
     }
 
     /// The current scene: visible regions in draw order.
@@ -197,9 +244,35 @@ impl Engine {
     /// Render the current scene to a PNG file without a window, at
     /// `scale` pixels per UI unit.
     pub fn save_screenshot(&self, path: &std::path::Path, scale: f64) -> std::io::Result<()> {
+        self.save_screenshot_crop(path, scale, None)
+    }
+
+    /// Like [`Engine::save_screenshot`], cropped to a rectangle in screen
+    /// units.
+    pub fn save_screenshot_crop(
+        &self,
+        path: &std::path::Path,
+        scale: f64,
+        crop: Option<layout::Rect>,
+    ) -> std::io::Result<()> {
         let scene = self.scene();
         let canvas = render::render(&scene, self.gamedata.as_deref(), scale);
-        render::write_png(path, canvas.width, canvas.height, &canvas.to_rgba8())
+        let rgba = canvas.to_rgba8();
+        let Some(c) = crop else {
+            return render::write_png(path, canvas.width, canvas.height, &rgba);
+        };
+        let x0 = ((c.left * scale).floor().max(0.0) as usize).min(canvas.width);
+        let x1 = ((c.right() * scale).ceil().max(0.0) as usize).min(canvas.width);
+        let y0 = (((scene.height - c.top()) * scale).floor().max(0.0) as usize).min(canvas.height);
+        let y1 = (((scene.height - c.bottom) * scale).ceil().max(0.0) as usize).min(canvas.height);
+        let (w, h) = (x1.saturating_sub(x0).max(1), y1.saturating_sub(y0).max(1));
+        let mut out = vec![0u8; w * h * 4];
+        for y in 0..h.min(y1 - y0) {
+            let src = ((y0 + y) * canvas.width + x0) * 4;
+            out[y * w * 4..y * w * 4 + (x1 - x0) * 4]
+                .copy_from_slice(&rgba[src..src + (x1 - x0) * 4]);
+        }
+        render::write_png(path, w, h, &out)
     }
 
     /// Screen size in UI units.
@@ -224,9 +297,24 @@ impl Engine {
         input::mouse_wheel(self.runtime.lua(), delta);
     }
 
+    /// Typed text for the focused edit box. Returns false if no edit box
+    /// has the keyboard focus.
+    pub fn text_input(&mut self, text: &str) -> bool {
+        input::text_input(self.runtime.lua(), text)
+    }
+
+    /// Whether an edit box has the keyboard focus.
+    pub fn has_text_focus(&self) -> bool {
+        state(self.runtime.lua()).focus.is_some()
+    }
+
     /// A key was pressed, such as `P`, `SHIFT-P` or `ESCAPE`. Runs the
     /// bound action. Returns false if the key has no binding.
     pub fn key_down(&mut self, key: &str) -> bool {
+        // A focused edit box takes Backspace, Enter, Escape and Tab.
+        if input::edit_box_key(self.runtime.lua(), key) {
+            return true;
+        }
         bindings::key_down(self.runtime.lua(), key)
     }
 
@@ -277,6 +365,12 @@ impl Engine {
                 for (name, count) in called {
                     st.output.push(Output::Print(format!("  {name} x{count}")));
                 }
+                let unknown: Vec<String> = st.unknown_cvars.iter().cloned().collect();
+                st.output.push(Output::Print(format!(
+                    "{} unknown CVars read: {}",
+                    unknown.len(),
+                    unknown.join(" ")
+                )));
             }
             _ => {
                 if !run_slash_command(self.runtime.lua(), &command, &rest) {
@@ -417,8 +511,11 @@ fn build_runtime(
         layout_generation: 0,
         rect_cache: Vec::new(),
         screen: config.screen,
+        pixel_scale: config.pixel_scale,
         xml: Default::default(),
         cvars: HashMap::new(),
+        cvar_defaults: api::builtin_cvar_defaults(),
+        unknown_cvars: Default::default(),
         gamedata,
         fonts: Default::default(),
         focus: None,
@@ -426,6 +523,8 @@ fn build_runtime(
         bindings: HashMap::new(),
         mouse: (-1.0, -1.0),
         raise_counter: 0,
+        anim_fx: HashMap::new(),
+        last_sizes: HashMap::new(),
     });
     let lua = runtime.lua();
     natives::install(lua)?;
@@ -436,6 +535,16 @@ fn build_runtime(
     api::install(lua)?;
     apidoc::install_function_stubs(lua)?;
     install_global_strings(lua)?;
+    if let (Some(exe), Some(ui)) = (
+        state(lua)
+            .gamedata
+            .as_ref()
+            .and_then(|g| g.client_exe.clone()),
+        config.ui_source_dir.as_deref(),
+    ) {
+        let names = clientnames::undocumented_natives(&exe, ui);
+        apidoc::install_named_stubs(lua, &names)?;
+    }
     // WorldFrame and UIParent are created by the client itself, before any
     // UI code runs. Both cover the screen.
     for name in ["WorldFrame", "UIParent"] {
@@ -452,6 +561,11 @@ fn build_runtime(
                 y: 0.0,
             })
             .collect();
+        // The client hides the UI while the loading screen is up and shows
+        // it after login, so visible frames get OnShow then (see load_all).
+        if name == "UIParent" {
+            st.frames[id].shown = false;
+        }
     }
     debug_assert!(state(lua).addons.iter().all(|a| a.kind == AddonKind::User));
     Ok(runtime)
@@ -474,7 +588,31 @@ fn install_global_strings(lua: &Lua) -> mlua::Result<()> {
 /// Run a scenario's `scenario.lua`, which sets up game state before any
 /// addon loads. It receives the scenario folder and a helper table (see
 /// `lua/scenario.lua`).
-fn load_scenario(lua: &Lua, dir: &std::path::Path) {
+/// Blizzard_PrintHandler sends `print` to the chat frame only. Echo
+/// printed text to the sandbox console too.
+fn echo_prints(lua: &Lua) -> mlua::Result<()> {
+    let loaded = {
+        let st = state(lua);
+        st.find_addon("Blizzard_PrintHandler")
+            .is_some_and(|i| st.addons[i].load_state == LoadState::Loaded)
+    };
+    if !loaded {
+        return Ok(());
+    }
+    let echo = lua.create_function(|lua, args: mlua::Variadic<Value>| {
+        let tostring: mlua::Function = lua.globals().get("tostring")?;
+        let mut parts = Vec::with_capacity(args.len());
+        for arg in args.iter() {
+            parts.push(tostring.call::<String>(arg.clone())?);
+        }
+        state(lua).output.push(Output::Print(parts.join(" ")));
+        Ok(())
+    })?;
+    let hook: mlua::Function = lua.globals().get("hooksecurefunc")?;
+    hook.call::<()>(("print", echo))
+}
+
+fn load_scenario(lua: &Lua, dir: &std::path::Path, full_ui: bool) {
     let path = dir.join("scenario.lua");
     let code = match std::fs::read(&path) {
         Ok(code) => code,
@@ -484,7 +622,10 @@ fn load_scenario(lua: &Lua, dir: &std::path::Path) {
         }
     };
     let helpers = match scenario_helpers(lua, dir) {
-        Ok(h) => h,
+        Ok(h) => {
+            let _ = h.set("fullUI", full_ui);
+            h
+        }
         Err(err) => {
             state(lua).warn(format!("scenario helpers: {err}"));
             return;
@@ -530,9 +671,51 @@ fn scenario_helpers(lua: &Lua, dir: &std::path::Path) -> mlua::Result<Table> {
         .globals()
         .get::<Table>("C_EncodingUtil")?
         .get("DeserializeJSON")?;
+    // addAtlas(name, info): info is a C_Texture.GetAtlasInfo table.
+    let add_atlas = lua.create_function(|lua, (name, info): (String, Table)| {
+        let Some(gd) = state(lua).gamedata.clone() else {
+            return Ok(false);
+        };
+        if gd.atlas(&name).is_some() {
+            return Ok(false);
+        }
+        let n = |k: &str| info.get::<Option<f64>>(k).ok().flatten().unwrap_or(0.0);
+        let b = |k: &str| info.get::<Option<bool>>(k).ok().flatten().unwrap_or(false);
+        gd.add_atlas(gamedata::AtlasInfo {
+            name,
+            file: n("file") as u32,
+            width: n("width"),
+            height: n("height"),
+            left: n("leftTexCoord") as f32,
+            right: n("rightTexCoord") as f32,
+            top: n("topTexCoord") as f32,
+            bottom: n("bottomTexCoord") as f32,
+            tiles_horizontally: b("tilesHorizontally"),
+            tiles_vertically: b("tilesVertically"),
+        });
+        Ok(true)
+    })?;
+    // fireEvent(event, ...): deliver an event to registered frames.
+    let fire_event = lua.create_function(|lua, args: mlua::MultiValue| {
+        let mut args = args.into_iter();
+        let Some(Value::String(event)) = args.next() else {
+            return Err(mlua::Error::runtime("Usage: FireEvent(event, ...)"));
+        };
+        let event = event.to_string_lossy();
+        frames::dispatch_event(lua, &event, args.collect());
+        Ok(())
+    })?;
     lua.load(include_str!("lua/scenario.lua"))
         .set_name("=[scenario]")
-        .call((read_file, decode_base64, decompress, decode_json))
+        .call((
+            read_file,
+            decode_base64,
+            decompress,
+            decode_json,
+            add_atlas,
+            lua.named_registry_value::<Value>(apidoc::RETURN_MIXINS_KEY)?,
+            fire_event,
+        ))
 }
 
 /// Create globals that FrameXML normally defines, when the Blizzard addons

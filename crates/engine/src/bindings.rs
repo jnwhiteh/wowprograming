@@ -1,6 +1,6 @@
 //! Key bindings: actions from `Bindings_Standard.xml` and a default key map.
 
-use mlua::{Function, IntoLuaMulti, Lua, Result, Value};
+use mlua::{Function, Lua, Result, Value};
 use wowprogramming_lua::mlua;
 
 use crate::natives::safe_call;
@@ -14,6 +14,18 @@ pub const DEFAULT_KEYS: &[(&str, &str)] = &[
     ("C", "TOGGLECHARACTER0"),
     ("B", "OPENALLBAGS"),
     ("ESCAPE", "TOGGLEGAMEMENU"),
+    ("1", "ACTIONBUTTON1"),
+    ("2", "ACTIONBUTTON2"),
+    ("3", "ACTIONBUTTON3"),
+    ("4", "ACTIONBUTTON4"),
+    ("5", "ACTIONBUTTON5"),
+    ("6", "ACTIONBUTTON6"),
+    ("7", "ACTIONBUTTON7"),
+    ("8", "ACTIONBUTTON8"),
+    ("9", "ACTIONBUTTON9"),
+    ("0", "ACTIONBUTTON10"),
+    ("-", "ACTIONBUTTON11"),
+    ("=", "ACTIONBUTTON12"),
 ];
 
 const BINDINGS_FILE: &str = "Interface/AddOns/Blizzard_FrameXML/Bindings_Standard.xml";
@@ -51,13 +63,14 @@ pub fn load(lua: &Lua) -> Result<()> {
     let g = lua.globals();
     g.set(
         "GetBindingKey",
-        lua.create_function(|lua, action: String| {
-            let keys: Vec<&str> = DEFAULT_KEYS
+        lua.create_function(|_, action: String| {
+            // One return value per key, not a table.
+            let keys: mlua::Variadic<&str> = DEFAULT_KEYS
                 .iter()
                 .filter(|(_, a)| a.eq_ignore_ascii_case(&action))
                 .map(|(k, _)| *k)
                 .collect();
-            keys.into_lua_multi(lua)
+            Ok(keys)
         })?,
     )?;
     g.set(

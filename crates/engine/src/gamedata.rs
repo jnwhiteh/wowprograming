@@ -35,8 +35,11 @@ pub struct AtlasInfo {
 
 pub struct GameData {
     storage: Storage,
+    /// The client executable of the flavor, if found.
+    pub client_exe: Option<std::path::PathBuf>,
     atlases: HashMap<String, AtlasInfo>,
     images: RefCell<HashMap<ImageKey, Option<Rc<Image>>>>,
+    extra_atlases: RefCell<HashMap<String, AtlasInfo>>,
 }
 
 /// Cache key for a decoded image.
@@ -62,10 +65,18 @@ impl GameData {
             eprintln!("warning: cannot read atlas tables: {e}");
             HashMap::new()
         });
+        let client_exe = [
+            install_dir.join("Wow.exe"),
+            root.join("_retail_").join("Wow.exe"),
+        ]
+        .into_iter()
+        .find(|p| p.exists());
         Ok(GameData {
             storage,
+            client_exe,
             atlases,
             images: RefCell::new(HashMap::new()),
+            extra_atlases: RefCell::new(HashMap::new()),
         })
     }
 
@@ -73,8 +84,21 @@ impl GameData {
         &self.storage.build_name
     }
 
-    pub fn atlas(&self, name: &str) -> Option<&AtlasInfo> {
-        self.atlases.get(&name.to_ascii_lowercase())
+    /// An atlas from the game tables, or else one a scenario added.
+    pub fn atlas(&self, name: &str) -> Option<AtlasInfo> {
+        let key = name.to_ascii_lowercase();
+        self.atlases
+            .get(&key)
+            .cloned()
+            .or_else(|| self.extra_atlases.borrow().get(&key).cloned())
+    }
+
+    /// Add an atlas that the game tables lack, such as one recorded by a
+    /// capture. Atlases in the game tables take precedence.
+    pub fn add_atlas(&self, info: AtlasInfo) {
+        self.extra_atlases
+            .borrow_mut()
+            .insert(info.name.to_ascii_lowercase(), info);
     }
 
     pub fn atlas_count(&self) -> usize {

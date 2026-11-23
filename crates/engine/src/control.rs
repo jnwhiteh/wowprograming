@@ -10,14 +10,17 @@
 //!
 //! - `exec <line>`: run a console line (`/dump ...`, `/run ...` or Lua).
 //! - `eval <expr>`: evaluate a Lua expression and print the results.
+//! - `dofile <path>`: run a Lua file from disk.
 //! - `key <KEY>`: press a key, such as `P`, `SHIFT-P` or `ESCAPE`.
+//! - `type <text>`: type text into the focused edit box.
 //! - `click <expr> [button]`: click the frame the Lua expression returns.
 //! - `hover <expr>`: move the mouse over that frame.
 //! - `mouse <x> <y>`: move the mouse to a screen position (y up).
 //! - `under [x y]`: frames under a position (default: the mouse).
 //! - `tree <expr> [depth]`: shown widgets below a frame, with rectangles.
 //! - `tick <seconds>`: advance time (headless servers only).
-//! - `screenshot <path> [scale]`: render the UI to a PNG file.
+//! - `screenshot <path> [scale] [expr]`: render the UI to a PNG file,
+//!   cropped to the frame the Lua expression returns, if given.
 //! - `stubs`: generated stubs that were called.
 //! - `quit`: stop a headless server.
 
@@ -138,6 +141,20 @@ fn handle(engine: &mut Engine, line: &str) -> (String, Action) {
             engine.run_command(rest);
             (String::new(), Action::None)
         }
+        "type" => {
+            if engine.text_input(rest) {
+                (String::new(), Action::None)
+            } else {
+                ("no edit box has the keyboard focus".into(), Action::None)
+            }
+        }
+        "dofile" => match std::fs::read_to_string(rest) {
+            Ok(code) => {
+                engine.exec(&code);
+                (String::new(), Action::None)
+            }
+            Err(e) => (format!("error: {rest}: {e}"), Action::None),
+        },
         "eval" => (
             lua_helper(engine, "Inspect_Eval", &lua_quote(rest)),
             Action::None,
@@ -222,7 +239,22 @@ fn handle(engine: &mut Engine, line: &str) -> (String, Action) {
                 return ("usage: screenshot <path> [scale]".into(), Action::None);
             };
             let scale = parts.next().and_then(|s| s.parse().ok()).unwrap_or(0.75);
-            match engine.save_screenshot(std::path::Path::new(path), scale) {
+            let expr: Vec<&str> = parts.collect();
+            let crop = if expr.is_empty() {
+                None
+            } else {
+                let code = format!("return ({}):GetRect()", expr.join(" "));
+                match engine.eval::<(f64, f64, f64, f64)>(&code) {
+                    Ok((l, b, w, h)) => Some(crate::layout::Rect {
+                        left: l,
+                        bottom: b,
+                        width: w,
+                        height: h,
+                    }),
+                    Err(e) => return (format!("error: {e}"), Action::None),
+                }
+            };
+            match engine.save_screenshot_crop(std::path::Path::new(path), scale, crop) {
                 Ok(()) => (format!("saved {path}"), Action::None),
                 Err(e) => (format!("error: {e}"), Action::None),
             }
@@ -233,7 +265,7 @@ fn handle(engine: &mut Engine, line: &str) -> (String, Action) {
         }
         "quit" => ("bye".into(), Action::Quit),
         "" => (
-            "commands: exec eval key click hover mouse under tree tick screenshot stubs quit"
+            "commands: exec eval dofile key type click hover mouse under tree tick screenshot stubs quit"
                 .into(),
             Action::None,
         ),

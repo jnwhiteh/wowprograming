@@ -4,6 +4,7 @@
 //!
 //! Scenario files can replace any of these from Lua.
 
+use std::collections::HashMap;
 use std::io::{Read, Write};
 
 use mlua::{IntoLuaMulti, Lua, MultiValue, Result, Table, Value};
@@ -17,45 +18,56 @@ pub fn install(lua: &Lua) -> Result<()> {
 
     // CVars
     let c_cvar = namespace(lua, "C_CVar")?;
-    let get_cvar = lua.create_function(|lua, name: String| {
-        Ok(state(lua).cvars.get(&name.to_ascii_lowercase()).cloned())
+    let get_cvar = lua.create_function(|lua, name: String| Ok(cvar_value(lua, &name)))?;
+    let get_cvar_default = lua.create_function(|lua, name: String| {
+        let key = name.to_ascii_lowercase();
+        let mut st = state(lua);
+        let d = st.cvar_defaults.get(&key).cloned();
+        if d.is_none() && !st.cvars.contains_key(&key) {
+            st.unknown_cvars.insert(name);
+        }
+        Ok(d)
     })?;
     let set_cvar = lua.create_function(|lua, (name, value): (String, Value)| {
-        let v = match value {
-            Value::Boolean(b) => if b { "1" } else { "0" }.to_string(),
-            Value::Nil => String::new(),
-            other => lua
-                .coerce_string(other)?
-                .map(|s| s.to_string_lossy())
-                .unwrap_or_default(),
-        };
+        let v = cvar_string(lua, value)?;
         state(lua).cvars.insert(name.to_ascii_lowercase(), v);
         Ok(true)
     })?;
     let get_cvar_bool = lua.create_function(|lua, name: String| {
-        Ok(state(lua)
-            .cvars
-            .get(&name.to_ascii_lowercase())
-            .is_some_and(|v| v == "1" || v.eq_ignore_ascii_case("true")))
+        Ok(cvar_value(lua, &name).is_some_and(|v| v == "1" || v.eq_ignore_ascii_case("true")))
     })?;
+    // RegisterCVar(name, default): the default also becomes the value if
+    // the CVar has none yet.
     let register_cvar = lua.create_function(|lua, (name, value): (String, Value)| {
-        let mut st = state(lua);
+        let v = cvar_string(lua, value)?;
         let key = name.to_ascii_lowercase();
-        st.cvars.entry(key).or_insert_with(|| match value {
-            Value::String(s) => s.to_string_lossy(),
-            Value::Integer(i) => i.to_string(),
-            Value::Number(n) => n.to_string(),
-            Value::Boolean(b) => if b { "1" } else { "0" }.to_string(),
-            _ => String::new(),
-        });
+        let mut st = state(lua);
+        st.cvar_defaults.insert(key.clone(), v.clone());
+        st.cvars.entry(key).or_insert(v);
+        st.unknown_cvars.remove(&name);
         Ok(())
     })?;
+    // Value, default, stored on account, stored on character, locked,
+    // secure, read only.
+    let get_cvar_info = lua.create_function(|lua, name: String| {
+        let value = cvar_value(lua, &name);
+        let Some(value) = value else {
+            return Ok(MultiValue::new());
+        };
+        let default = state(lua)
+            .cvar_defaults
+            .get(&name.to_ascii_lowercase())
+            .cloned()
+            .unwrap_or_else(|| value.clone());
+        (value, default, false, false, false, false, false).into_lua_multi(lua)
+    })?;
+    c_cvar.set("GetCVarInfo", get_cvar_info)?;
     for (name, f) in [
         ("GetCVar", &get_cvar),
         ("SetCVar", &set_cvar),
         ("GetCVarBool", &get_cvar_bool),
         ("RegisterCVar", &register_cvar),
-        ("GetCVarDefault", &get_cvar),
+        ("GetCVarDefault", &get_cvar_default),
     ] {
         c_cvar.set(name, f.clone())?;
         if g.raw_get::<Value>(name)?.is_nil() {
@@ -200,12 +212,32 @@ pub fn install(lua: &Lua) -> Result<()> {
     lua.load(include_str!("lua/extensions.lua"))
         .set_name("=[C]")
         .exec()?;
+    // GetFrameMetatable, GetTextureMetatable and so on.
+    let metatables: Vec<(&'static str, Table)> = state(lua)
+        .frame_metatables
+        .iter()
+        .map(|(k, v)| (*k, v.clone()))
+        .collect();
+    for (kind, mt) in metatables {
+        g.set(
+            format!("Get{kind}Metatable"),
+            lua.create_function(move |_, ()| Ok(mt.clone()))?,
+        )?;
+    }
+    lua.load(include_str!("lua/client.lua"))
+        .set_name("=[C]")
+        .exec()?;
     // Undocumented client functions the UI calls at load time.
     g.set(
         "RegisterStaticConstants",
         lua.create_function(|_, _: MultiValue| Ok(()))?,
     )?;
     g.set("GetMaxBattlefieldID", lua.create_function(|_, ()| Ok(0))?)?;
+    // Bandwidth in, bandwidth out, home latency, world latency.
+    g.set(
+        "GetNetStats",
+        lua.create_function(|_, ()| Ok((0.0, 0.0, 0, 0)))?,
+    )?;
     for name in [
         "ClearOnBarHighlightMarks",
         "UpdateOnBarHighlightMarksBySpell",
@@ -240,6 +272,42 @@ pub fn install(lua: &Lua) -> Result<()> {
     Ok(())
 }
 
+/// A CVar's value, or its default. Records CVars that have neither.
+fn cvar_value(lua: &Lua, name: &str) -> Option<String> {
+    let key = name.to_ascii_lowercase();
+    let mut st = state(lua);
+    if let Some(v) = st.cvars.get(&key).or_else(|| st.cvar_defaults.get(&key)) {
+        return Some(v.clone());
+    }
+    st.unknown_cvars.insert(name.to_string());
+    None
+}
+
+fn cvar_string(lua: &Lua, value: Value) -> Result<String> {
+    Ok(match value {
+        Value::Boolean(b) => if b { "1" } else { "0" }.to_string(),
+        Value::Nil => String::new(),
+        other => lua
+            .coerce_string(other)?
+            .map(|s| s.to_string_lossy())
+            .unwrap_or_default(),
+    })
+}
+
+/// CVar defaults known without a capture, from `cvar_defaults.txt`
+/// (`name value` per line). A capture replaces them.
+pub fn builtin_cvar_defaults() -> HashMap<String, String> {
+    include_str!("data/cvar_defaults.txt")
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty() && !l.starts_with('#'))
+        .map(|l| {
+            let (k, v) = l.split_once(char::is_whitespace).unwrap_or((l, ""));
+            (k.to_ascii_lowercase(), v.trim().to_string())
+        })
+        .collect()
+}
+
 /// Screen size in UIParent units.
 fn screen_size(lua: &Lua) -> (f64, f64) {
     let st = state(lua);
@@ -270,7 +338,7 @@ fn install_texture_api(lua: &Lua) -> Result<()> {
         "GetAtlasInfo",
         lua.create_function(|lua, name: String| {
             let gd = state(lua).gamedata.clone();
-            let Some(a) = gd.as_ref().and_then(|g| g.atlas(&name).cloned()) else {
+            let Some(a) = gd.as_ref().and_then(|g| g.atlas(&name)) else {
                 return Ok(Value::Nil);
             };
             let t = lua.create_table()?;

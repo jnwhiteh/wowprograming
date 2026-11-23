@@ -76,6 +76,8 @@ pub struct XmlState {
 #[derive(Default)]
 struct Build {
     anchors: Vec<(FrameId, Rc<Elem>)>,
+    /// `<MaskedTextures>` of mask textures, applied with the anchors.
+    masked: Vec<(FrameId, Rc<Elem>)>,
     onloads: Vec<FrameId>,
     /// Script handlers of intrinsics, combined with later handlers.
     intrinsic_scripts: HashMap<(FrameId, String), (Function, bool)>,
@@ -167,11 +169,11 @@ fn process_ui(lua: &Lua, ui: &Rc<Elem>, ctx: &FileCtx) {
             "Script" => run_script_element(lua, child, ctx),
             "Include" => {
                 if let Some(file) = child.attr("file") {
-                    let rel = file.replace('\\', "/");
-                    let display = format!("{}/{rel}", ctx.display_dir);
-                    match crate::addons::resolve_path(&ctx.dir, &rel) {
-                        Some(p) => load_file(lua, &p, &display, &ctx.addon, ctx.namespace.clone()),
-                        None => state(lua).warn(format!("Couldn't open {display}")),
+                    match resolve_file(lua, ctx, file) {
+                        Ok((p, display)) => {
+                            load_file(lua, &p, &display, &ctx.addon, ctx.namespace.clone())
+                        }
+                        Err(display) => state(lua).warn(format!("Couldn't open {display}")),
                     }
                 }
             }
@@ -239,7 +241,11 @@ fn process_ui(lua: &Lua, ui: &Rc<Elem>, ctx: &FileCtx) {
                     }
                     continue;
                 }
-                let parent = match child.attr("parent") {
+                let parent_name = child
+                    .attr("parent")
+                    .map(str::to_string)
+                    .or_else(|| inherited_attr(lua, child, "parent", 0));
+                let parent = match parent_name.as_deref() {
                     Some(p) => match lua.globals().get::<Value>(p) {
                         Ok(Value::Table(t)) => frame_id(&t).ok(),
                         _ => None,
@@ -257,23 +263,74 @@ fn process_ui(lua: &Lua, ui: &Rc<Elem>, ctx: &FileCtx) {
     }
 }
 
+/// An attribute from the templates an element inherits, searched in
+/// `inherits` order and depth first.
+fn inherited_attr(lua: &Lua, elem: &Elem, attr: &str, depth: usize) -> Option<String> {
+    if depth > 16 {
+        return None;
+    }
+    let names = elem.attr("inherits")?;
+    for name in names.split(',').map(str::trim).filter(|n| !n.is_empty()) {
+        let template = state(lua)
+            .xml
+            .templates
+            .get(&name.to_ascii_lowercase())
+            .cloned();
+        if let Some(t) = template {
+            if let Some(v) = t.attr(attr) {
+                return Some(v.to_string());
+            }
+            if let Some(v) = inherited_attr(lua, &t, attr, depth + 1) {
+                return Some(v);
+            }
+        }
+    }
+    None
+}
+
 fn report(lua: &Lua, elem: &Elem, msg: &str) {
     crate::natives::report_error(lua, &format!("{}:{}: {msg}", elem.file, elem.line));
+}
+
+/// Resolve the `file` of a `Script` or `Include` element: relative to the
+/// XML file, or else relative to the addon folder, as the client does.
+/// Returns the path and the display name, or the display name on failure.
+fn resolve_file(
+    lua: &Lua,
+    ctx: &FileCtx,
+    file: &str,
+) -> std::result::Result<(PathBuf, String), String> {
+    let rel = file.replace('\\', "/");
+    let display = format!("{}/{rel}", ctx.display_dir);
+    if let Some(p) = crate::addons::resolve_path(&ctx.dir, &rel) {
+        return Ok((p, display));
+    }
+    let root = {
+        let st = state(lua);
+        match st.find_addon(&ctx.addon) {
+            Some(i) => Some(st.addons[i].dir.clone()),
+            None => st.ui_source_dir.as_ref().and_then(|ui| {
+                crate::addons::resolve_path(ui, &format!("Interface/AddOns/{}", ctx.addon))
+            }),
+        }
+    };
+    match root.and_then(|r| crate::addons::resolve_path(&r, &rel)) {
+        Some(p) => Ok((p, format!("Interface/AddOns/{}/{rel}", ctx.addon))),
+        None => Err(display),
+    }
 }
 
 fn run_script_element(lua: &Lua, elem: &Rc<Elem>, ctx: &FileCtx) {
     let args = (ctx.addon.as_str(), ctx.namespace.clone());
     if let Some(file) = elem.attr("file") {
-        let rel = file.replace('\\', "/");
-        let display = format!("{}/{rel}", ctx.display_dir);
-        match crate::addons::resolve_path(&ctx.dir, &rel) {
-            Some(p) => match std::fs::read(&p) {
+        match resolve_file(lua, ctx, file) {
+            Ok((p, display)) => match std::fs::read(&p) {
                 Ok(code) => {
                     run_chunk(lua, &code, &format!("@{display}"), args);
                 }
                 Err(e) => state(lua).warn(format!("Couldn't open {display}: {e}")),
             },
-            None => state(lua).warn(format!("Couldn't open {display}")),
+            Err(display) => state(lua).warn(format!("Couldn't open {display}")),
         }
     } else if !elem.text.trim().is_empty() {
         let code = pad_lines(elem.line, &elem.text);
@@ -308,6 +365,9 @@ fn resolve_type(lua: &Lua, tag: &str) -> Option<(&'static str, Option<Rc<Elem>>)
 fn finish(lua: &Lua, build: Build) {
     for (id, anchors) in &build.anchors {
         apply_anchors(lua, *id, anchors);
+    }
+    for (id, list) in &build.masked {
+        apply_masked_textures(lua, *id, list);
     }
     for id in build.onloads {
         fire_script(lua, id, "OnLoad", ());
@@ -345,6 +405,7 @@ fn new_object(
 ) -> Result<Table> {
     let table = create_object(lua, object_type, name.map(str::to_string), parent)?;
     let id = frame_id(&table)?;
+    state(lua).frames[id].from_xml = true;
     if let Some((l, sub)) = layer {
         let mut st = state(lua);
         st.frames[id].draw_layer = l;
@@ -408,7 +469,12 @@ fn apply_templates(
             .get(&name.to_ascii_lowercase())
             .cloned();
         match template {
-            Some(t) => apply_element(lua, build, &t, table, id, false)?,
+            Some(t) => {
+                apply_element(lua, build, &t, table, id, false)?;
+                // A template may carry its own parentKey or parentArray.
+                let parent = state(lua).frames[id].parent;
+                set_parent_keys(lua, table, parent, &t)?;
+            }
             None => {
                 // A font string may inherit a font object.
                 let is_font_user = {
@@ -636,6 +702,38 @@ fn apply_attributes(
             "toAlpha" => {
                 native(lua, table, "SetToAlpha", f)?;
             }
+            "offsetX" | "offsetY" | "scaleX" | "scaleY" | "fromScaleX" | "fromScaleY"
+            | "toScaleX" | "toScaleY"
+                if state(lua).frames[id].anim.is_some() =>
+            {
+                let mut st = state(lua);
+                if let Some(a) = st.frames[id].anim.as_deref_mut() {
+                    match key.as_str() {
+                        "offsetX" => a.offset.0 = f,
+                        "offsetY" => a.offset.1 = f,
+                        "scaleX" | "toScaleX" => a.scale_to.0 = f,
+                        "scaleY" | "toScaleY" => a.scale_to.1 = f,
+                        "fromScaleX" => a.scale_from.0 = f,
+                        _ => a.scale_from.1 = f,
+                    }
+                }
+            }
+            "degrees" | "radians" if state(lua).frames[id].anim.is_some() => {
+                let r = if key == "degrees" { f.to_radians() } else { f };
+                native(lua, table, "SetRadians", r)?;
+            }
+            "flipBookRows" => {
+                native(lua, table, "SetFlipBookRows", f.max(1.0) as u32)?;
+            }
+            "flipBookColumns" => {
+                native(lua, table, "SetFlipBookColumns", f.max(1.0) as u32)?;
+            }
+            "flipBookFrames" => {
+                native(lua, table, "SetFlipBookFrames", f.max(1.0) as u32)?;
+            }
+            "smoothing" if state(lua).frames[id].anim.is_some() => {
+                native(lua, table, "SetSmoothing", value.as_str())?;
+            }
             "childKey" => {
                 native(lua, table, "SetChildKey", value.as_str())?;
             }
@@ -701,6 +799,16 @@ fn apply_child(
             crate::layout::invalidate(&mut st);
         }
         "Anchors" => build.anchors.push((id, child.clone())),
+        "MaskedTextures" => build.masked.push((id, child.clone())),
+        // <Mixins><Mixin key="Name" source="secure"/></Mixins>: like the
+        // mixin attribute. The secure/public partitions do not exist here.
+        "Mixins" => {
+            for m in &child.children {
+                if let Some(key) = m.attr("key") {
+                    apply_mixins(lua, table, key)?;
+                }
+            }
+        }
         "KeyValues" => {
             for kv in &child.children {
                 if let Err(e) = apply_key_value(lua, table, kv) {
@@ -744,7 +852,9 @@ fn apply_child(
             for a in &child.children {
                 let Some(name) = a.attr("name") else { continue };
                 let v = typed_value(lua, a.attr("type"), a.attr("value").unwrap_or(""))?;
-                native(lua, table, "SetAttribute", (name, v))?;
+                // During construction attributes do not fire OnAttributeChanged
+                // (the frame's children may not exist yet).
+                native(lua, table, "SetAttributeNoHandler", (name, v))?;
             }
         }
         "HitRectInsets" => {
@@ -927,8 +1037,38 @@ fn apply_child(
             build_object(lua, build, child, Some(id), None)?;
         }
         "Offset" | "Rect" | "AbsDimension" | "ResizeBounds" | "TitleRegion" | "Backdrop"
-        | "TextInsets" | "SwipeTexture" | "EdgeTexture" | "BlingTexture" | "FlipBook"
-        | "Origin" | "KeyValue" => {}
+        | "SwipeTexture" | "EdgeTexture" | "BlingTexture" | "FlipBook" | "KeyValue" => {}
+        "TextInsets" => {
+            let src = child.child("AbsInset").map(|r| r.as_ref()).unwrap_or(child);
+            let g = |k: &str| src.attr_f64(k).unwrap_or(0.0);
+            native(
+                lua,
+                table,
+                "SetTextInsets",
+                (g("left"), g("right"), g("top"), g("bottom")),
+            )?;
+        }
+        "ViewInsets" => {
+            let src = child.child("AbsInset").map(|r| r.as_ref()).unwrap_or(child);
+            let g = |k: &str| src.attr_f64(k).unwrap_or(0.0);
+            native(
+                lua,
+                table,
+                "SetViewInsets",
+                (g("left"), g("right"), g("top"), g("bottom")),
+            )?;
+        }
+        "Origin" => {
+            let point = child.attr("point").unwrap_or("CENTER").to_ascii_uppercase();
+            let (x, y) = child
+                .child("Offset")
+                .map(|o| dimension(o))
+                .unwrap_or((None, None));
+            let mut st = state(lua);
+            if let Some(a) = st.frames[id].anim.as_deref_mut() {
+                a.origin = Some((point, x.unwrap_or(0.0), y.unwrap_or(0.0)));
+            }
+        }
         _ => warn_once(lua, &format!("child:{}:{tag}", owner.tag), || {
             format!(
                 "{}:{}: unsupported element <{tag}> in <{}>",
@@ -1023,8 +1163,16 @@ fn script_params(name: &str) -> &'static str {
 }
 
 const HELPERS: &str = r#"
+local error, format = error, string.format
 local function method(name)
-    return function(self, ...) return self[name](self, ...) end
+    return function(self, ...)
+        local f = self[name]
+        if f == nil then
+            local who = self.GetDebugName and self:GetDebugName() or "?"
+            error(format("%s: attempt to call method '%s' (a nil value)", who, name), 2)
+        end
+        return f(self, ...)
+    end
 end
 local function combine(a, b)
     return function(...) a(...); return b(...) end
@@ -1091,8 +1239,11 @@ fn apply_script(
         });
     let inherit = s.attr("inherit").map(|v| v.to_ascii_lowercase());
     let combined = match (inherit.as_deref(), existing) {
-        (Some("prepend"), Some(old)) => combine.call((handler.clone(), old))?,
-        (Some("append"), Some(old)) => combine.call((old, handler.clone()))?,
+        // inherit="prepend" puts the inherited handler first; "append" puts
+        // it after this one. (StanceBar's OnLoad prepends EditModeActionBar's,
+        // which creates the buttons it then uses.)
+        (Some("prepend"), Some(old)) => combine.call((old, handler.clone()))?,
+        (Some("append"), Some(old)) => combine.call((handler.clone(), old))?,
         _ => {
             let key = (id, name.clone());
             match build.intrinsic_scripts.get(&key).cloned() {
@@ -1135,6 +1286,25 @@ fn relative_key(lua: &Lua, id: FrameId, path: &str) -> Option<Table> {
         }
     }
     Some(current)
+}
+
+/// Add a mask texture to the textures listed by `childKey`, which are
+/// keys on the mask's parent.
+fn apply_masked_textures(lua: &Lua, mask: FrameId, list: &Rc<Elem>) {
+    let mask_table = state(lua).table(mask);
+    for m in &list.children {
+        let Some(key) = m.attr("childKey") else {
+            continue;
+        };
+        match relative_key(lua, mask, &format!("$parent.{key}")) {
+            Some(t) => {
+                if let Err(e) = native(lua, &t, "AddMaskTexture", mask_table.clone()) {
+                    report(lua, m, &e.to_string());
+                }
+            }
+            None => report(lua, m, &format!("masked texture '{key}' not found")),
+        }
+    }
 }
 
 fn apply_anchors(lua: &Lua, id: FrameId, elem: &Rc<Elem>) {

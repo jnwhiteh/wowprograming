@@ -81,6 +81,46 @@ fn lookup(lua: &Lua, name: &str) -> Option<usize> {
     Some(st.addons.len() - 1)
 }
 
+/// Names of the Blizzard addons the client loads at startup: those in the
+/// UI source that may load in game and are not load-on-demand. Addons
+/// marked `LoadFirst` come first; each group is sorted by name. Addons
+/// that the client runs in its separate secure environment
+/// (`UseSecureEnvironment`) come before those: the client sets that
+/// environment up first (other addons use its intrinsics, such as
+/// `AuraContainer`, without declaring a dependency). The sandbox runs them
+/// in the normal environment; see `GetGlobalEnvironment` in
+/// `lua/client.lua`.
+pub fn startup_blizzard_addons(lua: &Lua) -> Vec<String> {
+    let Some(ui) = state(lua).ui_source_dir.clone() else {
+        return Vec::new();
+    };
+    let Some(dir) = resolve_path(&ui, "Interface/AddOns") else {
+        return Vec::new();
+    };
+    let mut addons: Vec<(bool, bool, String, String)> = std::fs::read_dir(dir)
+        .into_iter()
+        .flatten()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_name().to_string_lossy().starts_with("Blizzard_"))
+        .filter_map(|e| read_addon(&e.path(), AddonKind::Blizzard))
+        .filter(|a| !a.toc.load_on_demand() && a.toc.loadable_in_game())
+        .map(|a| {
+            let secure = a
+                .toc
+                .get("UseSecureEnvironment")
+                .is_some_and(|v| v.trim() == "1");
+            (
+                !secure,
+                !a.toc.load_first(),
+                a.name.to_ascii_lowercase(),
+                a.name,
+            )
+        })
+        .collect();
+    addons.sort();
+    addons.into_iter().map(|(_, _, _, name)| name).collect()
+}
+
 /// Load an addon and its dependencies. Returns the final load state.
 pub fn load_addon(lua: &Lua, name: &str) -> LoadState {
     let Some(index) = lookup(lua, name) else {
@@ -130,7 +170,14 @@ pub fn load_addon(lua: &Lua, name: &str) -> LoadState {
         }
     }
 
+    let started = std::time::Instant::now();
     run_addon_files(lua, index, false);
+    if std::env::var_os("WOWPROGRAMMING_PROFILE").is_some() {
+        let ms = started.elapsed().as_millis();
+        if ms >= 200 {
+            eprintln!("profile: {addon_name} took {ms} ms (with dependencies loaded before)");
+        }
+    }
     savedvars::load(lua, &addon_name);
     state(lua).addons[index].load_state = LoadState::Loaded;
     if let Ok(args) = (addon_name.as_str(), false).into_lua_multi(lua) {

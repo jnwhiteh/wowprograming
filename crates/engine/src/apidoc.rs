@@ -18,6 +18,8 @@ const BUILDER: &str = include_str!("lua/apidoc.lua");
 const DOC_DIR: &str = "Interface/AddOns/Blizzard_APIDocumentationGenerated";
 const FUNCTION_STUBS_KEY: &str = "wowprogramming.function_stubs";
 const CALLED_STUBS_KEY: &str = "wowprogramming.called_stubs";
+/// Registry key of the documented mixins of return values.
+pub const RETURN_MIXINS_KEY: &str = "wowprogramming.return_mixins";
 
 /// Widget method groups (see `frames::method_chain`) of each documentation table.
 const WIDGET_DOCS: &[(&str, &str)] = &[
@@ -94,10 +96,11 @@ pub fn install(lua: &Lua, ui_source_dir: Option<&Path>) -> Result<HashMap<String
     let called = lua.create_table()?;
     lua.set_named_registry_value(CALLED_STUBS_KEY, called.clone())?;
     let watchdog = state(lua).watchdog.clone();
-    let (enum_table, constants, errors, function_stubs, widget_stubs): (
+    let (enum_table, constants, errors, function_stubs, widget_stubs, return_mixins): (
         Table,
         Table,
         Vec<String>,
+        Table,
         Table,
         Table,
     ) = watchdog.guarded(|| {
@@ -114,6 +117,7 @@ pub fn install(lua: &Lua, ui_source_dir: Option<&Path>) -> Result<HashMap<String
     lua.globals().set("Enum", enum_table)?;
     lua.globals().set("Constants", constants)?;
     lua.set_named_registry_value(FUNCTION_STUBS_KEY, function_stubs)?;
+    lua.set_named_registry_value(RETURN_MIXINS_KEY, return_mixins)?;
 
     let mut groups: HashMap<String, Table> = HashMap::new();
     for pair in widget_stubs.pairs::<String, Table>() {
@@ -176,6 +180,48 @@ pub fn install_function_stubs(lua: &Lua) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// Add stubs for undocumented client functions (see `clientnames.rs`)
+/// that nothing else defined. They return nothing (`GetNum*` returns 0)
+/// and are counted like the documented stubs.
+pub fn install_named_stubs(lua: &Lua, names: &[String]) -> Result<usize> {
+    let called: Table = lua.named_registry_value(CALLED_STUBS_KEY)?;
+    let g = lua.globals();
+    let mut count = 0;
+    for name in names {
+        // "C_Namespace.Function" goes into the namespace table.
+        let (container, key) = match name.split_once('.') {
+            Some((ns, f)) => {
+                let t = match g.raw_get::<Value>(ns)? {
+                    Value::Table(t) => t,
+                    Value::Nil => {
+                        let t = lua.create_table()?;
+                        g.raw_set(ns, t.clone())?;
+                        t
+                    }
+                    _ => continue,
+                };
+                (t, f)
+            }
+            None => (g.clone(), name.as_str()),
+        };
+        if !container.raw_get::<Value>(key)?.is_nil() {
+            continue;
+        }
+        let called = called.clone();
+        let full = name.clone();
+        // Counts are used as loop limits: GetNum* returns 0.
+        let is_count = key.starts_with("GetNum");
+        let f = lua.create_function(move |_, _: mlua::MultiValue| {
+            let n: i64 = called.raw_get(full.as_str()).unwrap_or(0);
+            called.raw_set(full.as_str(), n + 1)?;
+            Ok(if is_count { Some(0) } else { None })
+        })?;
+        container.raw_set(key, f)?;
+        count += 1;
+    }
+    Ok(count)
 }
 
 /// Names of stubs called so far, with call counts, most called first.

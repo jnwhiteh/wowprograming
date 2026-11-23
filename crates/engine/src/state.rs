@@ -72,7 +72,10 @@ pub struct TexState {
     pub file: TexFile,
     pub atlas: Option<String>,
     /// Texture coordinates of the corners: UL, LL, UR, LR as (x, y) pairs.
+    /// With an atlas they are relative to the atlas region, as in the client.
     pub coords: [f32; 8],
+    /// The atlas region in the file: left, top, right, bottom.
+    pub atlas_rect: Option<[f32; 4]>,
     pub vertex_color: [f32; 4],
     pub desaturation: f32,
     pub blend_mode: String,
@@ -80,6 +83,9 @@ pub struct TexState {
     pub vert_tile: bool,
     pub rotation: f32,
     pub gradient: Option<([f32; 4], [f32; 4], bool)>,
+    /// Flipbook frame left showing when a flipbook animation finished, as
+    /// fractions of the texture coordinates: left, top, right, bottom.
+    pub flipbook_frame: Option<[f32; 4]>,
 }
 
 impl Default for TexState {
@@ -88,6 +94,7 @@ impl Default for TexState {
             file: TexFile::None,
             atlas: None,
             coords: [0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0],
+            atlas_rect: None,
             vertex_color: [1.0; 4],
             desaturation: 0.0,
             blend_mode: "BLEND".into(),
@@ -95,6 +102,7 @@ impl Default for TexState {
             vert_tile: false,
             rotation: 0.0,
             gradient: None,
+            flipbook_frame: None,
         }
     }
 }
@@ -123,11 +131,14 @@ pub struct TextState {
     pub non_space_wrap: bool,
     pub text_scale: f64,
     pub alpha_gradient: Option<(i64, i64)>,
+    /// Edit box text insets: left, right, top, bottom.
+    pub insets: [f64; 4],
 }
 
 impl Default for TextState {
     fn default() -> Self {
         Self {
+            insets: [0.0; 4],
             text: String::new(),
             max_lines: 0,
             word_wrap: true,
@@ -176,6 +187,19 @@ pub struct AnimState {
     pub from_alpha: f64,
     pub to_alpha: f64,
     pub set_to_final_alpha: bool,
+    /// Translation: offset in the target's units.
+    pub offset: (f64, f64),
+    /// Scale: start and end scale factors.
+    pub scale_from: (f64, f64),
+    pub scale_to: (f64, f64),
+    /// Scale and rotation origin: point and offset.
+    pub origin: Option<(String, f64, f64)>,
+    /// Rotation in radians.
+    pub radians: f64,
+    /// FlipBook: rows, columns and frames.
+    pub flipbook: (u32, u32, u32),
+    /// Easing: NONE, IN, OUT or IN_OUT.
+    pub smoothing: String,
 }
 
 /// One widget: a frame, region, font object or animation. Its Lua table
@@ -232,6 +256,9 @@ pub struct FrameData {
     pub scroll: (f64, f64),
     pub focus: bool,
     pub masks: Vec<FrameId>,
+    /// Created from XML: a texture without anchors or size then fills its
+    /// parent, as in the client.
+    pub from_xml: bool,
 }
 
 impl FrameData {
@@ -282,6 +309,7 @@ impl FrameData {
             scroll: (0.0, 0.0),
             focus: false,
             masks: Vec::new(),
+            from_xml: false,
         }
     }
 
@@ -377,8 +405,14 @@ pub struct State {
     pub rect_cache: Vec<Option<(u64, Option<crate::layout::Rect>)>>,
     /// Size of the screen in UI units (the size of UIParent at scale 1).
     pub screen: (f64, f64),
+    /// Physical pixels per UI unit at scale 1.
+    pub pixel_scale: f64,
     pub xml: crate::xml::XmlState,
     pub cvars: HashMap<String, String>,
+    /// Default values of CVars, by lower-case name.
+    pub cvar_defaults: HashMap<String, String>,
+    /// CVars that were read but have neither a value nor a default.
+    pub unknown_cvars: std::collections::BTreeSet<String>,
     pub gamedata: Option<Rc<crate::gamedata::GameData>>,
     pub fonts: crate::text::FontCache,
     pub focus: Option<FrameId>,
@@ -388,6 +422,10 @@ pub struct State {
     pub mouse: (f64, f64),
     /// Order in which frames were last raised, for frames at the same level.
     pub raise_counter: u64,
+    /// Visual effects of the animations that are playing, by target.
+    pub anim_fx: HashMap<FrameId, crate::animfx::AnimFx>,
+    /// Sizes last reported to `OnSizeChanged` handlers.
+    pub last_sizes: HashMap<FrameId, (f64, f64)>,
 }
 
 impl State {

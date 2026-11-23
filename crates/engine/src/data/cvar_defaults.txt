@@ -1,0 +1,5 @@
+# CVar defaults that the UI reads at startup, for runs without a CVar
+# capture. One "name value" pair per line. A scenario's cvars capture
+# (tools/capture/client_constants_capture.lua) takes precedence.
+userFontScale 1
+userFontScaleGlue 1

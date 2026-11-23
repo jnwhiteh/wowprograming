@@ -528,3 +528,122 @@ fn loads_blizzard_shared_xml_base() {
         .unwrap();
     assert_eq!((healer, meta, auction), (1, 3, 1.5));
 }
+
+#[test]
+fn only_opposite_edges_set_a_size() {
+    let wtf = tempfile::tempdir().unwrap();
+    let engine = started(&[], wtf.path());
+    let ok: bool = engine
+        .eval(
+            r#"
+            local parent = CreateFrame("Frame", nil, UIParent)
+            parent:SetSize(200, 100)
+            parent:SetPoint("CENTER")
+            -- TOP with LEFT and RIGHT: the width comes from the edges, the
+            -- height stays the frame's own.
+            local f = CreateFrame("Frame", nil, parent)
+            f:SetHeight(30)
+            f:SetPoint("TOP")
+            f:SetPoint("LEFT")
+            f:SetPoint("RIGHT")
+            local w, h = f:GetSize()
+            return w == 200 and h == 30
+            "#,
+        )
+        .unwrap();
+    assert!(ok);
+}
+
+#[test]
+fn buttons_and_mouse_scripts_enable_the_mouse() {
+    let wtf = tempfile::tempdir().unwrap();
+    let engine = started(&[], wtf.path());
+    let ok: bool = engine
+        .eval(
+            r#"
+            local b = CreateFrame("Button")
+            local f = CreateFrame("Frame")
+            local before = f:IsMouseEnabled()
+            f:SetScript("OnMouseDown", function() end)
+            return b:IsMouseEnabled() and not before and f:IsMouseEnabled()
+            "#,
+        )
+        .unwrap();
+    assert!(ok);
+}
+
+#[test]
+fn animations_change_alpha_and_position_while_playing() {
+    let wtf = tempfile::tempdir().unwrap();
+    let mut engine = started(&[], wtf.path());
+    engine.exec(
+        r#"
+        AnimFrame = CreateFrame("Frame", nil, UIParent)
+        AnimFrame:SetSize(10, 10)
+        AnimFrame:SetPoint("BOTTOMLEFT", 100, 100)
+        AnimTex = AnimFrame:CreateTexture()
+        AnimTex:SetAllPoints()
+        AnimTex:SetColorTexture(1, 1, 1)
+        local g = AnimFrame:CreateAnimationGroup()
+        local a = g:CreateAnimation("Alpha")
+        a:SetFromAlpha(0)
+        a:SetToAlpha(1)
+        a:SetDuration(1)
+        local t = g:CreateAnimation("Translation")
+        t:SetOffset(50, 0)
+        t:SetDuration(1)
+        g:Play()
+        "#,
+    );
+    engine.tick(0.5);
+    let scene = engine.scene();
+    let quad = scene
+        .items
+        .iter()
+        .find_map(|i| match i {
+            wowprogramming_engine::scene::Item::Quad(q) => Some(q.clone()),
+            _ => None,
+        })
+        .expect("the texture is drawn");
+    assert!(
+        (quad.color[3] - 0.5).abs() < 0.05,
+        "alpha {}",
+        quad.color[3]
+    );
+    assert!(
+        (quad.rect.left - 125.0).abs() < 1.0,
+        "left {}",
+        quad.rect.left
+    );
+}
+
+#[test]
+fn masks_and_atlas_coordinates_reach_the_scene() {
+    let wtf = tempfile::tempdir().unwrap();
+    let engine = started(&[], wtf.path());
+    engine.exec(
+        r#"
+        local f = CreateFrame("Frame", nil, UIParent)
+        f:SetSize(10, 10)
+        f:SetPoint("CENTER")
+        local t = f:CreateTexture()
+        t:SetAllPoints()
+        t:SetColorTexture(1, 0, 0)
+        local m = f:CreateMaskTexture()
+        m:SetSize(4, 4)
+        m:SetPoint("CENTER")
+        t:AddMaskTexture(m)
+        "#,
+    );
+    let scene = engine.scene();
+    let quad = scene
+        .items
+        .iter()
+        .find_map(|i| match i {
+            wowprogramming_engine::scene::Item::Quad(q) => Some(q.clone()),
+            _ => None,
+        })
+        .expect("the texture is drawn");
+    assert_eq!(quad.masks.len(), 1);
+    assert!((quad.masks[0].rect.width - 4.0).abs() < 1e-6);
+}

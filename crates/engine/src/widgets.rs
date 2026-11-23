@@ -224,10 +224,11 @@ pub fn method_groups(lua: &Lua) -> Result<HashMap<&'static str, Table>> {
     groups.insert("StatusBar", value_methods(lua, false)?);
     groups.insert("ScrollFrame", scroll_frame_methods(lua)?);
     groups.insert("AnimCommon", anim_common_methods(lua)?);
+    // Tooltip methods override some frame methods (Show) and call them.
     let tooltip: Table = lua
         .load(include_str!("lua/tooltip.lua"))
         .set_name("=[C]")
-        .call(())?;
+        .call(groups["ScriptRegion"].clone())?;
     groups.insert("GameTooltip", tooltip);
     groups.insert("AnimationGroup", anim_group_methods(lua)?);
     groups.insert("Animation", animation_methods(lua)?);
@@ -349,6 +350,28 @@ fn object_methods(lua: &Lua) -> Result<Table> {
 
 fn script_region_methods(lua: &Lua) -> Result<Table> {
     let m = lua.create_table()?;
+    // SetToDefaults: back to a freshly created state (pools call it when they
+    // reuse a region): no anchors, no size, full alpha, scale 1, and no
+    // texture or text.
+    method!(lua, m, "SetToDefaults", |lua, this_: Value| {
+        let id = this(&this_)?;
+        let mut st = state(lua);
+        let f = &mut st.frames[id];
+        f.points.clear();
+        f.width = 0.0;
+        f.height = 0.0;
+        f.alpha = 1.0;
+        f.scale = 1.0;
+        f.masks.clear();
+        if f.tex.is_some() {
+            f.tex = Some(Box::default());
+        }
+        if let Some(t) = f.text.as_deref_mut() {
+            t.text.clear();
+        }
+        layout::invalidate(&mut st);
+        Ok(())
+    });
 
     // Visibility
     method!(lua, m, "Show", |lua, this_: Value| {
@@ -420,8 +443,6 @@ fn script_region_methods(lua: &Lua) -> Result<Table> {
             st.frames[id].width = num(Some(&w)).max(0.0);
             st.frames[id].height = num(Some(&h)).max(0.0);
             layout::invalidate(&mut st);
-            drop(st);
-            fire_size_changed(lua, id);
             Ok(())
         }
     );
@@ -430,8 +451,6 @@ fn script_region_methods(lua: &Lua) -> Result<Table> {
         let mut st = state(lua);
         st.frames[id].width = num(Some(&w)).max(0.0);
         layout::invalidate(&mut st);
-        drop(st);
-        fire_size_changed(lua, id);
         Ok(())
     });
     method!(lua, m, "SetHeight", |lua, (this_, h): (Value, Value)| {
@@ -439,8 +458,6 @@ fn script_region_methods(lua: &Lua) -> Result<Table> {
         let mut st = state(lua);
         st.frames[id].height = num(Some(&h)).max(0.0);
         layout::invalidate(&mut st);
-        drop(st);
-        fire_size_changed(lua, id);
         Ok(())
     });
     method!(lua, m, "GetWidth", |lua, this_: Value| {
@@ -788,11 +805,48 @@ fn script_region_methods(lua: &Lua) -> Result<Table> {
     Ok(m)
 }
 
-fn fire_size_changed(lua: &Lua, id: FrameId) {
-    let has = state(lua).frames[id].has_script("OnSizeChanged");
-    if has {
-        let (w, h) = layout::size(&mut state(lua), id);
-        fire_script(lua, id, "OnSizeChanged", (w, h));
+/// Fire `OnSizeChanged` for frames whose size changed since the last call,
+/// as the client does after layout, not inside `SetSize`. Handlers may
+/// change more sizes; a few passes settle that.
+pub fn fire_size_changes(lua: &Lua) {
+    for _ in 0..8 {
+        let candidates: Vec<FrameId> = {
+            let st = state(lua);
+            (0..st.frames.len())
+                .filter(|&i| st.frames[i].has_script("OnSizeChanged"))
+                .collect()
+        };
+        let mut changed = Vec::new();
+        {
+            let mut st = state(lua);
+            for id in candidates {
+                // Only frames with a resolved rectangle have a size to report.
+                if layout::rect(&mut st, id).is_none() {
+                    continue;
+                }
+                let size = layout::size(&mut st, id);
+                let last = st.last_sizes.insert(id, size);
+                let differs = match last {
+                    Some((w, h)) => (w - size.0).abs() > 1e-3 || (h - size.1).abs() > 1e-3,
+                    None => size.0 > 0.0 || size.1 > 0.0,
+                };
+                if differs {
+                    changed.push((id, size));
+                }
+            }
+        }
+        if changed.is_empty() {
+            return;
+        }
+        for (id, (w, h)) in changed {
+            // An earlier handler may have cleared this frame's anchors.
+            let has_rect = layout::rect(&mut state(lua), id).is_some();
+            if !has_rect {
+                state(lua).last_sizes.remove(&id);
+                continue;
+            }
+            fire_script(lua, id, "OnSizeChanged", (w, h));
+        }
     }
 }
 
@@ -862,10 +916,8 @@ fn region_methods(lua: &Lua) -> Result<Table> {
 fn set_texture_file(lua: &Lua, id: FrameId, file: TexFile) {
     let mut st = state(lua);
     let tex = crate::frames::ensure_tex(&mut st.frames[id]);
-    if tex.atlas.is_some() {
-        tex.coords = crate::state::TexState::default().coords;
-    }
     tex.atlas = None;
+    tex.atlas_rect = None;
     tex.file = file;
 }
 
@@ -890,7 +942,7 @@ fn tex_file_arg(v: &Value) -> TexFile {
 /// Apply an atlas to a texture. Returns false if the atlas is unknown.
 pub fn set_atlas(lua: &Lua, id: FrameId, atlas: &str, use_size: bool) -> bool {
     let gd = state(lua).gamedata.clone();
-    let info = gd.as_ref().and_then(|g| g.atlas(atlas).cloned());
+    let info = gd.as_ref().and_then(|g| g.atlas(atlas));
     let mut st = state(lua);
     let f = &mut st.frames[id];
     let tex = crate::frames::ensure_tex(f);
@@ -898,9 +950,8 @@ pub fn set_atlas(lua: &Lua, id: FrameId, atlas: &str, use_size: bool) -> bool {
         Some(a) => {
             tex.file = TexFile::Id(a.file as i64);
             tex.atlas = Some(a.name.clone());
-            tex.coords = [
-                a.left, a.top, a.left, a.bottom, a.right, a.top, a.right, a.bottom,
-            ];
+            // Texture coordinates stay as they are, relative to the atlas.
+            tex.atlas_rect = Some([a.left, a.top, a.right, a.bottom]);
             tex.horiz_tile = a.tiles_horizontally;
             tex.vert_tile = a.tiles_vertically;
             if use_size {
@@ -913,6 +964,7 @@ pub fn set_atlas(lua: &Lua, id: FrameId, atlas: &str, use_size: bool) -> bool {
         None => {
             // Keep the name so GetAtlas works without game data.
             tex.atlas = Some(atlas.to_string());
+            tex.atlas_rect = None;
             tex.file = TexFile::None;
             false
         }
@@ -1723,19 +1775,38 @@ fn frame_methods(lua: &Lua) -> Result<Table> {
         attributes(lua, id)?.raw_set(name, value)?;
         Ok(())
     });
-    method!(
-        lua,
-        m,
-        "GetAttribute",
-        |lua, (this_, name): (Value, String)| {
-            let id = this(&this_)?;
-            let attrs = state(lua).frames[id].attributes.clone();
-            match attrs {
-                Some(t) => t.raw_get::<Value>(name),
-                None => Ok(Value::Nil),
+    method!(lua, m, "GetAttribute", |lua,
+                                     (this_, a, b, c): (
+        Value,
+        String,
+        Option<String>,
+        Option<String>
+    )| {
+        let id = this(&this_)?;
+        let attrs = state(lua).frames[id].attributes.clone();
+        let Some(t) = attrs else {
+            return Ok(Value::Nil);
+        };
+        // GetAttribute(prefix, name, suffix) tries the exact key, then
+        // wildcards for the prefix and the suffix, then the bare name.
+        let (Some(name), Some(suffix)) = (b, c) else {
+            return t.raw_get::<Value>(a);
+        };
+        let prefix = a;
+        for key in [
+            format!("{prefix}{name}{suffix}"),
+            format!("*{name}{suffix}"),
+            format!("{prefix}{name}*"),
+            format!("*{name}*"),
+            name.clone(),
+        ] {
+            let v = t.raw_get::<Value>(key)?;
+            if !v.is_nil() {
+                return Ok(v);
             }
         }
-    );
+        Ok(Value::Nil)
+    });
 
     // Stacking
     method!(lua, m, "SetFrameStrata", |lua,
@@ -2536,7 +2607,6 @@ fn edit_box_methods(lua: &Lua) -> Result<Table> {
         "SetNumeric",
         "SetCursorPosition",
         "HighlightText",
-        "SetTextInsets",
         "SetCountInvisibleLetters",
         "SetHistoryLines",
         "AddHistoryLine",
@@ -2554,7 +2624,21 @@ fn edit_box_methods(lua: &Lua) -> Result<Table> {
     method!(lua, m, "IsNumeric", |_, _this: Value| Ok(false));
     method!(lua, m, "GetMaxLetters", |_, _this: Value| Ok(0));
     method!(lua, m, "GetCursorPosition", |_, _this: Value| Ok(0));
-    method!(lua, m, "GetTextInsets", |_, _this: Value| Ok((0, 0, 0, 0)));
+    method!(lua, m, "SetTextInsets", |lua, args: Variadic<Value>| {
+        let id = this(args.first().unwrap_or(&Value::Nil))?;
+        let v: Vec<f64> = (1..5).map(|i| num(args.get(i))).collect();
+        let mut st = state(lua);
+        if let Some(t) = st.frames[id].text.as_deref_mut() {
+            t.insets = [v[0], v[1], v[2], v[3]];
+        }
+        Ok(())
+    });
+    method!(lua, m, "GetTextInsets", |lua, this_: Value| {
+        with(lua, &this_, |f| {
+            let i = f.text.as_deref().map(|t| t.insets).unwrap_or([0.0; 4]);
+            (i[0], i[1], i[2], i[3])
+        })
+    });
     method!(lua, m, "GetNumber", |lua, this_: Value| {
         with(lua, &this_, |f| {
             f.text
@@ -2639,7 +2723,25 @@ fn value_methods(lua: &Lua, slider: bool) -> Result<Table> {
                             t
                         }
                     };
-                    set_texture_file(lua, tex, tex_file_arg(other));
+                    // The asset may be an atlas name as well as a file.
+                    let atlas = match other {
+                        Value::String(s) => {
+                            let name = s.to_string_lossy();
+                            let is_path = name.contains('\\') || name.contains('/');
+                            let known = state(lua)
+                                .gamedata
+                                .as_ref()
+                                .is_some_and(|g| g.atlas(&name).is_some());
+                            (!is_path && known).then_some(name)
+                        }
+                        _ => None,
+                    };
+                    match atlas {
+                        Some(name) => {
+                            set_atlas(lua, tex, &name, false);
+                        }
+                        None => set_texture_file(lua, tex, tex_file_arg(other)),
+                    }
                     tex
                 }
             };
@@ -2739,9 +2841,13 @@ fn scroll_frame_methods(lua: &Lua) -> Result<Table> {
         "SetVerticalScroll",
         |lua, (this_, v): (Value, f64)| {
             let id = this(&this_)?;
-            state(lua).frames[id].scroll.1 = v;
+            // Like the client, the script runs only when the value changes;
+            // scroll bars and scroll frames update each other through it.
+            let old = std::mem::replace(&mut state(lua).frames[id].scroll.1, v);
             place_scroll_child(lua, id);
-            fire_script(lua, id, "OnVerticalScroll", v);
+            if (old - v).abs() > 1e-6 {
+                fire_script(lua, id, "OnVerticalScroll", v);
+            }
             Ok(())
         }
     );
@@ -2751,9 +2857,13 @@ fn scroll_frame_methods(lua: &Lua) -> Result<Table> {
         "SetHorizontalScroll",
         |lua, (this_, v): (Value, f64)| {
             let id = this(&this_)?;
-            state(lua).frames[id].scroll.0 = v;
+            // Like the client, the script runs only when the value changes;
+            // scroll bars and scroll frames update each other through it.
+            let old = std::mem::replace(&mut state(lua).frames[id].scroll.0, v);
             place_scroll_child(lua, id);
-            fire_script(lua, id, "OnHorizontalScroll", v);
+            if (old - v).abs() > 1e-6 {
+                fire_script(lua, id, "OnHorizontalScroll", v);
+            }
             Ok(())
         }
     );
@@ -2903,6 +3013,7 @@ fn stop_group(lua: &Lua, id: FrameId) {
 fn finish_group(lua: &Lua, id: FrameId, requested: bool) {
     {
         let mut st = state(lua);
+        crate::animfx::keep_final_flipbook_frames(&mut st, id);
         let parent = st.frames[id].parent;
         let final_alpha = st.frames[id]
             .anim
@@ -2970,6 +3081,7 @@ pub fn advance_animations(lua: &Lua, elapsed: f64) {
             }
         }
     }
+    crate::animfx::recompute(&mut state(lua));
 }
 
 fn anim_group_methods(lua: &Lua) -> Result<Table> {
@@ -3116,6 +3228,108 @@ fn animation_methods(lua: &Lua) -> Result<Table> {
     anim_field!("SetEndDelay", "GetEndDelay", end_delay);
     anim_field!("SetFromAlpha", "GetFromAlpha", from_alpha);
     anim_field!("SetToAlpha", "GetToAlpha", to_alpha);
+    macro_rules! anim_pair {
+        ($set:literal, $get:literal, $field:ident) => {
+            method!(lua, m, $set, |lua, (this_, x, y): (Value, f64, f64)| {
+                with(lua, &this_, |f| {
+                    if let Some(a) = f.anim.as_deref_mut() {
+                        a.$field = (x, y);
+                    }
+                })
+            });
+            method!(lua, m, $get, |lua, this_: Value| {
+                with(lua, &this_, |f| {
+                    f.anim.as_deref().map(|a| a.$field).unwrap_or_default()
+                })
+            });
+        };
+    }
+    anim_pair!("SetOffset", "GetOffset", offset);
+    anim_pair!("SetScaleFrom", "GetScaleFrom", scale_from);
+    anim_pair!("SetScaleTo", "GetScaleTo", scale_to);
+    anim_pair!("SetScale", "GetScale", scale_to);
+    anim_field!("SetRadians", "GetRadians", radians);
+    method!(lua, m, "SetDegrees", |lua, (this_, v): (Value, f64)| {
+        with(lua, &this_, |f| {
+            if let Some(a) = f.anim.as_deref_mut() {
+                a.radians = v.to_radians();
+            }
+        })
+    });
+    method!(lua, m, "GetDegrees", |lua, this_: Value| {
+        with(lua, &this_, |f| {
+            f.anim
+                .as_deref()
+                .map(|a| a.radians.to_degrees())
+                .unwrap_or(0.0)
+        })
+    });
+    method!(lua, m, "SetOrigin", |lua,
+                                  (this_, p, x, y): (
+        Value,
+        String,
+        Option<f64>,
+        Option<f64>
+    )| {
+        with(lua, &this_, |f| {
+            if let Some(a) = f.anim.as_deref_mut() {
+                a.origin = Some((p.to_ascii_uppercase(), x.unwrap_or(0.0), y.unwrap_or(0.0)));
+            }
+        })
+    });
+    method!(lua, m, "GetOrigin", |lua, this_: Value| {
+        with(lua, &this_, |f| {
+            f.anim
+                .as_deref()
+                .and_then(|a| a.origin.clone())
+                .unwrap_or(("CENTER".into(), 0.0, 0.0))
+        })
+    });
+    macro_rules! flipbook_field {
+        ($set:literal, $get:literal, $idx:tt) => {
+            method!(lua, m, $set, |lua, (this_, v): (Value, u32)| {
+                with(lua, &this_, |f| {
+                    if let Some(a) = f.anim.as_deref_mut() {
+                        a.flipbook.$idx = v.max(1);
+                    }
+                })
+            });
+            method!(lua, m, $get, |lua, this_: Value| {
+                with(lua, &this_, |f| {
+                    f.anim.as_deref().map(|a| a.flipbook.$idx).unwrap_or(1)
+                })
+            });
+        };
+    }
+    flipbook_field!("SetFlipBookRows", "GetFlipBookRows", 0);
+    flipbook_field!("SetFlipBookColumns", "GetFlipBookColumns", 1);
+    flipbook_field!("SetFlipBookFrames", "GetFlipBookFrames", 2);
+    method!(
+        lua,
+        m,
+        "SetSmoothing",
+        |lua, (this_, v): (Value, String)| {
+            with(lua, &this_, |f| {
+                if let Some(a) = f.anim.as_deref_mut() {
+                    a.smoothing = v.to_ascii_uppercase();
+                }
+            })
+        }
+    );
+    method!(lua, m, "GetSmoothing", |lua, this_: Value| {
+        with(lua, &this_, |f| {
+            f.anim
+                .as_deref()
+                .map(|a| {
+                    if a.smoothing.is_empty() {
+                        "NONE".to_string()
+                    } else {
+                        a.smoothing.clone()
+                    }
+                })
+                .unwrap_or_default()
+        })
+    });
     method!(lua, m, "SetOrder", |lua, (this_, v): (Value, i64)| {
         with(lua, &this_, |f| {
             if let Some(a) = f.anim.as_deref_mut() {

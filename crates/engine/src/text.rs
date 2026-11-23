@@ -35,6 +35,12 @@ impl FontCache {
 pub struct ResolvedFont {
     pub path: String,
     pub height: f64,
+    /// Height of a line: the font height rounded down to whole physical
+    /// pixels, in the font string's units. The client measures and draws
+    /// text at this size.
+    pub line_height: f64,
+    /// Physical pixels per unit of the font string.
+    pub pixels_per_unit: f64,
     pub flags: String,
     pub color: [f32; 4],
     pub shadow_color: [f32; 4],
@@ -48,6 +54,8 @@ pub fn resolve_font(st: &State, id: FrameId) -> ResolvedFont {
     let mut out = ResolvedFont {
         path: String::new(),
         height: 0.0,
+        line_height: 0.0,
+        pixels_per_unit: 0.0,
         flags: String::new(),
         color: [1.0; 4],
         shadow_color: [0.0, 0.0, 0.0, 0.0],
@@ -157,6 +165,17 @@ fn parse_markup(text: &str) -> Vec<Glyph> {
     let mut i = 0;
     while i < chars.len() {
         let c = chars[i];
+        if c == '\r' {
+            // "\r\n" is one line break; a lone "\r" is one too.
+            if chars.get(i + 1) != Some(&'\n') {
+                out.push(Glyph {
+                    c: '\n',
+                    color: None,
+                });
+            }
+            i += 1;
+            continue;
+        }
         if c != '|' || i + 1 >= chars.len() {
             out.push(Glyph {
                 c,
@@ -246,6 +265,27 @@ fn parse_markup(text: &str) -> Vec<Glyph> {
 pub struct Measurer {
     font: Option<FontArc>,
     height: f64,
+    /// Physical pixels per unit: advances are rounded to whole pixels, as
+    /// hinted glyphs are in the client. Zero leaves them unrounded.
+    pixels_per_unit: f64,
+}
+
+/// Glyph scale for an em size, as FreeType sizes fonts. ab_glyph's
+/// `PxScale` is the height from descent to ascent instead.
+pub fn em_scale(font: &FontArc, em: f32) -> PxScale {
+    match font.units_per_em() {
+        Some(units) if units > 0.0 => PxScale::from(em * font.height_unscaled() / units),
+        _ => PxScale::from(em),
+    }
+}
+
+/// A font height rounded down to whole physical pixels, given the
+/// physical pixels per unit.
+pub fn snap_height(height: f64, pixels_per_unit: f64) -> f64 {
+    if pixels_per_unit <= 0.0 || height * pixels_per_unit < 1.0 {
+        return height;
+    }
+    (height * pixels_per_unit + 1e-6).floor() / pixels_per_unit
 }
 
 impl Measurer {
@@ -254,15 +294,22 @@ impl Measurer {
         let f = st.fonts.get(&font.path, gd.as_deref());
         Measurer {
             font: f,
-            height: font.height,
+            height: font.line_height,
+            pixels_per_unit: font.pixels_per_unit,
         }
     }
 
     pub fn char_width(&self, c: char) -> f64 {
         match &self.font {
             Some(font) => {
-                let scaled = font.as_scaled(PxScale::from(self.height as f32));
-                scaled.h_advance(font.glyph_id(c)) as f64
+                let scaled = font.as_scaled(em_scale(font, self.height as f32));
+                let advance = scaled.h_advance(font.glyph_id(c)) as f64;
+                let ppu = self.pixels_per_unit;
+                if ppu > 0.0 {
+                    (advance * ppu).round() / ppu
+                } else {
+                    advance
+                }
             }
             None => {
                 if c == ' ' {
@@ -309,17 +356,27 @@ pub fn layout_lines(
             && !current.is_empty()
             && g.c != ' '
         {
-            match last_space {
-                Some(sp) if !non_space_wrap || sp > 0 => {
+            // Break at the last space. Without one, break inside the word
+            // only with non-space wrap; otherwise the word overflows and is
+            // cut with an ellipsis below, as in the client.
+            let broke = match last_space {
+                Some(sp) => {
                     let rest = current.split_off(sp + 1);
                     current.pop();
                     lines.push(std::mem::take(&mut current));
                     current = rest;
+                    true
                 }
-                _ => lines.push(std::mem::take(&mut current)),
+                None if non_space_wrap => {
+                    lines.push(std::mem::take(&mut current));
+                    true
+                }
+                None => false,
+            };
+            if broke {
+                width = current.iter().map(|g| m.char_width(g.c)).sum();
+                last_space = None;
             }
-            width = current.iter().map(|g| m.char_width(g.c)).sum();
-            last_space = None;
         }
         if g.c == ' ' {
             last_space = Some(current.len());
@@ -428,7 +485,22 @@ pub fn font_string_lines(
     id: FrameId,
     wrap_width: Option<f64>,
 ) -> (ResolvedFont, Vec<Line>) {
-    let font = resolve_font(st, id);
+    font_string_lines_in(st, id, wrap_width, None)
+}
+
+/// Like [`font_string_lines`], keeping only the lines that fit in
+/// `max_height` (in the font string's units); the last kept line ends in an
+/// ellipsis when text was cut.
+pub fn font_string_lines_in(
+    st: &mut State,
+    id: FrameId,
+    wrap_width: Option<f64>,
+    max_height: Option<f64>,
+) -> (ResolvedFont, Vec<Line>) {
+    let mut font = resolve_font(st, id);
+    let ppu = crate::layout::effective_scale(st, id) * st.pixel_scale;
+    font.line_height = snap_height(font.height, ppu);
+    font.pixels_per_unit = ppu;
     let (text, max_lines, word_wrap, non_space) = match st.frames[id].text.as_deref() {
         Some(t) => (
             t.text.clone(),
@@ -442,6 +514,18 @@ pub fn font_string_lines(
         return (font, Vec::new());
     }
     let m = Measurer::new(st, &font);
+    let mut max_lines = max_lines;
+    if let Some(h) = max_height.filter(|h| *h > 0.0)
+        && font.line_height > 0.0
+    {
+        let fit = (((h + font.spacing) / (font.line_height + font.spacing)) + 0.01).floor();
+        let fit = (fit as usize).max(1);
+        max_lines = if max_lines == 0 {
+            fit
+        } else {
+            max_lines.min(fit)
+        };
+    }
     let lines = layout_lines(&m, &text, wrap_width, word_wrap, non_space, max_lines);
     (font, lines)
 }
@@ -454,7 +538,7 @@ pub fn string_size(st: &mut State, id: FrameId, wrap_width: Option<f64>) -> (f64
     }
     let width = lines.iter().map(|l| l.width).fold(0.0, f64::max);
     let n = lines.len() as f64;
-    let height = n * font.height + (n - 1.0) * font.spacing;
+    let height = n * font.line_height + (n - 1.0) * font.spacing;
     (width, height)
 }
 
@@ -474,6 +558,7 @@ mod tests {
         Measurer {
             font: None,
             height: 10.0,
+            pixels_per_unit: 0.0,
         }
     }
 

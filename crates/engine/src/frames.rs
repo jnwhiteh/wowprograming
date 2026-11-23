@@ -163,7 +163,8 @@ pub fn install(lua: &Lua, stubs: &HashMap<String, Table>) -> Result<()> {
     for (type_name, _) in FRAME_TYPES.iter().chain(OTHER_TYPES) {
         let index = lua.create_table()?;
         let chain = method_chain(type_name);
-        for group in chain.iter().rev() {
+        // Base groups first, so a derived type's methods replace them.
+        for group in chain.iter() {
             if let Some(methods) = groups.get(group) {
                 for pair in methods.pairs::<Value, Value>() {
                     let (k, v) = pair?;
@@ -285,12 +286,17 @@ pub fn create_object(
             data.anim = Some(Box::new(AnimState {
                 from_alpha: 1.0,
                 to_alpha: 1.0,
+                scale_from: (1.0, 1.0),
+                scale_to: (1.0, 1.0),
+                flipbook: (1, 1, 1),
                 ..Default::default()
             }))
         }
         _ => {}
     }
     if is_object_type(object_type, "Button") {
+        // Buttons take mouse input unless told otherwise.
+        data.mouse_enabled = true;
         data.button = Some(Box::new(ButtonState {
             enabled: true,
             clicks: vec!["LeftButtonUp".into()],
@@ -488,6 +494,16 @@ pub fn set_script(lua: &Lua, id: FrameId, name: &str, handler: Option<Function>)
     let has = handler.is_some();
     entry.raw_set("handler", handler)?;
     let mut st = state(lua);
+    // Like the client, a mouse script handler enables mouse input.
+    if has && st.frames[id].is_frame() {
+        match name {
+            "OnEnter" | "OnLeave" => st.frames[id].mouse_motion = true,
+            "OnMouseDown" | "OnMouseUp" | "OnClick" | "OnDoubleClick" => {
+                st.frames[id].mouse_enabled = true
+            }
+            _ => {}
+        }
+    }
     let names = &mut st.frames[id].scripts;
     names.retain(|n| n != name);
     if has {

@@ -29,10 +29,12 @@ From the repo root:
 cargo run --release -- gui --scenario scenarios/monk --no-addons
 ```
 
-- The first build takes a few minutes. Startup takes a few seconds: it
-  reads the game data (about 2 s) and loads the Blizzard UI.
-- `--scenario scenarios/monk` loads the Monk capture. The Evoker scenario
-  (`scenarios/evoker`) has no `capture.txt` yet.
+- The first build takes a few minutes. Startup takes about 20 seconds: it
+  reads the game data and loads the whole default UI (the scenarios use
+  `blizzard_addons = ["*"]`). `scenarios/hud` shows unit frames, party
+  frames and action bars with described units.
+- `--scenario scenarios/monk` loads the Monk capture; `scenarios/evoker`
+  loads the Evoker. To make new captures, see [capture.md](capture.md).
 - `--no-addons` skips your installed third-party addons. Leave it out to
   load them too (expect many errors; they are not the target yet).
 - The window opens through WSLg on your Windows desktop.
@@ -65,6 +67,8 @@ terminal:
 ./target/release/wowprogramming ctl tree PlayerSpellsFrame.SpellBookFrame 2
 ./target/release/wowprogramming ctl under          # frames under the mouse
 ./target/release/wowprogramming ctl screenshot /tmp/shot.png 0.5
+./target/release/wowprogramming ctl screenshot /tmp/book.png 1.5 PlayerSpellsFrame
+./target/release/wowprogramming ctl dofile tools/compare/compare_frames.lua
 ./target/release/wowprogramming ctl quit
 ```
 
@@ -82,9 +86,10 @@ terminal:
 
 ## Known gaps
 
-- Class colors are white until `RAID_CLASS_COLORS` is captured.
-- Masks, additive blending and flipbook animations are not drawn
-  correctly (for example, the page-corner art shows all its frames).
-- Tooltips do not show.
-- A few errors at startup come from Blizzard code the spellbook does not
-  need (store, edit mode, settings panel).
+- The window draws the UI with the engine's software renderer (the same
+  one that makes screenshots). It uses all CPU cores; a large window can
+  still lower the frame rate.
+- Text is about 10% narrower than in the game until a capture provides
+  font measurements.
+- The Single-Button Assistant and the specialization sample abilities need
+  the next capture.

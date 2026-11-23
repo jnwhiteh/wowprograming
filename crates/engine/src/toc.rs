@@ -97,6 +97,11 @@ impl Toc {
         self.list_where(|k| k.to_ascii_lowercase().starts_with("optionaldep"))
     }
 
+    /// `LoadFirst`: the client loads these Blizzard addons before the others.
+    pub fn load_first(&self) -> bool {
+        self.get("LoadFirst").is_some_and(|v| v.trim() == "1")
+    }
+
     pub fn load_on_demand(&self) -> bool {
         self.get("LoadOnDemand").is_some_and(|v| v.trim() == "1")
     }

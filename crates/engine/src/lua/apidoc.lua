@@ -117,6 +117,8 @@ local stringTypes = {
 }
 
 local default
+local widgetStubs
+local objectMetatables = {}
 local function structDefault(def, depth)
     local t = {}
     for _, field in ipairs(def.Fields or {}) do
@@ -137,6 +139,17 @@ function default(arg, depth)
     if Enum[ty] then return meta and meta.MinValue or 0 end
     local s = structures[ty]
     if s and depth < 4 then return structDefault(s, depth) end
+    -- A documented object type (SecondsFormatter, for example): an object
+    -- whose methods are stubs too.
+    local methods = widgetStubs and widgetStubs[ty .. "API"]
+    if methods then
+        local mt = objectMetatables[ty]
+        if not mt then
+            mt = { __index = methods }
+            objectMetatables[ty] = mt
+        end
+        return setmetatable({}, mt)
+    end
     return nil
 end
 
@@ -153,7 +166,8 @@ local function makeStub(fullName, fn)
     end
 end
 
-local functionStubs, widgetStubs = {}, {}
+local functionStubs = {}
+widgetStubs = {}
 for _, doc in ipairs(finalDocs) do
     if doc.Type == "ScriptObject" then
         local methods = widgetStubs[doc.Name] or {}
@@ -174,4 +188,33 @@ for _, doc in ipairs(finalDocs) do
     end
 end
 
-return Enum, Constants, errors, functionStubs, widgetStubs
+-- Mixins of documented return values: full name -> { [index] = mixin }.
+-- Scenarios use them to restore methods on recorded results.
+local returnMixins = {}
+for _, doc in ipairs(finalDocs) do
+    if doc.Type ~= "ScriptObject" then
+        for _, fn in ipairs(doc.Functions or {}) do
+            local full = doc.Namespace and (doc.Namespace .. "." .. fn.Name) or fn.Name
+            for i, r in ipairs(fn.Returns or {}) do
+                if r.Mixin then
+                    returnMixins[full] = returnMixins[full] or {}
+                    returnMixins[full][i] = r.Mixin
+                end
+            end
+        end
+    end
+end
+
+-- Events: every documented event is valid.
+local events = {}
+for _, doc in ipairs(finalDocs) do
+    for _, e in ipairs(doc.Events or {}) do
+        if e.LiteralName then events[e.LiteralName] = true end
+    end
+end
+functionStubs.C_EventUtils = functionStubs.C_EventUtils or {}
+functionStubs.C_EventUtils.IsEventValid = function(name)
+    return events[name] == true
+end
+
+return Enum, Constants, errors, functionStubs, widgetStubs, returnMixins

@@ -174,3 +174,17 @@ function AbbreviateLargeNumbers(n)
     return BreakUpLargeNumbers(n)
 end
 AbbreviateNumbers = AbbreviateLargeNumbers
+
+-- strcmputf8i(a, b): case-insensitive comparison; -1, 0 or 1. Only ASCII
+-- letters change case here.
+function strcmputf8i(a, b)
+    local la, lb = tostring(a):lower(), tostring(b):lower()
+    if la == lb then return 0 elseif la < lb then return -1 end
+    return 1
+end
+if not strlenutf8 then
+    function strlenutf8(s)
+        local _, n = tostring(s):gsub("[^\128-\191]", "")
+        return n
+    end
+end

@@ -1,0 +1,6 @@
+# The whole default UI, for unit frames, party and raid frames and action
+# bars. Units come from scenario.lua, not from a capture.
+blizzard_addons = ["*"]
+screen = [2866.67, 1200.0]
+# Physical pixels of the screen; text is drawn at whole pixel sizes.
+physical_screen = [3440, 1440]

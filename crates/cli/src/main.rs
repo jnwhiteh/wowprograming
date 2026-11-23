@@ -33,6 +33,17 @@ enum Command {
         /// The command and its arguments.
         command: Vec<String>,
     },
+    /// Copy a capture from the WowProgrammingCapture addon's SavedVariables
+    /// file into a scenario folder as capture.txt.
+    ImportCapture {
+        /// WTF/Account/<account>/SavedVariables/WowProgrammingCapture.lua
+        saved_variables: PathBuf,
+        /// Scenario folder to write capture.txt into.
+        scenario: PathBuf,
+        /// Character as "Name-Realm". Defaults to the newest capture.
+        #[arg(long)]
+        character: Option<String>,
+    },
     /// Show whether files exist in the game data, by path or FileDataID.
     Casc {
         /// Game install folder (defaults to game_dir from the config file).
@@ -85,6 +96,10 @@ struct RunArgs {
     /// Do not load third-party addons.
     #[arg(long)]
     no_addons: bool,
+    /// Load the whole default UI (every Blizzard addon the client loads at
+    /// startup) instead of the scenario's list.
+    #[arg(long)]
+    full_ui: bool,
     /// Port for the control bridge (`wowprogramming ctl`). 0 turns it off.
     #[arg(long, default_value_t = wowprogramming_engine::control::DEFAULT_PORT)]
     control_port: u16,
@@ -138,6 +153,11 @@ fn main() -> ExitCode {
             }
         },
         Command::Lua { file } => run_lua_file(&file),
+        Command::ImportCapture {
+            saved_variables,
+            scenario,
+            character,
+        } => import_capture(&saved_variables, &scenario, character.as_deref()),
         Command::Casc { game_dir, files } => casc_info(game_dir, &files),
         Command::Ctl { port, command } => {
             match wowprogramming_engine::control::send(port, &command.join(" ")) {
@@ -225,6 +245,10 @@ fn build_config(args: &RunArgs) -> Result<(EngineConfig, Option<PathBuf>), Strin
             config.bootstrap_addons = args.bootstrap.clone();
         }
     }
+    if args.full_ui && config.ui_source_dir.is_some() {
+        config.blizzard_addons = vec!["*".into()];
+        config.blizzard_files.clear();
+    }
     let game_dir = if args.no_game_data {
         None
     } else {
@@ -242,6 +266,8 @@ struct ScenarioConfig {
     bootstrap_addons: Option<Vec<String>>,
     blizzard_files: Option<Vec<String>>,
     screen: Option<(f64, f64)>,
+    /// Size of the screen in physical pixels, for pixel-snapped text.
+    physical_screen: Option<(f64, f64)>,
 }
 
 fn apply_scenario_settings(config: &mut EngineConfig, dir: &Path) -> Result<(), String> {
@@ -262,6 +288,11 @@ fn apply_scenario_settings(config: &mut EngineConfig, dir: &Path) -> Result<(), 
     }
     if let Some(v) = sc.screen {
         config.screen = v;
+    }
+    if let Some((_, h)) = sc.physical_screen
+        && config.screen.1 > 0.0
+    {
+        config.pixel_scale = h / config.screen.1;
     }
     Ok(())
 }
@@ -456,6 +487,56 @@ fn run_lua_file(path: &Path) -> ExitCode {
         Ok(()) => ExitCode::SUCCESS,
         Err(err) => {
             eprintln!("{err}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+/// Read WowProgrammingCaptureDB from a SavedVariables file and write one
+/// character's capture to `<scenario>/capture.txt`.
+fn import_capture(sv: &Path, scenario: &Path, character: Option<&str>) -> ExitCode {
+    use wowprogramming_lua::mlua::{Table, Value};
+    let result = (|| -> Result<String, String> {
+        let code = std::fs::read_to_string(sv).map_err(|e| format!("{}: {e}", sv.display()))?;
+        let rt = Runtime::new().map_err(|e| e.to_string())?;
+        rt.exec(&code, &format!("@{}", sv.display()))
+            .map_err(|e| e.to_string())?;
+        let db: Table = rt
+            .lua()
+            .globals()
+            .get("WowProgrammingCaptureDB")
+            .map_err(|_| "no WowProgrammingCaptureDB in the file".to_string())?;
+        let mut best: Option<(String, i64, String)> = None;
+        for pair in db.pairs::<String, Table>() {
+            let (name, entry) = pair.map_err(|e| e.to_string())?;
+            let time: i64 = entry.get("time").unwrap_or(0);
+            let data: Value = entry.get("data").unwrap_or(Value::Nil);
+            let Value::String(data) = data else { continue };
+            let wanted = character.is_none_or(|c| c.eq_ignore_ascii_case(&name));
+            if wanted && best.as_ref().is_none_or(|b| time > b.1) {
+                best = Some((name, time, data.to_string_lossy()));
+            }
+        }
+        let (name, _, data) = best.ok_or_else(|| match character {
+            Some(c) => format!("no capture for {c}"),
+            None => "no captures in the file".to_string(),
+        })?;
+        std::fs::create_dir_all(scenario).map_err(|e| e.to_string())?;
+        let out = scenario.join("capture.txt");
+        std::fs::write(&out, format!("{data}\n")).map_err(|e| format!("{}: {e}", out.display()))?;
+        Ok(format!(
+            "wrote {} for {name} ({} KB)",
+            out.display(),
+            data.len() / 1024
+        ))
+    })();
+    match result {
+        Ok(msg) => {
+            println!("{msg}");
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            eprintln!("{e}");
             ExitCode::FAILURE
         }
     }

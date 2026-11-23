@@ -8,7 +8,7 @@
 use crate::state::{FrameId, State};
 use crate::text;
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Rect {
     pub left: f64,
     pub bottom: f64,
@@ -95,7 +95,7 @@ pub fn effective_alpha(st: &State, id: FrameId) -> f64 {
     let mut current = Some(id);
     while let Some(i) = current {
         let f = &st.frames[i];
-        alpha *= f.alpha;
+        alpha *= crate::animfx::own_alpha(st, i);
         if f.ignore_parent_alpha {
             break;
         }
@@ -128,9 +128,37 @@ pub fn rect(st: &mut State, id: FrameId) -> Option<Rect> {
 }
 
 fn compute(st: &mut State, id: FrameId) -> Option<Rect> {
-    let points = st.frames[id].points.clone();
+    let mut points = st.frames[id].points.clone();
     if points.is_empty() {
-        return None;
+        // A button's text without anchors is centred on the button; a
+        // status bar's texture without anchors fills the bar, and so does
+        // an XML texture with neither anchors nor size.
+        let parent = st.frames[id].parent?;
+        let is_button_text = st.frames[parent]
+            .button
+            .as_deref()
+            .is_some_and(|b| b.font_string == Some(id));
+        let is_bar_texture = st.frames[parent].status_texture == Some(id);
+        let f = &st.frames[id];
+        let fills_parent = f.from_xml
+            && matches!(f.object_type, "Texture" | "MaskTexture")
+            && f.width <= 0.0
+            && f.height <= 0.0;
+        let point = |p: &'static str| crate::state::Point {
+            point: p,
+            relative: None,
+            relative_point: p,
+            x: 0.0,
+            y: 0.0,
+        };
+        if is_button_text {
+            points.push(point("CENTER"));
+        } else if is_bar_texture || fills_parent {
+            points.push(point("TOPLEFT"));
+            points.push(point("BOTTOMRIGHT"));
+        } else {
+            return None;
+        }
     }
     let es = effective_scale(st, id);
     let parent = st.frames[id].parent;
@@ -158,23 +186,32 @@ fn compute(st: &mut State, id: FrameId) -> Option<Rect> {
     }
 
     let f = &st.frames[id];
-    let mut width = f.width * es;
-    let mut height = f.height * es;
+    let (mut own_w, mut own_h) = (f.width, f.height);
+    // A texture without a size takes the size of its atlas or image.
+    if matches!(f.object_type, "Texture" | "MaskTexture")
+        && own_w <= 0.0
+        && own_h <= 0.0
+        && let Some((w, h)) = natural_size(st, id)
+    {
+        own_w = w;
+        own_h = h;
+    }
+    let f = &st.frames[id];
+    let mut width = own_w * es;
+    let mut height = own_h * es;
     let is_text = f.object_type == "FontString";
 
-    let derived_width = match (left, right, cx) {
-        (Some(l), Some(r), _) => Some(r - l),
-        (Some(l), None, Some(c)) => Some(2.0 * (c - l)),
-        (None, Some(r), Some(c)) => Some(2.0 * (r - c)),
+    // Like the client, only two opposite edges set a size; an edge and a
+    // centre (TOP with LEFT, for example) leave the size alone.
+    let derived_width = match (left, right) {
+        (Some(l), Some(r)) => Some(r - l),
         _ => None,
     };
     if let Some(w) = derived_width {
         width = w;
     }
-    let derived_height = match (top, bottom, cy) {
-        (Some(t), Some(b), _) => Some(t - b),
-        (Some(t), None, Some(c)) => Some(2.0 * (t - c)),
-        (None, Some(b), Some(c)) => Some(2.0 * (c - b)),
+    let derived_height = match (top, bottom) {
+        (Some(t), Some(b)) => Some(t - b),
         _ => None,
     };
     if let Some(h) = derived_height {
@@ -211,12 +248,43 @@ fn compute(st: &mut State, id: FrameId) -> Option<Rect> {
         (None, None, Some(c)) => c - height / 2.0,
         _ => return None,
     };
-    Some(Rect {
+    let mut r = Rect {
         left: l,
         bottom: b,
         width,
         height,
-    })
+    };
+    if let Some(fx) = st.anim_fx.get(&id) {
+        r.left += fx.offset.0 * es;
+        r.bottom += fx.offset.1 * es;
+        if fx.scale != (1.0, 1.0) {
+            let (point, ox, oy) = fx.origin.clone().unwrap_or(("CENTER".into(), 0.0, 0.0));
+            let (px, py) = r.point(&point);
+            let (px, py) = (px + ox * es, py + oy * es);
+            r.left = px + (r.left - px) * fx.scale.0;
+            r.bottom = py + (r.bottom - py) * fx.scale.1;
+            r.width *= fx.scale.0;
+            r.height *= fx.scale.1;
+        }
+    }
+    Some(r)
+}
+
+/// The size of a texture's atlas or image, in UI units.
+fn natural_size(st: &State, id: FrameId) -> Option<(f64, f64)> {
+    let tex = st.frames[id].tex.as_deref()?;
+    let gd = st.gamedata.as_ref()?;
+    if let Some(name) = &tex.atlas {
+        let a = gd.atlas(name)?;
+        return Some((a.width, a.height));
+    }
+    let key = match &tex.file {
+        crate::state::TexFile::Id(i) => crate::gamedata::ImageKey::Id(*i as u32),
+        crate::state::TexFile::Path(p) => crate::gamedata::ImageKey::Path(p.clone()),
+        _ => return None,
+    };
+    let img = gd.image(&key)?;
+    Some((img.width as f64, img.height as f64))
 }
 
 pub fn screen_rect(st: &State) -> Rect {
@@ -252,13 +320,15 @@ pub fn size(st: &mut State, id: FrameId) -> (f64, f64) {
     }
 }
 
-fn has_two(points: &[crate::state::Point], horizontal: bool) -> bool {
-    let mut parts = points.iter().map(|p| {
-        let (h, v) = point_parts(p.point);
-        if horizontal { h } else { v }
-    });
-    let Some(first) = parts.next() else {
-        return false;
-    };
-    parts.any(|p| p != first)
+/// Whether the points include both opposite edges on an axis, which
+/// sets the size on that axis.
+pub fn has_two(points: &[crate::state::Point], horizontal: bool) -> bool {
+    let parts: Vec<u8> = points
+        .iter()
+        .map(|p| {
+            let (h, v) = point_parts(p.point);
+            if horizontal { h } else { v }
+        })
+        .collect();
+    parts.contains(&0) && parts.contains(&2)
 }

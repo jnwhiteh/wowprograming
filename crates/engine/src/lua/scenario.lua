@@ -1,7 +1,7 @@
 -- Helpers for scenario files. Called with the scenario folder reader and
 -- the decoders; returns the table that scenario.lua receives as its second
 -- argument.
-local readFile, decodeBase64, decompress, decodeJSON = ...
+local readFile, decodeBase64, decompress, decodeJSON, addAtlas, returnMixins, fireEvent = ...
 local type, pairs, ipairs, select, tostring, tonumber, unpack, rawget, _G =
       type, pairs, ipairs, select, tostring, tonumber, unpack, rawget, _G
 
@@ -52,6 +52,24 @@ local function locate(path)
     return container, key
 end
 
+-- Give recorded tables back the methods of their documented mixins.
+local function withMixins(mixins, ...)
+    local out = { ... }
+    local n = select("#", ...)
+    for i, name in pairs(mixins) do
+        local mixin = rawget(_G, name)
+        if type(out[i]) == "table" and type(mixin) == "table" then
+            local copy = {}
+            for k, v in pairs(out[i]) do copy[k] = v end
+            for k, v in pairs(mixin) do
+                if copy[k] == nil then copy[k] = v end
+            end
+            out[i] = copy
+        end
+    end
+    return unpack(out, 1, n)
+end
+
 S.replayed = {}
 
 -- Replace functions with recorded answers. Calls with arguments that were
@@ -73,7 +91,11 @@ function S.Replay(calls)
                     n = n - 1
                 end
             end
-            if rec ~= nil then return unpackRecord(rec) end
+            if rec ~= nil then
+                local mixins = returnMixins and returnMixins[path]
+                if mixins then return withMixins(mixins, unpackRecord(rec)) end
+                return unpackRecord(rec)
+            end
             if fallback then return fallback(...) end
         end
         S.replayed[path] = true
@@ -115,6 +137,295 @@ function S.ApplyClientConstants(data)
             if rawget(_G, k) == nil then _G[k] = v end
         end
     end
+end
+
+-- Set CVars from a capture: name -> { value, default }.
+function S.ApplyCVars(cvars)
+    local n = 0
+    for name, info in pairs(cvars or {}) do
+        if type(info) == "table" then
+            if info.default ~= nil then C_CVar.RegisterCVar(name, info.default) end
+            if info.value ~= nil then C_CVar.SetCVar(name, info.value) end
+            n = n + 1
+        end
+    end
+    return n
+end
+
+-- Apply everything a WowProgrammingCapture addon capture holds that does
+-- not depend on the scenario: constants, enums, CVars, atlases and the
+-- recorded API answers. Returns the number of replayed functions.
+function S.ApplyCapture(capture)
+    if capture.constants then S.ApplyClientConstants(capture.constants) end
+    for name, values in pairs(capture.enums or {}) do
+        local e = {}
+        for k, v in pairs(values) do e[k] = v end
+        Enum[name] = e
+    end
+    S.ApplyCVars(capture.cvars)
+    S.AddAtlases(capture.atlases)
+    return capture.calls and S.Replay(capture.calls) or 0
+end
+
+-- Add atlases that the game tables lack, from a capture's atlases table
+-- (name -> C_Texture.GetAtlasInfo result). Returns how many were added.
+function S.AddAtlases(atlases)
+    local n = 0
+    for name, info in pairs(atlases or {}) do
+        if type(info) == "table" and addAtlas(name, info) then n = n + 1 end
+    end
+    return n
+end
+
+-- Load capture.txt (and client_constants.txt for old captures), apply it,
+-- and set up what every captured scenario needs. `label` names the scenario
+-- in messages. Sets WowProgrammingCapture for tools such as
+-- tools/compare/compare_frames.lua. Returns the capture or nil.
+function S.LoadStandardCapture(label)
+    local capture = S.LoadCapture("capture.txt")
+    local meta = capture and capture.meta or {}
+    local n = 0
+    if capture and (meta.captureVersion or 0) >= 2 then
+        n = S.ApplyCapture(capture)
+    else
+        -- Version 1: spellbook_capture.lua and client_constants_capture.lua.
+        local constants = S.LoadCapture("client_constants.txt")
+        if constants then S.ApplyClientConstants(constants) end
+        if capture then
+            n = S.Replay(capture.calls)
+            S.AddAtlases(capture.atlases)
+        end
+    end
+    if not capture then
+        print(label .. " scenario: capture.txt is missing")
+        return nil
+    end
+    print(string.format("%s scenario: replaying %d captured functions", label, n))
+    WowProgrammingCapture = capture
+
+    -- Open the spellbook in the same state as in the capture.
+    if meta.spellBookMinimized ~= nil then
+        SetCVar("spellBookMinimize", meta.spellBookMinimized and "1" or "0")
+    end
+    -- Class colors and names.
+    if meta.classColors and not S.replayed["C_ClassColor.GetClassColor"] then
+        local colors = meta.classColors
+        S.Set("C_ClassColor.GetClassColor", function(class)
+            local c = colors[class]
+            if c and CreateColor then return CreateColor(c.r, c.g, c.b, c.a) end
+            return c
+        end)
+    end
+    if meta.localizedClasses then
+        S.Set("LocalizedClassList", function(female)
+            return female and meta.localizedClassesFemale or meta.localizedClasses
+        end)
+    end
+
+    -- Spell data is always loaded in the sandbox.
+    S.Set("C_Spell.IsSpellDataCached", function() return true end)
+    S.Set("C_Spell.RequestLoadSpellData", function() end)
+    -- Older captures lack these; derive or assume them.
+    if not S.replayed["GetSpecializationRoleEnum"] then
+        local roleEnum = { TANK = Enum.LFGRole.Tank, HEALER = Enum.LFGRole.Healer,
+            DAMAGER = Enum.LFGRole.Damage }
+        S.Set("GetSpecializationRoleEnum", function(index, ...)
+            local role = select(5, GetSpecializationInfo(index, ...))
+            return roleEnum[role]
+        end)
+    end
+    if not S.replayed["C_PetJournal.GetNumPetsNeedingFanfare"] then
+        S.Set("C_PetJournal.GetNumPetsNeedingFanfare", function() return 0 end)
+    end
+    return capture
+end
+
+-- Deliver an event to the frames registered for it, as the client does.
+S.FireEvent = fireEvent
+
+-- Units described by the scenario --------------------------------------------
+--
+-- S.SetUnit(token, data) makes a unit exist with the given answers. Fields
+-- (all optional): name, realm, level, class (localized), classFile,
+-- classID, race, raceFile, sex, health, healthMax, power, powerMax,
+-- powerType, powerToken, reaction (1 hostile .. 8 exalted), isPlayer,
+-- classification ("normal", "elite", "worldboss", ...), creatureType,
+-- faction ("Alliance", "Horde"), role ("TANK", "HEALER", "DAMAGER",
+-- "NONE"), guid, dead, ghost, connected (default true), canAttack.
+-- Units given here answer before captured answers and defaults.
+
+local units = {}
+S.units = units
+
+local function unitData(unit)
+    if type(unit) ~= "string" then return nil end
+    return units[unit:lower()]
+end
+
+-- Wrap a global so described units answer first.
+local function unitFunction(name, answer)
+    local container, key = locate(name)
+    local previous = container[key]
+    container[key] = function(unit, ...)
+        local u = unitData(unit)
+        if u then return answer(u, ...) end
+        if previous then return previous(unit, ...) end
+    end
+end
+
+local wrapped = false
+local function wrapUnitFunctions()
+    if wrapped then return end
+    wrapped = true
+    unitFunction("UnitExists", function() return true end)
+    unitFunction("UnitIsVisible", function() return true end)
+    unitFunction("UnitName", function(u) return u.name or "Unknown", u.realm end)
+    unitFunction("UnitNameUnmodified", function(u) return u.name or "Unknown", u.realm end)
+    unitFunction("GetUnitName", function(u, showServer)
+        if showServer and u.realm then return u.name .. "-" .. u.realm end
+        return u.name or "Unknown"
+    end)
+    unitFunction("UnitFullName", function(u) return u.name or "Unknown", u.realm end)
+    unitFunction("UnitGUID", function(u) return u.guid end)
+    unitFunction("UnitLevel", function(u) return u.level or 1 end)
+    unitFunction("UnitEffectiveLevel", function(u) return u.level or 1 end)
+    unitFunction("UnitClass", function(u) return u.class, u.classFile, u.classID end)
+    unitFunction("UnitClassBase", function(u) return u.classFile, u.classID end)
+    unitFunction("UnitRace", function(u) return u.race, u.raceFile, u.raceID end)
+    unitFunction("UnitSex", function(u) return u.sex or 2 end)
+    unitFunction("UnitHealth", function(u) return u.health or u.healthMax or 100 end)
+    unitFunction("UnitHealthMax", function(u) return u.healthMax or 100 end)
+    unitFunction("UnitPower", function(u) return u.power or u.powerMax or 100 end)
+    unitFunction("UnitPowerMax", function(u) return u.powerMax or 100 end)
+    unitFunction("UnitPowerType", function(u)
+        return u.powerType or 0, u.powerToken or "MANA", 0, 0, 0
+    end)
+    unitFunction("UnitReaction", function(u) return u.reaction or 4 end)
+    unitFunction("UnitIsPlayer", function(u) return u.isPlayer == true end)
+    unitFunction("UnitPlayerControlled", function(u) return u.isPlayer == true end)
+    unitFunction("UnitClassification", function(u) return u.classification or "normal" end)
+    unitFunction("UnitCreatureType", function(u) return u.creatureType end)
+    unitFunction("UnitFactionGroup", function(u) return u.faction, u.faction end)
+    unitFunction("UnitGroupRolesAssigned", function(u) return u.role or "NONE" end)
+    unitFunction("UnitGroupRolesAssignedEnum", function(u)
+        local roles = { TANK = "Tank", HEALER = "Healer", DAMAGER = "Damage" }
+        local key = roles[u.role or "NONE"]
+        return key and Enum.LFGRole[key] or nil
+    end)
+    unitFunction("UnitIsConnected", function(u) return u.connected ~= false end)
+    unitFunction("UnitIsDead", function(u) return u.dead == true end)
+    unitFunction("UnitIsGhost", function(u) return u.ghost == true end)
+    unitFunction("UnitIsDeadOrGhost", function(u) return u.dead == true or u.ghost == true end)
+    unitFunction("UnitCanAttack", function(u) return u.canAttack == true end)
+    unitFunction("UnitIsEnemy", function(u) return (u.reaction or 4) <= 2 end)
+    unitFunction("UnitIsFriend", function(u) return (u.reaction or 4) >= 5 end)
+    unitFunction("UnitIsTapDenied", function(u) return u.tapDenied == true end)
+    unitFunction("UnitIsPVP", function(u) return u.pvp == true end)
+    unitFunction("UnitInParty", function(u) return u.inParty == true end)
+    unitFunction("UnitInRaid", function(u) return u.raidIndex end)
+    unitFunction("UnitSelectionColor", function(u)
+        local r = u.reaction or 4
+        if r <= 2 then return 1, 0, 0, 1 elseif r == 4 then return 1, 1, 0, 1 end
+        return 0, 1, 0, 1
+    end)
+    -- UnitIsUnit compares tokens and GUIDs of described units.
+    local previousIsUnit = UnitIsUnit
+    UnitIsUnit = function(a, b)
+        local ua, ub = unitData(a), unitData(b)
+        if ua and ub then return ua == ub end
+        if previousIsUnit then return previousIsUnit(a, b) end
+        return false
+    end
+end
+
+function S.SetUnit(token, data)
+    wrapUnitFunctions()
+    data.token = token
+    units[token:lower()] = data
+    return data
+end
+
+-- Action bar slots described by the scenario ----------------------------------
+--
+-- S.SetAction(slot, data): data.type ("spell", "item", "macro"; default
+-- "spell"), data.id, data.texture (file ID or path), data.count, data.text,
+-- data.usable (default true), data.cooldown = { start, duration }.
+
+local actions = {}
+S.actions = actions
+
+local function actionFunction(name, answer)
+    local container, key = locate(name)
+    local previous = container[key]
+    container[key] = function(slot, ...)
+        local a = actions[slot]
+        if a then return answer(a, ...) end
+        if previous then return previous(slot, ...) end
+    end
+end
+
+local actionsWrapped = false
+function S.SetAction(slot, data)
+    if not actionsWrapped then
+        actionsWrapped = true
+        actionFunction("C_ActionBar.HasAction", function() return true end)
+        actionFunction("HasAction", function() return true end)
+        actionFunction("GetActionInfo", function(a) return a.type or "spell", a.id, a.subType end)
+        actionFunction("C_ActionBar.GetActionTexture", function(a) return a.texture end)
+        actionFunction("C_ActionBar.GetActionText", function(a) return a.text end)
+        actionFunction("C_ActionBar.GetActionDisplayCount", function(a)
+            return a.count and tostring(a.count) or ""
+        end)
+        actionFunction("C_ActionBar.IsUsableAction", function(a) return a.usable ~= false, false end)
+        actionFunction("C_ActionBar.GetActionCooldown", function(a)
+            local cd = a.cooldown or {}
+            return { startTime = cd[1] or 0, duration = cd[2] or 0, isEnabled = true, modRate = 1 }
+        end)
+        actionFunction("C_ActionBar.GetSpell", function(a)
+            if (a.type or "spell") == "spell" then return a.id end
+        end)
+    end
+    actions[slot] = data
+end
+
+-- Stand-ins for scenarios that load only the spellbook's part of the UI.
+function S.SpellbookStandIns()
+    S.Set("StoreFrame_IsShown", function() return false end)
+    -- The real bars come from Blizzard_ActionBar, which pulls in most of the
+    -- game UI; empty frames are enough for "is this spell on a bar" checks.
+    for _, name in ipairs({ "MainActionBar", "MultiBarBottomLeft", "MultiBarBottomRight",
+            "MultiBarRight", "MultiBarLeft", "MultiBar5", "MultiBar6", "MultiBar7" }) do
+        local bar = CreateFrame("Frame", name, UIParent)
+        bar.SetShowGrid = function() end
+        bar.IsInDefaultPosition = function() return true end
+    end
+    -- The settings panel comes from Blizzard_Settings_Shared; the micro menu
+    -- only asks whether it is shown.
+    CreateFrame("Frame", "SettingsPanel", UIParent):Hide()
+    CurrentVersionHasNewUnseenSettings = function() return false end
+    -- Hovering a spell updates the highlights of the action buttons.
+    ActionBarButtonEventsFrame = CreateFrame("Frame", "ActionBarButtonEventsFrame")
+    ActionBarButtonEventsFrame.frames = {}
+    -- Pet spells highlight the pet bar; Escape closes the bags.
+    PetActionBar = CreateFrame("Frame", "PetActionBar", UIParent)
+    PetActionBar.Update = function() end
+    PetActionBar.UpdatePetActionHighlightMarks = function() end
+    PetActionBar.ClearPetActionHighlightMarks = function() end
+    CloseAllBags = function() return false end
+    -- The Specialization tab borrows the cast bar from Blizzard_UIPanels_Game.
+    local castBar = CreateFrame("StatusBar", "OverlayPlayerCastingBarFrame", UIParent)
+    castBar:Hide()
+    castBar.StartReplacingPlayerBarAt = function() end
+    castBar.EndReplacingPlayerBar = function() end
+    -- Edit mode would place HUD frames this part of the UI does not have.
+    local f = CreateFrame("Frame")
+    f:RegisterEvent("PLAYER_LOGIN")
+    f:SetScript("OnEvent", function(self)
+        self:UnregisterAllEvents()
+        if EditModeManagerFrame then
+            EditModeManagerFrame:UnregisterEvent("EDIT_MODE_LAYOUTS_UPDATED")
+        end
+    end)
 end
 
 return S
