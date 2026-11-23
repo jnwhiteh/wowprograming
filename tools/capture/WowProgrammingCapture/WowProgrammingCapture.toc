@@ -1,0 +1,6 @@
+## Interface: 120105
+## Title: WowProgramming Capture
+## Notes: Records UI state and API answers for the WowProgramming sandbox. Type /wpcapture.
+## Author: WowProgramming
+## SavedVariables: WowProgrammingCaptureDB
+Capture.lua
