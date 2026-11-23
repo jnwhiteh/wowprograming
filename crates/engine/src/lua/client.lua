@@ -147,10 +147,17 @@ local function playerValue(value)
         return 0
     end
 end
-UnitHealth = playerValue(100)
 UnitHealthMax = playerValue(100)
-UnitPower = playerValue(100)
 UnitPowerMax = playerValue(100)
+-- Current health and power follow the maximum, looked up at call time: a
+-- capture replays the maximum, but not the current value, which is secret
+-- in the game. (A low value shows the flashing low-health warning.)
+function UnitHealth(unit, ...)
+    return UnitHealthMax(unit, ...)
+end
+function UnitPower(unit, ...)
+    return UnitPowerMax(unit, ...)
+end
 
 -- Power type without a capture: mana.
 function UnitPowerType(unit)
