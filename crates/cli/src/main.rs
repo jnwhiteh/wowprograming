@@ -44,6 +44,35 @@ enum Command {
         #[arg(long)]
         character: Option<String>,
     },
+    /// Print rows of a DB2 table from the game data: field values as
+    /// numbers, and as strings where they look like strings.
+    Db2 {
+        /// Game install folder (defaults to game_dir from the config file).
+        #[arg(long)]
+        game_dir: Option<PathBuf>,
+        /// FileDataID of the table, such as 1349477 for Map.db2.
+        table: u32,
+        /// Row IDs to print. Without any, prints the first 5 rows.
+        ids: Vec<u32>,
+    },
+    /// Save a game texture (BLP, by FileDataID or path) as a PNG file.
+    Image {
+        #[arg(long)]
+        game_dir: Option<PathBuf>,
+        file: String,
+        out: PathBuf,
+    },
+    /// Render the loading screen of a map (Map.db2 ID) to a PNG file.
+    LoadingScreen {
+        #[arg(long)]
+        game_dir: Option<PathBuf>,
+        map: u32,
+        out: PathBuf,
+        #[arg(long, default_value_t = 3440)]
+        width: usize,
+        #[arg(long, default_value_t = 1440)]
+        height: usize,
+    },
     /// Show whether files exist in the game data, by path or FileDataID.
     Casc {
         /// Game install folder (defaults to game_dir from the config file).
@@ -54,7 +83,7 @@ enum Command {
     },
 }
 
-#[derive(clap::Args)]
+#[derive(clap::Args, Clone)]
 struct RunArgs {
     /// Config file. Defaults to config.local.toml when it exists.
     #[arg(long)]
@@ -166,6 +195,81 @@ fn main() -> ExitCode {
             character,
         } => import_capture(&saved_variables, &scenario, character.as_deref()),
         Command::Casc { game_dir, files } => casc_info(game_dir, &files),
+        Command::Image {
+            game_dir,
+            file,
+            out,
+        } => {
+            let dir = game_dir.or_else(|| {
+                let text = std::fs::read_to_string("config.local.toml").ok()?;
+                toml::from_str::<FileConfig>(&text).ok()?.game_dir
+            });
+            let Some(gd) = open_game_data(dir.as_deref()) else {
+                eprintln!("no game data; pass --game-dir");
+                return ExitCode::FAILURE;
+            };
+            let key = match file.parse::<u32>() {
+                Ok(id) => wowprogramming_engine::gamedata::ImageKey::Id(id),
+                Err(_) => wowprogramming_engine::gamedata::ImageKey::Path(file.clone()),
+            };
+            let Some(img) = gd.image(&key) else {
+                eprintln!("{file}: not an image");
+                return ExitCode::FAILURE;
+            };
+            let opaque = img.rgba.chunks_exact(4).filter(|p| p[3] > 200).count();
+            println!(
+                "{file}: {}x{}, {}% opaque",
+                img.width,
+                img.height,
+                opaque * 100 / (img.width as usize * img.height as usize).max(1)
+            );
+            match wowprogramming_engine::render::write_png(
+                &out,
+                img.width as usize,
+                img.height as usize,
+                &img.rgba,
+            ) {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(e) => {
+                    eprintln!("cannot write {}: {e}", out.display());
+                    ExitCode::FAILURE
+                }
+            }
+        }
+        Command::LoadingScreen {
+            game_dir,
+            map,
+            out,
+            width,
+            height,
+        } => {
+            let dir = game_dir.or_else(|| {
+                let text = std::fs::read_to_string("config.local.toml").ok()?;
+                toml::from_str::<FileConfig>(&text).ok()?.game_dir
+            });
+            let Some(gd) = open_game_data(dir.as_deref()) else {
+                eprintln!("no game data; pass --game-dir");
+                return ExitCode::FAILURE;
+            };
+            let Some(screen) = wowprogramming_engine::loading::for_map(&gd, map) else {
+                eprintln!("no loading screen for map {map}");
+                return ExitCode::FAILURE;
+            };
+            println!("{screen:?}");
+            let img = wowprogramming_engine::loading::render(&gd, &screen, width, height, 0.8);
+            match wowprogramming_engine::render::write_png(&out, img.width, img.height, &img.data) {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(e) => {
+                    eprintln!("cannot write {}: {e}", out.display());
+                    ExitCode::FAILURE
+                }
+            }
+        }
+        Command::Db2 {
+            game_dir,
+            table,
+            ids,
+        } => db2_rows(game_dir, table, &ids),
         Command::Ctl { port, command } => {
             match wowprogramming_engine::control::send(port, &command.join(" ")) {
                 Ok(reply) => {
@@ -299,6 +403,28 @@ struct ScenarioConfig {
     screen: Option<(f64, f64)>,
     /// Size of the screen in physical pixels, for pixel-snapped text.
     physical_screen: Option<(f64, f64)>,
+    /// The character this scenario plays, as "Name-Realm". Entering the
+    /// world as that character on the character select screen uses it.
+    character: Option<String>,
+}
+
+/// The scenario for a character chosen on the character select screen:
+/// the one whose `scenario.toml` names it, or `world` for any other.
+fn scenario_for(root: &Path, entry: &wowprogramming_engine::WorldEntry) -> PathBuf {
+    let wanted = format!("{}-{}", entry.name, entry.realm);
+    let found = std::fs::read_dir(root)
+        .into_iter()
+        .flatten()
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .find(|dir| {
+            std::fs::read_to_string(dir.join("scenario.toml"))
+                .ok()
+                .and_then(|t| toml::from_str::<ScenarioConfig>(&t).ok())
+                .and_then(|c| c.character)
+                .is_some_and(|c| c.eq_ignore_ascii_case(&wanted))
+        });
+    found.unwrap_or_else(|| root.join("world"))
 }
 
 fn apply_scenario_settings(config: &mut EngineConfig, dir: &Path) -> Result<(), String> {
@@ -409,7 +535,42 @@ fn run_gui(config: EngineConfig, game_dir: Option<PathBuf>, args: &RunArgs) -> E
     let window = wowprogramming_gui::WindowOptions {
         windowed: args.windowed,
     };
-    match wowprogramming_gui::run(engine, control, window) {
+    // From character select, Enter World starts a game session with the
+    // chosen character's scenario.
+    let factory: Option<wowprogramming_gui::WorldFactory> = if args.glue {
+        let base = args.clone();
+        let gamedata = engine.gamedata().cloned();
+        let root = args
+            .scenario
+            .as_deref()
+            .and_then(Path::parent)
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| PathBuf::from("scenarios"));
+        Some(Box::new(move |entry| {
+            let mut a = base.clone();
+            a.glue = false;
+            a.full_ui = true;
+            a.exec.clear();
+            a.scenario = Some(scenario_for(&root, entry));
+            eprintln!(
+                "Entering the world as {}-{} with {}",
+                entry.name,
+                entry.realm,
+                a.scenario.as_deref().unwrap_or(Path::new("")).display()
+            );
+            let (mut config, _) = build_config(&a)?;
+            config.world_entry = Some(entry.clone());
+            config.character = entry.name.clone();
+            config.realm = entry.realm.clone();
+            let mut engine =
+                Engine::with_gamedata(config, gamedata.clone()).map_err(|e| e.to_string())?;
+            engine.start();
+            Ok(engine)
+        }))
+    } else {
+        None
+    };
+    match wowprogramming_gui::run(engine, control, window, factory) {
         Ok(()) => ExitCode::SUCCESS,
         Err(err) => {
             eprintln!("window error: {err}");
@@ -574,6 +735,46 @@ fn import_capture(sv: &Path, scenario: &Path, character: Option<&str>) -> ExitCo
             ExitCode::FAILURE
         }
     }
+}
+
+fn db2_rows(game_dir: Option<PathBuf>, table: u32, ids: &[u32]) -> ExitCode {
+    let dir = game_dir.or_else(|| {
+        let text = std::fs::read_to_string("config.local.toml").ok()?;
+        toml::from_str::<FileConfig>(&text).ok()?.game_dir
+    });
+    let Some(gd) = open_game_data(dir.as_deref()) else {
+        eprintln!("no game data; pass --game-dir");
+        return ExitCode::FAILURE;
+    };
+    let Some(data) = gd.read_file(table) else {
+        eprintln!("table {table} not found");
+        return ExitCode::FAILURE;
+    };
+    let t = match wowprogramming_formats::db2::Table::parse(&data) {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("cannot parse table {table}: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    println!("{} rows, {} fields", t.records.len(), t.field_count());
+    let rows: Vec<_> = if ids.is_empty() {
+        t.records.iter().take(5).collect()
+    } else {
+        t.records.iter().filter(|r| ids.contains(&r.id)).collect()
+    };
+    for r in rows {
+        println!("ID {}", r.id);
+        for (i, v) in r.values.iter().enumerate() {
+            let s = t.string(r, i);
+            if s.is_empty() || s.chars().any(|c| c.is_control()) {
+                println!("  {i}: {v:?}");
+            } else {
+                println!("  {i}: {v:?} {s:?}");
+            }
+        }
+    }
+    ExitCode::SUCCESS
 }
 
 fn casc_info(game_dir: Option<PathBuf>, files: &[String]) -> ExitCode {

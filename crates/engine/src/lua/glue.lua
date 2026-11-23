@@ -2,7 +2,7 @@
 -- select), written in Lua. The sandbox is always logged in and connected
 -- to a realm, so GlueParent goes straight to character select.
 
-local fireNow = ...
+local fireNow, requestEnterWorld = ...
 -- Events that answer a request arrive on a later frame in the client, not
 -- inside the call (deep nesting overflows the C stack otherwise).
 local function fireEvent(event, ...)
@@ -158,3 +158,10 @@ function C_CharacterServices.GetVASDistributions() return {} end
 -- (the names are in Wow.exe; the values are not known).
 Enum.CharacterCreateType = Enum.CharacterCreateType or { Normal = 0, Boost = 1, TrialBoost = 2 }
 function C_CharacterCreation.GetCharacterCreateType() return Enum.CharacterCreateType.Normal end
+
+-- Enter the world as the selected character. The sandbox window shows the
+-- loading screen and starts a new game session for that character.
+function EnterWorld()
+    local c = GlueCharacters[selectedIndex]
+    if c then requestEnterWorld(c) end
+end

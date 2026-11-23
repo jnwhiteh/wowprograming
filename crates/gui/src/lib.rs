@@ -13,7 +13,20 @@ use std::time::Instant;
 use eframe::egui::{self, Color32, FontId, Key, Pos2, Rect, TextureHandle, TextureOptions, Vec2};
 use wowprogramming_engine::control::{Action, ControlServer};
 use wowprogramming_engine::scene::Scene;
-use wowprogramming_engine::{Engine, Output, render};
+use wowprogramming_engine::{Engine, Output, WorldEntry, loading, render};
+
+/// Starts a game session for a character chosen on the character select
+/// screen (builds and starts a new engine).
+pub type WorldFactory = Box<dyn FnMut(&WorldEntry) -> Result<Engine, String>>;
+
+/// The loading screen between character select and the world.
+struct Loading {
+    entry: WorldEntry,
+    /// Frames drawn so far; the new session is built after the loading
+    /// screen has been shown.
+    frames: u32,
+    texture: Option<TextureHandle>,
+}
 
 const MAX_LOG_LINES: usize = 2000;
 
@@ -38,6 +51,8 @@ pub struct App {
     display: Option<(u32, u32)>,
     fullscreen: bool,
     resized_to_monitor: bool,
+    factory: Option<WorldFactory>,
+    loading: Option<Loading>,
 }
 
 /// How to open the window.
@@ -53,6 +68,7 @@ pub fn run(
     engine: Engine,
     control: Option<ControlServer>,
     window: WindowOptions,
+    factory: Option<WorldFactory>,
 ) -> Result<(), String> {
     let mut viewport = egui::ViewportBuilder::default().with_title("WowProgramming");
     viewport = if window.windowed {
@@ -71,6 +87,7 @@ pub fn run(
         Box::new(|_cc| {
             let mut app = App::new(engine);
             app.control = control;
+            app.factory = factory;
             app.fullscreen = !window.windowed;
             app.show_console = window.windowed;
             Ok(Box::new(app))
@@ -96,6 +113,8 @@ impl App {
             display: None,
             fullscreen: false,
             resized_to_monitor: false,
+            factory: None,
+            loading: None,
         };
         app.push_log(
             "F12 shows or hides this console. Type /dump <expr>, /run <code> or Lua here.".into(),
@@ -128,6 +147,65 @@ impl App {
                 Output::Log(_) => Color32::from_gray(150),
             };
             self.push_log(line.to_string(), color);
+        }
+    }
+
+    /// Show the loading screen; once it is on screen, build the game
+    /// session (this blocks while the UI loads, as the client's loading
+    /// screen does).
+    fn show_loading(&mut self, ui: &mut egui::Ui) {
+        let ctx = ui.ctx().clone();
+        let rect = ctx.content_rect();
+        let ppp = ctx.pixels_per_point();
+        let Some(state) = self.loading.as_mut() else {
+            return;
+        };
+        if state.texture.is_none() {
+            let (w, h) = (
+                (rect.width() * ppp).round().max(1.0) as usize,
+                (rect.height() * ppp).round().max(1.0) as usize,
+            );
+            let gd = self.engine.gamedata().cloned();
+            let image = gd.and_then(|gd| {
+                let map = state.entry.map_id.unwrap_or(0);
+                let screen = loading::for_map(&gd, map).or_else(|| loading::for_map(&gd, 0))?;
+                Some(loading::render(&gd, &screen, w, h, 0.15))
+            });
+            let image = match image {
+                Some(img) => {
+                    egui::ColorImage::from_rgba_unmultiplied([img.width, img.height], &img.data)
+                }
+                None => egui::ColorImage::new([w, h], vec![Color32::BLACK; w * h]),
+            };
+            state.texture = Some(ctx.load_texture("loading", image, TextureOptions::LINEAR));
+        }
+        if let Some(t) = &state.texture {
+            ui.painter().image(
+                t.id(),
+                rect,
+                Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)),
+                Color32::WHITE,
+            );
+        }
+        state.frames += 1;
+        if state.frames < 3 {
+            return;
+        }
+        let entry = state.entry.clone();
+        let result = match self.factory.as_mut() {
+            Some(f) => f(&entry),
+            None => Err("no game session factory".into()),
+        };
+        self.loading = None;
+        match result {
+            Ok(engine) => {
+                self.engine = engine;
+                self.display = None;
+                self.frame_texture = None;
+                self.last_tick = Instant::now();
+                self.drain_output();
+            }
+            Err(err) => self.push_log(format!("cannot enter the world: {err}"), Color32::RED),
         }
     }
 
@@ -316,6 +394,26 @@ fn key_name(key: Key) -> Option<&'static str> {
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
+        if self.loading.is_some() {
+            self.show_loading(ui);
+            ctx.request_repaint();
+            return;
+        }
+        if let Some(entry) = self.engine.take_enter_world()
+            && self.factory.is_some()
+        {
+            self.push_log(
+                format!("Entering the world as {}", entry.name),
+                Color32::LIGHT_BLUE,
+            );
+            self.loading = Some(Loading {
+                entry,
+                frames: 0,
+                texture: None,
+            });
+            ctx.request_repaint();
+            return;
+        }
         let now = Instant::now();
         let dt = now.duration_since(self.last_tick).as_secs_f64().min(0.25);
         self.last_tick = now;

@@ -80,7 +80,7 @@ for key, p in pairs(profiles) do
         raceFilename = p.race, raceName = p.raceName,
         classFilename = p.class, genderEnum = (p.sex or 2) - 2,
         faction = p.faction, specID = p.specID, items = p.items,
-        mapID = p.mapID,
+        mapID = p.instanceID,
     })
 end
 

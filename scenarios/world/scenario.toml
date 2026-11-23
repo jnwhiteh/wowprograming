@@ -1,0 +1,5 @@
+# The scenario for characters without a capture, entered from character
+# select. The character comes from S.character (see scenario.lua).
+blizzard_addons = ["*"]
+screen = [2866.67, 1200.0]
+physical_screen = [3440, 1440]

@@ -408,6 +408,10 @@ pub struct State {
     pub glue: bool,
     /// The game's account folder, for scenarios (read only).
     pub game_account_dir: Option<PathBuf>,
+    /// Set by EnterWorld() on the character select screen.
+    pub enter_world: Option<crate::WorldEntry>,
+    /// The character this game session plays (from character select).
+    pub world_entry: Option<crate::WorldEntry>,
     /// Size of the screen in UI units (the size of UIParent at scale 1).
     pub screen: (f64, f64),
     /// Physical pixels per UI unit at scale 1.

@@ -12,6 +12,7 @@ pub mod frames;
 pub mod gamedata;
 pub mod input;
 pub mod layout;
+pub mod loading;
 pub mod natives;
 pub mod render;
 pub mod savedvars;
@@ -33,6 +34,65 @@ use wowprogramming_lua::{DEFAULT_SCRIPT_TIMEOUT, Runtime, mlua};
 
 use state::{AddonKind, State, WtfPaths, state};
 pub use state::{LoadState, Output};
+
+/// The character chosen on the character select screen, for the game
+/// session that EnterWorld() starts.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct WorldEntry {
+    pub guid: String,
+    pub name: String,
+    pub realm: String,
+    /// Class file name, such as "MONK".
+    pub class: String,
+    /// Race file name, such as "Dwarf".
+    pub race: String,
+    /// 0 male, 1 female (genderEnum).
+    pub sex: i64,
+    pub level: i64,
+    pub faction: String,
+    pub zone: String,
+    /// Map.db2 ID of the character's location, when known.
+    pub map_id: Option<u32>,
+}
+
+impl WorldEntry {
+    fn from_table(t: &Table) -> WorldEntry {
+        let s = |k: &str| {
+            t.get::<Option<String>>(k)
+                .ok()
+                .flatten()
+                .unwrap_or_default()
+        };
+        let n = |k: &str| t.get::<Option<i64>>(k).ok().flatten();
+        WorldEntry {
+            guid: s("guid"),
+            name: s("name"),
+            realm: s("realmName"),
+            class: s("classFilename"),
+            race: s("raceFilename"),
+            sex: n("genderEnum").unwrap_or(0),
+            level: n("experienceLevel").unwrap_or(1),
+            faction: s("faction"),
+            zone: s("areaName"),
+            map_id: n("mapID").map(|v| v as u32),
+        }
+    }
+
+    fn to_table(&self, lua: &Lua) -> mlua::Result<Table> {
+        let t = lua.create_table()?;
+        t.set("guid", self.guid.as_str())?;
+        t.set("name", self.name.as_str())?;
+        t.set("realm", self.realm.as_str())?;
+        t.set("class", self.class.as_str())?;
+        t.set("race", self.race.as_str())?;
+        t.set("sex", self.sex)?;
+        t.set("level", self.level)?;
+        t.set("faction", self.faction.as_str())?;
+        t.set("zone", self.zone.as_str())?;
+        t.set("mapID", self.map_id)?;
+        Ok(t)
+    }
+}
 
 /// Settings for one sandbox session.
 #[derive(Debug, Clone)]
@@ -69,6 +129,9 @@ pub struct EngineConfig {
     /// The game's own account folder (`WTF/Account/<ACCOUNT>`), read only:
     /// scenarios read the character list from addon data there.
     pub game_account_dir: Option<PathBuf>,
+    /// The character to play, when the session starts from character
+    /// select. Scenarios see it as `S.character`.
+    pub world_entry: Option<WorldEntry>,
     /// Physical pixels per UI unit at scale 1. Text is drawn at whole
     /// pixel sizes, as in the client.
     pub pixel_scale: f64,
@@ -95,6 +158,7 @@ impl Default for EngineConfig {
             screen: (1920.0, 1080.0),
             glue: false,
             game_account_dir: None,
+            world_entry: None,
             pixel_scale: 1.0,
             start_time: 1000.0,
             script_timeout: DEFAULT_SCRIPT_TIMEOUT,
@@ -252,10 +316,15 @@ impl Engine {
             frames::dispatch_event(lua, &event, args.collect());
             Ok(())
         });
+        // ... and one that asks to enter the world as a character.
+        let enter = lua.create_function(|lua, t: Table| {
+            state(lua).enter_world = Some(WorldEntry::from_table(&t));
+            Ok(())
+        });
         let result = fire.and_then(|fire| {
             lua.load(include_str!("lua/glue.lua"))
                 .set_name("=[C]")
-                .call::<()>(fire)
+                .call::<()>((fire, enter?))
         });
         if let Err(err) = result {
             state(lua).warn(format!("cannot set up the glue environment: {err}"));
@@ -344,6 +413,11 @@ impl Engine {
                 .copy_from_slice(&rgba[src..src + (x1 - x0) * 4]);
         }
         render::write_png(path, w, h, &out)
+    }
+
+    /// The character that EnterWorld() asked to play, once.
+    pub fn take_enter_world(&mut self) -> Option<WorldEntry> {
+        state(self.runtime.lua()).enter_world.take()
     }
 
     /// Screen size in UI units.
@@ -609,6 +683,8 @@ fn build_runtime(
         screen: config.screen,
         glue: config.glue,
         game_account_dir: config.game_account_dir.clone(),
+        enter_world: None,
+        world_entry: config.world_entry.clone(),
         pixel_scale: config.pixel_scale,
         xml: Default::default(),
         cvars: HashMap::new(),
@@ -725,6 +801,12 @@ fn load_scenario(lua: &Lua, dir: &std::path::Path, full_ui: bool) {
     let helpers = match scenario_helpers(lua, dir) {
         Ok(h) => {
             let _ = h.set("fullUI", full_ui);
+            let entry = state(lua).world_entry.clone();
+            if let Some(entry) = entry
+                && let Ok(t) = entry.to_table(lua)
+            {
+                let _ = h.set("character", t);
+            }
             h
         }
         Err(err) => {
