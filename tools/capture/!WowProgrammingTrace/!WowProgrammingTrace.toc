@@ -1,0 +1,6 @@
+## Interface: 120105
+## Title: WowProgramming Trace
+## Notes: Records the events of each login, reload and zone change for the WowProgramming sandbox. No command needed.
+## Author: WowProgramming
+## SavedVariables: WowProgrammingTraceDB
+EventTrace.lua

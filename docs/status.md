@@ -41,8 +41,13 @@ Last updated: 2026-11-23.
   (with a target, later in a raid). Until then, develop with
   the existing captures and described units. Prepare the capture addon
   first (see "Next steps"), so one round of captures covers everything.
-- **Branch:** `spellbook-gui`, from `main`, 17 commits ahead of it.
-  `origin/spellbook-gui` is 11 commits behind the local branch. Commit
+- **Goal started 2026-11-23:** character select screen (Blizzard's
+  GlueXML), then entering the world as the chosen character, with a
+  simple rendered world. The window opens borderless at the monitor's
+  native size (3440x1440 on the user's machine) to compare with game
+  screenshots. The login event order will come from the new
+  `!WowProgrammingTrace` addon (see [capture.md](capture.md)).
+- **Branch:** `character-select`, from `main` (the spellbook work is merged). Commit
   each tested step on this branch without asking (the user's rule for
   this project); still ask before pushing or merging.
 - **Tests:** `cargo test`, `cargo fmt --check` and

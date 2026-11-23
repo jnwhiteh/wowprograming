@@ -53,6 +53,23 @@ Then import it into a scenario:
 Without `--character`, the newest capture is used. The command writes
 `capture.txt`; `client_constants.txt` is no longer needed for new captures.
 
+## Login event trace
+
+The `!WowProgrammingTrace` addon (`tools/capture/!WowProgrammingTrace`)
+records the events of each login, reload and zone change, with their
+arguments and times, and a short profile of the character (level, zone,
+equipment). It needs no command. The `!` makes it load right after
+BugGrabber and BugSack, before other third-party addons. It needs its own
+junction:
+
+```bat
+mklink /J "D:\World of Warcraft\_retail_\Interface\AddOns\!WowProgrammingTrace" "D:\src\WowProgramming\tools\capture\!WowProgrammingTrace"
+```
+
+The game writes `SavedVariables/!WowProgrammingTrace.lua` at logout. The
+last 4 sessions per character are kept. Chat and combat log events keep
+only their names.
+
 ## Wanted captures
 
 | Scenario | Character | Setup |
