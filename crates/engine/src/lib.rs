@@ -208,6 +208,9 @@ impl Engine {
         }
         self.fire_event("VARIABLES_LOADED", ());
         self.fire_event("UPDATE_BINDINGS", ());
+        // The client sends the spell list after login; AssistedCombatManager
+        // and the spellbook read it on this event.
+        self.fire_event("SPELLS_CHANGED", ());
         // The loading screen ends: the UI becomes visible.
         let lua = self.runtime.lua();
         let ui_parent = lua

@@ -72,34 +72,70 @@ end
 
 S.replayed = {}
 
+-- Recorded functions that must keep the sandbox's own version: addon
+-- loading (a replayed LoadAddOn never loads the addon) and functions that
+-- act instead of report (Set..., Register..., WrapTextInColor, ...).
+local NO_REPLAY_NAMESPACES = { C_AddOns = true }
+local NO_REPLAY_VERBS = { "Set", "Add", "Remove", "Register", "Unregister", "Enable",
+    "Disable", "Load", "Wrap", "Request" }
+
+local function replayable(path)
+    local namespace, name = path:match("^([^.]+)%.(.+)$")
+    if namespace and NO_REPLAY_NAMESPACES[namespace] then return false end
+    name = name or path
+    for _, verb in ipairs(NO_REPLAY_VERBS) do
+        if name:sub(1, #verb) == verb then return false end
+    end
+    return true
+end
+
+-- True if a recorded value holds "<secret>": the game hid it from the
+-- capture, so the record is useless.
+local function hasSecret(v)
+    if v == "<secret>" then return true end
+    if type(v) == "table" then
+        for _, x in pairs(v) do
+            if hasSecret(x) then return true end
+        end
+    end
+    return false
+end
+
 -- Replace functions with recorded answers. Calls with arguments that were
--- not recorded fall back to the previous function (usually a stub).
+-- not recorded fall back to the previous function (usually a stub), and so
+-- do calls whose recorded answer was secret.
 function S.Replay(calls)
     local count = 0
-    for path, records in pairs(calls) do
-        local container, key = locate(path)
-        local fallback = container[key]
-        container[key] = function(...)
-            local rec = records[argKey(...)]
-            if rec == nil then
-                -- Calls often pass optional arguments the capture did not
-                -- use: try shorter argument lists.
-                local args = { ... }
-                local n = select("#", ...) - 1
-                while rec == nil and n >= 0 do
-                    rec = records[argKey(unpack(args, 1, n))]
-                    n = n - 1
-                end
-            end
-            if rec ~= nil then
-                local mixins = returnMixins and returnMixins[path]
-                if mixins then return withMixins(mixins, unpackRecord(rec)) end
-                return unpackRecord(rec)
-            end
-            if fallback then return fallback(...) end
+    for path, all in pairs(calls) do
+        local records = {}
+        for args, rec in pairs(all) do
+            if args ~= "#" and not hasSecret(rec) then records[args] = rec end
         end
-        S.replayed[path] = true
-        count = count + 1
+        if replayable(path) and next(records) ~= nil then
+            local container, key = locate(path)
+            local fallback = container[key]
+            container[key] = function(...)
+                local rec = records[argKey(...)]
+                if rec == nil then
+                    -- Calls often pass optional arguments the capture did not
+                    -- use: try shorter argument lists.
+                    local args = { ... }
+                    local n = select("#", ...) - 1
+                    while rec == nil and n >= 0 do
+                        rec = records[argKey(unpack(args, 1, n))]
+                        n = n - 1
+                    end
+                end
+                if rec ~= nil then
+                    local mixins = returnMixins and returnMixins[path]
+                    if mixins then return withMixins(mixins, unpackRecord(rec)) end
+                    return unpackRecord(rec)
+                end
+                if fallback then return fallback(...) end
+            end
+            S.replayed[path] = true
+            count = count + 1
+        end
     end
     return count
 end

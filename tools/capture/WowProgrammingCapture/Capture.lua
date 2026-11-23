@@ -111,8 +111,18 @@ local SKIP = {
 local SKIP_NAMESPACES = {
 	C_Timer = true, C_CVar = true, C_Log = true, C_EncodingUtil = true,
 	C_StringUtil = true, C_FunctionContainers = true, C_Debug = true,
-	C_CurveUtil = true, C_DurationUtil = true,
+	C_CurveUtil = true, C_DurationUtil = true, C_AddOns = true,
 }
+-- Functions that act instead of report; the sandbox keeps its own.
+local SKIP_VERBS = { "Set", "Add", "Remove", "Register", "Unregister", "Enable",
+	"Disable", "Load", "Wrap", "Request" }
+
+local function actionName(name)
+	for _, verb in ipairs(SKIP_VERBS) do
+		if name:sub(1, #verb) == verb then return true end
+	end
+	return false
+end
 
 -- Global functions worth wrapping: client API names have no underscore
 -- (Lua helpers in FrameXML usually do).
@@ -171,7 +181,7 @@ local function startRecording()
 				wrap(_G, name, name)
 			elseif type(value) == "table" and name:match("^C_") and not SKIP_NAMESPACES[name] then
 				for key, fn in pairs(value) do
-					if type(key) == "string" and type(fn) == "function" then
+					if type(key) == "string" and type(fn) == "function" and not actionName(key) then
 						wrap(value, key, name .. "." .. key)
 					end
 				end

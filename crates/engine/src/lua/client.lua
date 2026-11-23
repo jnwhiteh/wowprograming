@@ -233,6 +233,14 @@ function C_TooltipInfo.GetSpellByID(spellID)
     return spellTooltip(spellID, info.name, sub)
 end
 
+-- A spell exists when the client has a record for it.
+-- Spell:ContinueWithCancelOnSpellLoad needs this.
+C_Spell = C_Spell or {}
+function C_Spell.DoesSpellExist(spell)
+    local getInfo = C_Spell.GetSpellInfo
+    return spell ~= nil and getInfo ~= nil and type(getInfo(spell)) == "table"
+end
+
 -- Secret values and protected objects: the sandbox has neither, so every
 -- value is accessible and no value is secret.
 function CheckAllowProtectedFunctions() return true end
