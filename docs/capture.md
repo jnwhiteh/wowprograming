@@ -58,7 +58,7 @@ Without `--character`, the newest capture is used. The command writes
 | Scenario | Character | Setup |
 |---|---|---|
 | `scenarios/monk` | the Monk | target a training dummy; spellbook minimized as before |
-| `scenarios/evoker` | the Evoker | same |
+| `scenarios/evoker` | the Evoker | same (the 2026-11-23 capture has a party of 5 but no target) |
 | `scenarios/paladin` | the Paladin | same |
 | party frames | any character | in a party of 2 to 5, with a target |
 | raid frames | any character | in a raid; wait until the addon records raid units |

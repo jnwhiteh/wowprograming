@@ -31,15 +31,18 @@ Last updated: 2026-11-23.
   needed) and the main action bar with spell icons and key labels.
 - **Data:** addon captures (version 2, build 12.1.5.70961) are imported
   for the Monk (Ohnoregard-Draenor), the Evoker (Ohnodwagon-Draenor) and
-  the Paladin (Ohnohealme-Draenor, new `scenarios/paladin`). None had a
-  target or a group, so the target, party and raid frames are not in them.
-  The spellbook layout matches the game.
+  the Paladin (Ohnohealme-Draenor, new `scenarios/paladin`). The Evoker
+  capture was redone on 2026-11-23 in a party of 5, without a target: it
+  has `party1`..`party4` unit calls and trees for `CompactPartyFrame` and
+  `CompactRaidFrameManager`. The Monk and Paladin captures have no target
+  or group. No capture has a target, raid units or trait data. The
+  spellbook layout matches the game.
 - **Data collection is deferred.** The user will make new captures later
-  (with a target, in a party, later in a raid). Until then, develop with
+  (with a target, later in a raid). Until then, develop with
   the existing captures and described units. Prepare the capture addon
   first (see "Next steps"), so one round of captures covers everything.
-- **Branch:** `spellbook-gui`, from `main`, 14 commits ahead of it.
-  `origin/spellbook-gui` is 8 commits behind the local branch. Commit
+- **Branch:** `spellbook-gui`, from `main`, 16 commits ahead of it.
+  `origin/spellbook-gui` is 10 commits behind the local branch. Commit
   each tested step on this branch without asking (the user's rule for
   this project); still ask before pushing or merging.
 - **Tests:** `cargo test`, `cargo fmt --check` and
@@ -132,7 +135,12 @@ Last updated: 2026-11-23.
   replayed: `UnitHealth` returns the stand-in 100 while `UnitHealthMax`
   is the captured 898820 (the Monk's health bar looks almost empty).
 - About 55 full-UI startup errors in systems outside the goals (chat
-  frames, communities, tutorials, guild UI, pet battles, LFG). Some
+  frames, communities, tutorials, guild UI, pet battles, LFG). The Evoker
+  scenario has about 86: being in a party runs the compact party frame
+  code, which adds four errors (`SecureUtil.lua:33` and `:56` call a
+  missing `SetText` from Edit Mode labels; `UnitFrameUtil.lua:127` calls
+  a missing `IsObjectType` from CompactArenaFrame;
+  `CompactRaidFrameManager.lua:473` has no `dividerVerticalPool`). Some
   repeat every tick (PersonalResourceDisplay).
 - The first action button shows no key label; the chat frame background
   is white; a stray "Issue Reporter" button shows.
@@ -159,17 +167,20 @@ HUD goal, with described units:
 5. Fix the known HUD problems: no key label on the first action button,
    white chat frame background, stray "Issue Reporter" button, the width
    of outlined key labels.
-6. Add a raid scenario with described units (IsInRaid, raid1..N) for
+6. Fix the four party-frame startup errors in `scenarios/evoker` (see
+   "What does not work yet"), then compare the party frames with the
+   captured `CompactPartyFrame` tree.
+7. Add a raid scenario with described units (IsInRaid, raid1..N) for
    CompactRaidFrameContainer. Then cooldown swipes.
-7. Reduce the full-UI startup errors that repeat every tick
+8. Reduce the full-UI startup errors that repeat every tick
    (PersonalResourceDisplay).
 
 Prepare the capture addon for the next round of captures:
 
-8. Record `raid1`..`raid40` units and raid group calls (the unit list in
+9. Record `raid1`..`raid40` units and raid group calls (the unit list in
    `Capture.lua` stops at `party4`).
-9. Record trait data (`C_ClassTalents`, `C_Traits`) for the Talents tab.
-10. Update the "Wanted captures" table in [capture.md](capture.md).
+10. Record trait data (`C_ClassTalents`, `C_Traits`) for the Talents tab.
+11. Update the "Wanted captures" table in [capture.md](capture.md).
 
 How to run: see [running-the-gui.md](running-the-gui.md). The spellbook
 and HUD scenarios take about 20 s to start; a helper that restarts a
