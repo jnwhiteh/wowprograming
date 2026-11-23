@@ -242,11 +242,22 @@ impl Engine {
     /// from `C_Login.GetState()` (see `lua/glue.lua`).
     fn load_glue(&mut self) {
         let lua = self.runtime.lua();
-        if let Err(err) = lua
-            .load(include_str!("lua/glue.lua"))
-            .set_name("=[C]")
-            .exec()
-        {
+        // glue.lua receives a function that fires client events.
+        let fire = lua.create_function(|lua, args: mlua::MultiValue| {
+            let mut args = args.into_iter();
+            let Some(Value::String(event)) = args.next() else {
+                return Ok(());
+            };
+            let event = event.to_string_lossy();
+            frames::dispatch_event(lua, &event, args.collect());
+            Ok(())
+        });
+        let result = fire.and_then(|fire| {
+            lua.load(include_str!("lua/glue.lua"))
+                .set_name("=[C]")
+                .call::<()>(fire)
+        });
+        if let Err(err) = result {
             state(lua).warn(format!("cannot set up the glue environment: {err}"));
         }
         if let Some(dir) = &self.config.scenario {
@@ -271,7 +282,14 @@ impl Engine {
         }
         self.fire_event("FRAMES_LOADED", ());
         self.fire_event("LOGIN_STATE_CHANGED", ());
-        self.fire_event("CHARACTER_LIST_UPDATE", ());
+        // The payload is the size of the character list.
+        let count: i64 = self
+            .runtime
+            .lua()
+            .load("return GetNumCharacters and GetNumCharacters() or 0")
+            .eval()
+            .unwrap_or(0);
+        self.fire_event("CHARACTER_LIST_UPDATE", count);
         widgets::fire_size_changes(self.runtime.lua());
     }
 

@@ -26,8 +26,6 @@ if capture then
 end
 local meta = capture and capture.meta or {}
 
-FireGlueEvent = S.FireEvent
-
 -- Race file names to race IDs (ChrRaces).
 local raceIDs = {
     Human = 1, Orc = 2, Dwarf = 3, NightElf = 4, Scourge = 5, Tauren = 6,

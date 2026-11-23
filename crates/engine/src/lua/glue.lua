@@ -2,6 +2,14 @@
 -- select), written in Lua. The sandbox is always logged in and connected
 -- to a realm, so GlueParent goes straight to character select.
 
+local fireNow = ...
+-- Events that answer a request arrive on a later frame in the client, not
+-- inside the call (deep nesting overflows the C stack otherwise).
+local function fireEvent(event, ...)
+    local n, args = select("#", ...), { ... }
+    C_Timer.After(0, function() fireNow(event, unpack(args, 1, n)) end)
+end
+
 LE_AURORA_STATE_NONE = LE_AURORA_STATE_NONE or 0
 LE_WOW_CONNECTION_STATE_NONE = LE_WOW_CONNECTION_STATE_NONE or 0
 LE_WOW_CONNECTION_STATE_CONNECTING = LE_WOW_CONNECTION_STATE_CONNECTING or 1
@@ -93,10 +101,16 @@ function GetCharacterInfoByGUID(guid)
 end
 function GetCharacterListGroupsInfo() return {} end
 function GetCharacterListUpdate()
-    if FireGlueEvent then FireGlueEvent("CHARACTER_LIST_UPDATE") end
+    fireEvent("CHARACTER_LIST_UPDATE", #GlueCharacters)
 end
+-- The client answers with UPDATE_SELECTED_CHARACTER, and remembers the
+-- choice in the lastCharacterIndex CVar (0-based).
 function SelectCharacter(index)
     selectedIndex = index
+    if index and index > 0 then
+        SetCVar("lastCharacterIndex", index - 1)
+    end
+    fireEvent("UPDATE_SELECTED_CHARACTER", index)
 end
 function GetCharacterSelection() return selectedIndex end
 function GetSelectedCharacterGUID() return GetCharacterGUID(selectedIndex) end
@@ -136,3 +150,11 @@ C_CharacterServices = C_CharacterServices or {}
 function C_CharacterServices.GetCharacterServiceDisplayInfo() return {} end
 C_CharacterCreation = C_CharacterCreation or {}
 function C_CharacterCreation.GetAvailableRaces() return {} end
+C_SharedCharacterServices = C_SharedCharacterServices or {}
+function C_SharedCharacterServices.GetUpgradeDistributions() return {} end
+function C_CharacterServices.GetVASDistributions() return {} end
+
+-- Glue enums missing from the API documentation. Values are placeholders
+-- (the names are in Wow.exe; the values are not known).
+Enum.CharacterCreateType = Enum.CharacterCreateType or { Normal = 0, Boost = 1, TrialBoost = 2 }
+function C_CharacterCreation.GetCharacterCreateType() return Enum.CharacterCreateType.Normal end
