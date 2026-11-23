@@ -26,9 +26,9 @@ Last updated: 2026-11-23.
   the Monk and the Evoker (2026-11-23). If
   `WTF/Account/TEHDROOD/SavedVariables/WowProgrammingCapture.lua` exists in
   the game folder, import it first (see [capture.md](capture.md)).
-- **Branch:** `spellbook-gui`, from `main`. Nothing is pushed. All work
-  from 2026-11-22 evening and 2026-11-23 is **uncommitted** in the working
-  tree; the user decides the branch before the commit.
+- **Branch:** `spellbook-gui`, from `main`. Nothing is pushed. Commit
+  each tested step on this branch without asking (the user's rule for
+  this project); still ask before pushing or merging.
 - **Tests:** `cargo test`, `cargo fmt --check` and
   `cargo clippy --all-targets -- -D warnings` pass.
 
@@ -118,12 +118,10 @@ Last updated: 2026-11-23.
    `tools/compare/compare_frames.lua`, and fix what the new data shows
    (tooltip text, assisted combat button, sample abilities, fonts).
 2. Use `capture.fonts` to measure text; compare again.
-3. Commit, after the user chooses the branch (see git rules in
-   CLAUDE.md). The diff is large; consider splitting it by topic.
-4. HUD: compare `scenarios/hud` and the captured `trees` (PlayerFrame,
+3. HUD: compare `scenarios/hud` and the captured `trees` (PlayerFrame,
    TargetFrame, party, action bars); add a raid scenario (IsInRaid,
    raid1..N units) for CompactRaidFrameContainer; cooldown swipes.
-5. Try the window on the user's machine.
+4. Try the window on the user's machine.
 
 How to run: see [running-the-gui.md](running-the-gui.md). The spellbook
 and HUD scenarios take about 20 s to start; a helper that restarts a
