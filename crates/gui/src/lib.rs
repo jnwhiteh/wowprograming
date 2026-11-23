@@ -1,10 +1,12 @@
 //! Native window for the sandbox: draws the UI scene and offers a console.
 //!
-//! The scene is drawn into the central panel, scaled to fit, by the
-//! engine's software renderer. The bottom
-//! panel shows sandbox output and has an input line for slash commands and
-//! Lua. Key presses go to the sandbox's key bindings while the input line
-//! does not have focus.
+//! By default the window is borderless and covers the whole monitor at its
+//! native resolution, like the game's "windowed (fullscreen)" mode, so the
+//! sandbox can be compared with game screenshots pixel for pixel. The scene
+//! is drawn by the engine's software renderer. F12 shows or hides the
+//! console: sandbox output and an input line for slash commands and Lua.
+//! Key presses go to the sandbox's key bindings while the input line does
+//! not have focus.
 
 use std::time::Instant;
 
@@ -31,14 +33,36 @@ pub struct App {
     scroll_to_bottom: bool,
     show_hover: bool,
     control: Option<ControlServer>,
+    show_console: bool,
+    /// Last display size given to the engine, in physical pixels.
+    display: Option<(u32, u32)>,
+    fullscreen: bool,
+    resized_to_monitor: bool,
+}
+
+/// How to open the window.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct WindowOptions {
+    /// A normal window with a title bar instead of a borderless window
+    /// covering the monitor.
+    pub windowed: bool,
 }
 
 /// Open the window and run until it closes.
-pub fn run(engine: Engine, control: Option<ControlServer>) -> Result<(), String> {
+pub fn run(
+    engine: Engine,
+    control: Option<ControlServer>,
+    window: WindowOptions,
+) -> Result<(), String> {
+    let mut viewport = egui::ViewportBuilder::default().with_title("WowProgramming");
+    viewport = if window.windowed {
+        viewport.with_inner_size([1600.0, 1100.0])
+    } else {
+        // Borderless fullscreen on the current monitor, at its native mode.
+        viewport.with_fullscreen(true).with_decorations(false)
+    };
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_inner_size([1600.0, 1100.0])
-            .with_title("WowProgramming"),
+        viewport,
         ..Default::default()
     };
     eframe::run_native(
@@ -47,6 +71,8 @@ pub fn run(engine: Engine, control: Option<ControlServer>) -> Result<(), String>
         Box::new(|_cc| {
             let mut app = App::new(engine);
             app.control = control;
+            app.fullscreen = !window.windowed;
+            app.show_console = window.windowed;
             Ok(Box::new(app))
         }),
     )
@@ -66,9 +92,13 @@ impl App {
             scroll_to_bottom: true,
             show_hover: false,
             control: None,
+            show_console: true,
+            display: None,
+            fullscreen: false,
+            resized_to_monitor: false,
         };
         app.push_log(
-            "Press P to open the spellbook. Type /dump <expr>, /run <code> or Lua here.".into(),
+            "F12 shows or hides this console. Type /dump <expr>, /run <code> or Lua here.".into(),
             Color32::LIGHT_BLUE,
         );
         app.drain_output();
@@ -99,6 +129,41 @@ impl App {
             };
             self.push_log(line.to_string(), color);
         }
+    }
+
+    /// Give the engine the window's size in physical pixels, so the UI
+    /// takes the monitor's aspect ratio and text its pixel size. Only a
+    /// full-screen window does this; a normal window keeps the configured
+    /// screen and scales it to fit.
+    fn sync_display_size(&mut self, ctx: &egui::Context) {
+        if !self.fullscreen {
+            return;
+        }
+        let (size, ppp) = ctx.input(|i| {
+            (
+                i.viewport().inner_rect.map(|r| r.size()),
+                i.pixels_per_point(),
+            )
+        });
+        let Some(size) = size else { return };
+        // Without a window manager (Xvfb) the fullscreen request does
+        // nothing, so also cover the monitor by hand.
+        let monitor = ctx.input(|i| i.viewport().monitor_size);
+        if let Some(m) = monitor
+            && (m - size).length() > 1.0
+            && !self.resized_to_monitor
+        {
+            self.resized_to_monitor = true;
+            ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(Pos2::ZERO));
+            ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(m));
+        }
+        let w = (size.x * ppp).round() as u32;
+        let h = (size.y * ppp).round() as u32;
+        if w == 0 || h == 0 || self.display == Some((w, h)) {
+            return;
+        }
+        self.display = Some((w, h));
+        self.engine.set_display_size(w as f64, h as f64);
     }
 
     /// Draw the scene with the engine's software renderer, so the window
@@ -272,66 +337,76 @@ impl eframe::App for App {
             }
         }
 
-        let mut input_has_focus = false;
-        egui::Panel::bottom("console")
-            .resizable(true)
-            .default_size(240.0)
-            .show(ui, |ui| {
-                ui.horizontal(|ui| {
-                    ui.label(">");
-                    let edit = egui::TextEdit::singleline(&mut self.input)
-                        .font(egui::TextStyle::Monospace)
-                        .desired_width(ui.available_width() - 160.0);
-                    let response = ui.add(edit);
-                    input_has_focus = response.has_focus();
-                    if response.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
-                        let line = std::mem::take(&mut self.input);
-                        if !line.trim().is_empty() {
-                            self.push_log(format!("> {line}"), Color32::LIGHT_GREEN);
-                            self.history.push(line.clone());
-                            self.engine.run_command(&line);
-                            self.drain_output();
-                        }
-                        response.request_focus();
-                    }
-                    if input_has_focus
-                        && ui.input(|i| i.key_pressed(Key::ArrowUp))
-                        && let Some(last) = self.history.last()
-                    {
-                        self.input = last.clone();
-                    }
-                    ui.checkbox(&mut self.show_hover, "Show hover");
-                });
-                egui::ScrollArea::vertical()
-                    .auto_shrink([false, false])
-                    .stick_to_bottom(true)
-                    .show(ui, |ui| {
-                        for line in &self.log {
-                            ui.label(
-                                egui::RichText::new(&line.text)
-                                    .monospace()
-                                    .color(line.color),
-                            );
-                        }
-                    });
-            });
+        if ctx.input(|i| i.key_pressed(Key::F12)) {
+            self.show_console = !self.show_console;
+        }
+        self.sync_display_size(&ctx);
 
-        egui::CentralPanel::default().show(ui, |ui| {
-            let scene = self.engine.scene();
-            let (area, k) = self.draw_scene(ui, &scene);
-            self.handle_input(&ctx, area, k, input_has_focus);
-            if self.show_hover
-                && let Some(name) = self.engine.mouse_focus_name()
-            {
-                ui.painter().text(
-                    area.left_top() + Vec2::new(8.0, 8.0),
-                    egui::Align2::LEFT_TOP,
-                    name,
-                    FontId::monospace(14.0),
-                    Color32::YELLOW,
-                );
-            }
-        });
+        let mut input_has_focus = false;
+        let show_console = self.show_console;
+        if show_console {
+            egui::Panel::bottom("console")
+                .resizable(true)
+                .default_size(240.0)
+                .show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.label(">");
+                        let edit = egui::TextEdit::singleline(&mut self.input)
+                            .font(egui::TextStyle::Monospace)
+                            .desired_width(ui.available_width() - 160.0);
+                        let response = ui.add(edit);
+                        input_has_focus = response.has_focus();
+                        if response.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
+                            let line = std::mem::take(&mut self.input);
+                            if !line.trim().is_empty() {
+                                self.push_log(format!("> {line}"), Color32::LIGHT_GREEN);
+                                self.history.push(line.clone());
+                                self.engine.run_command(&line);
+                                self.drain_output();
+                            }
+                            response.request_focus();
+                        }
+                        if input_has_focus
+                            && ui.input(|i| i.key_pressed(Key::ArrowUp))
+                            && let Some(last) = self.history.last()
+                        {
+                            self.input = last.clone();
+                        }
+                        ui.checkbox(&mut self.show_hover, "Show hover");
+                    });
+                    egui::ScrollArea::vertical()
+                        .auto_shrink([false, false])
+                        .stick_to_bottom(true)
+                        .show(ui, |ui| {
+                            for line in &self.log {
+                                ui.label(
+                                    egui::RichText::new(&line.text)
+                                        .monospace()
+                                        .color(line.color),
+                                );
+                            }
+                        });
+                });
+        }
+
+        egui::CentralPanel::default()
+            .frame(egui::Frame::NONE.fill(Color32::BLACK))
+            .show(ui, |ui| {
+                let scene = self.engine.scene();
+                let (area, k) = self.draw_scene(ui, &scene);
+                self.handle_input(&ctx, area, k, input_has_focus);
+                if self.show_hover
+                    && let Some(name) = self.engine.mouse_focus_name()
+                {
+                    ui.painter().text(
+                        area.left_top() + Vec2::new(8.0, 8.0),
+                        egui::Align2::LEFT_TOP,
+                        name,
+                        FontId::monospace(14.0),
+                        Color32::YELLOW,
+                    );
+                }
+            });
         self.drain_output();
         ctx.request_repaint();
     }

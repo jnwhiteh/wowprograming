@@ -47,7 +47,29 @@ Last updated: 2026-11-23.
   native size (3440x1440 on the user's machine) to compare with game
   screenshots. The login event order will come from the new
   `!WowProgrammingTrace` addon (see [capture.md](capture.md)).
-- **Branch:** `character-select`, from `main` (the spellbook work is merged). Commit
+- **Branch:** `character-select`, from `main` (the spellbook work is merged).
+- **Reference data for this goal** (in the game folders, never commit
+  it): character select and in-game screenshots at 3440x1440 in
+  `_retail_/Screenshots/WoWScrnShot_112326_*.png` (225345 and 225508 are
+  character select); the same screen from the Windows tool in
+  `/mnt/c/Users/jnwhi/OneDrive/Pictures/Screenshots 1/Screenshot 2026-11-23 2253*.png`;
+  a 33 s video (character select, loading screen, Arcantina, portal,
+  loading screen, Silvermoon) in
+  `/mnt/c/Users/jnwhi/Videos/Captures/World of Warcraft 2026-11-23 22-55-52.mp4`;
+  traces in `SavedVariables/!WowProgrammingTrace.lua`: Evoker (1 login,
+  3 reloads, zone changes) and Monk (1 login). The character list
+  (names, race, class, sex, faction, guild, equipment for 15 characters)
+  is in Syndicator's SavedVariables; the order is in
+  `WTF/Account/<ACCOUNT>/character-list-order.txt` (GUIDs).
+- **Real login order** (Monk trace, ms after the first addon loads):
+  ADDON_LOADED..., UPDATE_BINDINGS (1664), DISPLAY_SIZE_CHANGED,
+  UI_SCALE_CHANGED, VARIABLES_LOADED (12518), EDIT_MODE_LAYOUTS_UPDATED
+  (13513), PLAYER_LOGIN (14661), PLAYER_ENTERING_WORLD (14870),
+  LOADING_SCREEN_DISABLED (16560), SPELLS_CHANGED (16792). The sandbox
+  still sends PLAYER_LOGIN first; fix this with the login sequence.
+- **Character select screen** (from the screenshots): the 3D scene and
+  the glue UI fill a 2880x1440 area in the middle of the 3440x1440
+  screen, with black bars at the sides. Commit
   each tested step on this branch without asking (the user's rule for
   this project); still ask before pushing or merging.
 - **Tests:** `cargo test`, `cargo fmt --check` and
@@ -124,6 +146,11 @@ Last updated: 2026-11-23.
   `click` take one word: store frames in a global first.
 - Image tools: ImageMagick (`magick`) is installed with Homebrew, for
   cropping and comparing screenshots.
+- The window opens borderless and covers the monitor (`--windowed` for a
+  normal window). The engine keeps the UI height in UI units and takes
+  the monitor's aspect ratio and pixel size (`Engine::set_display_size`,
+  fires DISPLAY_SIZE_CHANGED). F12 shows or hides the console. Tested
+  under Xvfb at 3440x1440.
 
 ## What does not work yet
 
@@ -254,8 +281,8 @@ Things that cost time once and should not cost it again.
 - DB2 files have no path hashes in the root file; open them by FileDataID
   (UiTextureAtlas 897470, UiTextureAtlasMember 897532, GlobalStrings 1394440).
 - Never open a GUI window on the user's desktop for testing. Use
-  `run --serve` and `ctl`. Under Xvfb the window also needs
-  `libxkbcommon-x11-0`, which is not installed yet.
+  `run --serve` and `ctl`, or the GUI under `xvfb-run -a -s "-screen 0
+  3440x1440x24"` (unset `WAYLAND_DISPLAY` first).
 - Read capture text from the Windows clipboard with
   `powershell.exe -NoProfile -Command "Get-Clipboard -Raw"`; put scripts on
   it with `clip.exe < file`. Don't make the user paste large text.
@@ -332,6 +359,11 @@ Things that cost time once and should not cost it again.
 - The capture addon runs Blizzard event handlers tainted. In the game
   this makes health and power secret and floods error addons until
   `/reload`; the data is still saved.
+- Homebrew's ImageMagick has no X11 support (`import` fails). Grab an
+  Xvfb display with `ffmpeg -f x11grab -video_size WxH -i $DISPLAY
+  -frames:v 1 out.png`. `xdotool` and `libxkbcommon-x11-0` are installed.
+- Without a window manager (Xvfb), a fullscreen request does nothing; the
+  GUI also moves and resizes the window to the monitor by hand.
 - Never run `git stash` to compare against the old state: all work was
   uncommitted, and stashing hid it (it was restored at once).
 

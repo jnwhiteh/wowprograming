@@ -113,6 +113,10 @@ struct RunArgs {
     /// Pixels per UI unit for --screenshot.
     #[arg(long, default_value_t = 0.75)]
     screenshot_scale: f64,
+    /// gui only: open a normal window instead of a borderless window that
+    /// covers the monitor.
+    #[arg(long)]
+    windowed: bool,
 }
 
 /// Settings read from the config file. Relative paths are relative to the
@@ -375,7 +379,10 @@ fn run_gui(config: EngineConfig, game_dir: Option<PathBuf>, args: &RunArgs) -> E
         engine.run_command(line);
     }
     let control = start_control(args.control_port, true);
-    match wowprogramming_gui::run(engine, control) {
+    let window = wowprogramming_gui::WindowOptions {
+        windowed: args.windowed,
+    };
+    match wowprogramming_gui::run(engine, control, window) {
         Ok(()) => ExitCode::SUCCESS,
         Err(err) => {
             eprintln!("window error: {err}");

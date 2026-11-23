@@ -1,7 +1,9 @@
 # Running the GUI
 
-The GUI opens a window with the sandboxed game UI on top and a console at
-the bottom. With a scenario loaded, press **P** to open Blizzard's
+The GUI opens a borderless window that covers the monitor at its native
+resolution, like the game's "windowed (fullscreen)" mode, so it can be
+compared with game screenshots. **F12** shows or hides a console at the
+bottom. `--windowed` opens a normal window with the console shown. With a scenario loaded, press **P** to open Blizzard's
 spellbook.
 
 ## Before the first run
@@ -37,7 +39,8 @@ cargo run --release -- gui --scenario scenarios/monk --no-addons
   loads the Evoker. To make new captures, see [capture.md](capture.md).
 - `--no-addons` skips your installed third-party addons. Leave it out to
   load them too (expect many errors; they are not the target yet).
-- The window opens through WSLg on your Windows desktop.
+- The window opens through WSLg on your Windows desktop. Close it with
+  Alt+F4, or type `/quit` in the console.
 
 ## Using it
 
@@ -46,7 +49,7 @@ cargo run --release -- gui --scenario scenarios/monk --no-addons
   focus; click on the UI area first.
 - The mouse works on the UI: hover, click tabs, page buttons and the
   maximize/minimize button.
-- The console at the bottom accepts the same lines as the in-game chat
+- The console (F12) accepts the same lines as the in-game chat
   box for scripts:
   - `/dump PlayerSpellsFrame:IsShown()`
   - `/run PlayerSpellsUtil.ToggleSpellBookFrame()`

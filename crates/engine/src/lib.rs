@@ -283,6 +283,31 @@ impl Engine {
         state(self.runtime.lua()).screen
     }
 
+    /// The window's size in physical pixels changed (for example when a
+    /// full-screen window learns the monitor size). The UI keeps its height
+    /// in UI units; its width follows the window's aspect ratio, and text
+    /// is drawn at the window's pixel size. Fires DISPLAY_SIZE_CHANGED, as
+    /// the client does when the resolution changes.
+    pub fn set_display_size(&mut self, width: f64, height: f64) {
+        if width <= 0.0 || height <= 0.0 {
+            return;
+        }
+        {
+            let mut st = state(self.runtime.lua());
+            let ui_height = st.screen.1;
+            let ui_width = ui_height * width / height;
+            let pixel_scale = height / ui_height;
+            if (st.screen.0 - ui_width).abs() < 0.01 && (st.pixel_scale - pixel_scale).abs() < 1e-6
+            {
+                return;
+            }
+            st.screen.0 = ui_width;
+            st.pixel_scale = pixel_scale;
+            layout::invalidate(&mut st);
+        }
+        self.fire_event("DISPLAY_SIZE_CHANGED", ());
+    }
+
     /// Mouse moved to a position in screen units (y up).
     pub fn mouse_move(&mut self, x: f64, y: f64) {
         input::mouse_move(self.runtime.lua(), x, y);
