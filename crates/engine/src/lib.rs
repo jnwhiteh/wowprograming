@@ -267,10 +267,17 @@ impl Engine {
             addons::load_addon(lua, &name);
         }
 
-        self.fire_event("PLAYER_LOGIN", ());
-        self.fire_event("PLAYER_ENTERING_WORLD", (!reloading, reloading));
-        // The client sends the edit mode layouts at login; they place the
-        // unit frames, action bars and other HUD frames.
+        // The client's order, from traces of logins and reloads (see
+        // docs/status.md): bindings and display first, then saved
+        // variables, edit mode layouts, PLAYER_LOGIN and
+        // PLAYER_ENTERING_WORLD; the loading screen ends, then the spell
+        // list arrives.
+        self.fire_event("UPDATE_BINDINGS", ());
+        self.fire_event("DISPLAY_SIZE_CHANGED", ());
+        self.fire_event("UI_SCALE_CHANGED", ());
+        self.fire_event("VARIABLES_LOADED", ());
+        // The edit mode layouts place the unit frames, action bars and
+        // other HUD frames.
         let layouts: Option<Table> = self
             .runtime
             .lua()
@@ -281,11 +288,8 @@ impl Engine {
         if let Some(layouts) = layouts {
             self.fire_event("EDIT_MODE_LAYOUTS_UPDATED", (layouts, false));
         }
-        self.fire_event("VARIABLES_LOADED", ());
-        self.fire_event("UPDATE_BINDINGS", ());
-        // The client sends the spell list after login; AssistedCombatManager
-        // and the spellbook read it on this event.
-        self.fire_event("SPELLS_CHANGED", ());
+        self.fire_event("PLAYER_LOGIN", ());
+        self.fire_event("PLAYER_ENTERING_WORLD", (!reloading, reloading));
         // The loading screen ends: the UI becomes visible.
         let lua = self.runtime.lua();
         let ui_parent = lua
@@ -297,6 +301,9 @@ impl Engine {
             frames::change_visibility(lua, id, |f| f[id].shown = true);
         }
         self.fire_event("LOADING_SCREEN_DISABLED", ());
+        // AssistedCombatManager and the spellbook read the spell list on
+        // this event.
+        self.fire_event("SPELLS_CHANGED", ());
         widgets::fire_size_changes(self.runtime.lua());
     }
 

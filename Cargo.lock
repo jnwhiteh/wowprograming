@@ -3110,6 +3110,7 @@ dependencies = [
  "serde",
  "toml",
  "wowprogramming-engine",
+ "wowprogramming-formats",
  "wowprogramming-gui",
  "wowprogramming-lua",
 ]
