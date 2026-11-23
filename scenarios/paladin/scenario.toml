@@ -1,0 +1,8 @@
+# The whole default UI, as the client loads it. The spellbook needs most of
+# it (action bars for flyouts and "on your bars" checks, tooltips, menus).
+blizzard_addons = ["*"]
+# Load-on-demand addons whose [Bootstrap] files run at startup.
+bootstrap_addons = ["Blizzard_PlayerSpells"]
+screen = [2866.67, 1200.0]
+# Physical pixels of the captured screen; text is drawn at whole pixel sizes.
+physical_screen = [3440, 1440]

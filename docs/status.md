@@ -11,7 +11,7 @@ Last updated: 2026-11-23.
 ## Current state
 
 - **Goal in progress:** the spellbook as a native GUI app (P opens it).
-  It works for the Monk and Evoker scenarios: tabs, paging, maximize and
+  It works for the Monk, Evoker and Paladin scenarios: tabs, paging, maximize and
   minimize, close and Escape, spell tooltips, search (typing, preview,
   Enter for full results, clear button), the settings menu (Hide
   Passives), flyouts (Hero's Path) and the Specialization tab. The
@@ -22,12 +22,13 @@ Last updated: 2026-11-23.
   frames, action buttons. `scenarios/hud` shows the player frame, target
   frame, target-of-target, party frames (described units, no capture
   needed) and the main action bar with spell icons and key labels.
-- **Data:** the user was asked to run the WowProgrammingCapture addon on
-  the Monk and the Evoker (2026-11-23). If
-  `WTF/Account/TEHDROOD/SavedVariables/WowProgrammingCapture.lua` holds
-  more than an empty table, import it first (see [capture.md](capture.md)).
-  The first run saved nothing: a missing font file stopped the last step.
-  The addon is fixed; the user must copy it into the game again.
+- **Data:** addon captures (version 2, build 12.1.5.70961) are imported
+  for the Monk (Ohnoregard-Draenor), the Evoker (Ohnodwagon-Draenor) and
+  the Paladin (Ohnohealme-Draenor, new `scenarios/paladin`). None had a
+  target or a group, so the target, party and raid frames are not in them.
+  The spellbook matches the game except for text width: the assistant
+  label (68 vs 80.8) moves the search box 12.8 units, and the page text
+  is 6.7 narrower.
 - **Branch:** `spellbook-gui`, from `main`. Nothing is pushed. Commit
   each tested step on this branch without asking (the user's rule for
   this project); still ask before pushing or merging.
@@ -102,8 +103,11 @@ Last updated: 2026-11-23.
 - Text is about 10% narrower than in game (needs `capture.fonts`).
 - Cooldown swipes, portraits (a placeholder portrait is shown), minimap,
   3D models.
-- The Talents tab (needs trait data), the Single-Button Assistant and
-  spec sample abilities (need the capture).
+- The Talents tab (needs trait data); spec sample abilities are captured
+  but not checked yet.
+- Health and power were secret during the capture, so they are not
+  replayed: `UnitHealth` returns the stand-in 100 while `UnitHealthMax`
+  is the captured 898820 (the Monk's health bar looks almost empty).
 - About 55 full-UI startup errors in systems outside the goals (chat
   frames, communities, tutorials, guild UI, pet battles, LFG). Some
   repeat every tick (PersonalResourceDisplay).
@@ -115,11 +119,10 @@ Last updated: 2026-11-23.
 
 ## Next steps
 
-1. If the capture file exists, import it for the Monk and Evoker
-   (`import-capture ... scenarios/monk --character Name-Realm`), run
-   `tools/compare/compare_frames.lua`, and fix what the new data shows
-   (tooltip text, assisted combat button, sample abilities, fonts).
-2. Use `capture.fonts` to measure text; compare again.
+1. Use `capture.fonts` to measure text; compare again (the remaining
+   spellbook differences are all text width).
+2. Check the captured tooltips and spec sample abilities in the
+   spellbook. Give health a value consistent with the captured maximum.
 3. HUD: compare `scenarios/hud` and the captured `trees` (PlayerFrame,
    TargetFrame, party, action bars); add a raid scenario (IsInRaid,
    raid1..N units) for CompactRaidFrameContainer; cooldown swipes.
@@ -250,6 +253,13 @@ Things that cost time once and should not cost it again.
   `inherit="prepend"` order (StanceBar), XML textures filling their
   parent, layers interleaved across frames at one level (tooltips). If a
   capture contradicts one of them, the capture wins.
+- A capture records every client call, including ones that act or load
+  (`C_AddOns.LoadAddOn`, `Set...`, `Register...`). Replaying those broke
+  the sandbox (the spellbook never loaded), so `S.Replay` skips
+  `C_AddOns` and action verbs, and skips records that hold `<secret>`.
+- The capture addon runs Blizzard event handlers tainted. In the game
+  this makes health and power secret and floods error addons until
+  `/reload`; the data is still saved.
 - Never run `git stash` to compare against the old state: all work was
   uncommitted, and stashing hid it (it was restored at once).
 
