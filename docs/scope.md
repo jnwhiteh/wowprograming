@@ -261,8 +261,8 @@ Done when all of these hold:
   Models, game pads, movies and the `OnTooltipSet*` handlers are out of
   scope.
 - These interactions work in the full UI and have tests:
-  1. Drag a movable window (BugSack's window; a fixture addon with the
-     same code for CI). It follows the mouse, stays on screen when
+  1. Drag a movable window (a fixture addon with the same code as
+     BugSack's window; real BugSack loaded with `--addon` as a check). It follows the mouse, stays on screen when
      clamped, and its position comes back after `/reload` from the
      sandbox's own `layout-local.txt`.
   2. Edit Mode: enter it, drag a HUD frame (the player frame), leave it.
@@ -282,10 +282,6 @@ Done when all of these hold:
 
 Steps, in order:
 
-0. Load only the addons that the character has enabled in the game
-   (`AddOns.txt` in the character's WTF folder), like the client. Today
-   the sandbox loads every addon in the AddOns folder, including the 19
-   that the Monk has disabled.
 1. The coverage report, so that progress can be measured.
 2. A `drag` command for the control bridge (press, move in steps,
    release) and an engine test helper that does the same.
@@ -329,8 +325,7 @@ goal builds that state as one model in the engine:
   the cursor, the target. Filled from the capture and DB2 tables. Every
   client function reads it, and every change fires the events that the
   API documentation lists, with their documented payloads.
-- **The character's own setup, read only from the WTF folder:** enabled
-  addons (`AddOns.txt`), macros, key bindings and Edit Mode layouts (see
+- **The character's own setup, read only from the WTF folder:** macros, key bindings and Edit Mode layouts (see
   "Sources of truth" in [client-runtime.md](client-runtime.md)).
 - **Simple rules, from data.** Cast times, cooldowns, costs and auras
   come from DB2 (SpellMisc, SpellCastTimes, SpellCooldowns, SpellPower,

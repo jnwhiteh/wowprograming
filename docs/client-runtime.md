@@ -63,7 +63,9 @@ Use them in this order. Each later source costs more than the one before.
    - `layout-local.txt`: positions of frames the user moved. It shows the
      client's own result of a move (see "Moving and sizing" below).
    - `AddOns.txt`: which addons are enabled for the character
-     (`Name: enabled` or `Name: disabled`, one per line).
+     (`Name: enabled` or `Name: disabled`, one per line). The sandbox
+     does not use it: only the default UI loads, plus addons named with
+     `--addon` (user's decision, 2026-11-24).
    - `macros-cache.txt`: the character's macros (`VER 3 <id> "<name>"
      "<icon>"`, the macro lines, `END`).
    - `bindings-cache.wtf`: key bindings (`bind <key> <command>`).

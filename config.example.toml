@@ -6,5 +6,6 @@ game_dir = "/mnt/d/World of Warcraft/_retail_"
 # Blizzard UI source checkout for the same flavor.
 ui_source_dir = "../wow-ui-source-retail"
 
-# Folder that holds the addons to load.
+# Folder that holds third-party addons. Only addons named with --addon load;
+# without it only the default UI loads.
 addons_dir = "/mnt/d/World of Warcraft/_retail_/Interface/AddOns"

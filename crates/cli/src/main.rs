@@ -119,7 +119,7 @@ struct RunArgs {
     /// Config file. Defaults to config.local.toml when it exists.
     #[arg(long)]
     config: Option<PathBuf>,
-    /// Folder with the addons to load.
+    /// Folder with the third-party addons that `--addon` can name.
     #[arg(long)]
     addons_dir: Option<PathBuf>,
     /// Blizzard UI source tree.
@@ -128,7 +128,8 @@ struct RunArgs {
     /// Sandbox WTF folder for SavedVariables.
     #[arg(long)]
     wtf_dir: Option<PathBuf>,
-    /// Load only this addon (and its dependencies). Can be repeated.
+    /// Third-party addon to load (with its dependencies). Can be repeated.
+    /// Without this option only the default UI loads.
     #[arg(long = "addon", value_name = "NAME")]
     addons: Vec<String>,
     /// Blizzard addon to load. Replaces the default list. Can be repeated.
@@ -153,9 +154,6 @@ struct RunArgs {
     /// Do not read textures, atlases and fonts from the game install.
     #[arg(long)]
     no_game_data: bool,
-    /// Do not load third-party addons.
-    #[arg(long)]
-    no_addons: bool,
     /// Load the whole default UI (every Blizzard addon the client loads at
     /// startup) instead of the scenario's list.
     #[arg(long)]
@@ -462,7 +460,9 @@ fn build_config(args: &RunArgs) -> Result<(EngineConfig, Option<PathBuf>), Strin
     };
     let rel = |p: PathBuf| if p.is_absolute() { p } else { base.join(p) };
 
-    let addons_dir = if args.no_addons {
+    // Only the default UI loads unless third-party addons are named; the
+    // character's enabled addons in the game do not matter.
+    let addons_dir = if args.addons.is_empty() {
         None
     } else {
         args.addons_dir.clone().or(file.addons_dir.map(rel))

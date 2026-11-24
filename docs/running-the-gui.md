@@ -28,7 +28,7 @@ spellbook.
 From the repo root:
 
 ```sh
-cargo run --release -- gui --glue --scenario scenarios/charselect --no-addons
+cargo run --release -- gui --glue --scenario scenarios/charselect
 ```
 
 - Character select lists the characters found in your account's addon data
@@ -46,7 +46,7 @@ cargo run --release -- gui --glue --scenario scenarios/charselect --no-addons
 
 
 ```sh
-cargo run --release -- gui --scenario scenarios/monk --no-addons
+cargo run --release -- gui --scenario scenarios/monk
 ```
 
 - The first build takes a few minutes. Startup takes about 20 seconds: it
@@ -55,8 +55,9 @@ cargo run --release -- gui --scenario scenarios/monk --no-addons
   frames and action bars with described units.
 - `--scenario scenarios/monk` loads the Monk capture; `scenarios/evoker`
   loads the Evoker. To make new captures, see [capture.md](capture.md).
-- `--no-addons` skips your installed third-party addons. Leave it out to
-  load them too (expect many errors; they are not the target yet).
+- Only the default UI loads. To load a third-party addon from
+  `addons_dir` for testing, name it: `--addon BugSack` (repeat for more).
+  Which addons a character has enabled in the game does not matter.
 - The window opens through WSLg on your Windows desktop. Close it with
   Alt+F4, or type `/quit` in the console.
 
@@ -99,8 +100,8 @@ terminal:
 `ctl`; `--screenshot` renders a PNG with the software renderer:
 
 ```sh
-./target/release/wowprogramming run --scenario scenarios/monk --no-addons --serve
-./target/release/wowprogramming run --scenario scenarios/monk --no-addons \
+./target/release/wowprogramming run --scenario scenarios/monk --serve
+./target/release/wowprogramming run --scenario scenarios/monk \
     --seconds 0.1 --exec "/run PlayerSpellsUtil.ToggleSpellBookFrame()" \
     --screenshot /tmp/spellbook.png
 ```

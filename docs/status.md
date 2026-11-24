@@ -100,8 +100,9 @@ Last updated: 2026-11-24.
 - Window: borderless and covers the monitor (`--windowed` for a normal
   window). The engine keeps the UI height in UI units and takes the
   monitor's aspect ratio and pixel size (`Engine::set_display_size`, fires
-  DISPLAY_SIZE_CHANGED). F12 shows or hides the console. Third-party
-  addons still load from `addons_dir`; `--no-addons` leaves them out.
+  DISPLAY_SIZE_CHANGED). F12 shows or hides the console. Only the
+  default UI loads; third-party addons load from `addons_dir` only when
+  named with `--addon NAME`.
 - 3D view (`world.rs`, `formats/m2.rs`): M2 models and skins (vertices,
   textures, materials, sections, batches), creature skins from
   CreatureDisplayInfo, race models through ChrRaceXChrModel and ChrModel,
@@ -223,28 +224,25 @@ Frame runtime goal (see "Frame runtime" in [scope.md](scope.md) for the
 done criteria; rules and open questions in
 [client-runtime.md](client-runtime.md)):
 
-1. Load only the addons enabled in the character's `AddOns.txt` (read
-   only, from the WTF folder). Today every addon in the AddOns folder
-   loads, including the 19 the Monk has disabled.
-2. Write `wowprogramming coverage`: a runtime report of every script
+1. Write `wowprogramming coverage`: a runtime report of every script
    handler in `UI.xsd` and every documented widget method, with its state
    in the engine (implemented, empty, documented stub, missing) and its
    number of uses in Blizzard's Lua and XML. Mark empty methods in
    `widgets.rs` so the report can tell them from real ones. A static scan
    on 2026-11-24 found 41 empty methods and about 50 unfired handlers;
    the snapshot is in client-runtime.md.
-3. A `drag` command in the control bridge and an engine test helper.
-4. Mouse capture and click rules, then dragging, then moving, sizing,
+2. A `drag` command in the control bridge and an engine test helper.
+3. Mouse capture and click rules, then dragging, then moving, sizing,
    clamping and `layout-local.txt`, then toplevel, keyboard, Edit Mode,
    edit boxes, sliders and scroll bars, cooldowns (scope.md has the
    order).
-5. When a behavior is unknown, implement a best guess, mark it
+4. When a behavior is unknown, implement a best guess, mark it
    "inferred" in client-runtime.md and add a question to its "Open
    questions for a probe session". Do not ask the user to record a
    session for one question.
 
 Paused character select and world goal: ask the user to try
-`gui --glue --scenario scenarios/charselect --no-addons` on the desktop
+`gui --glue --scenario scenarios/charselect` on the desktop
 (see [running-the-gui.md](running-the-gui.md)) when convenient. The
 remaining 3D steps (animation, mipmaps, customization textures, terrain)
 are in the backlog in scope.md.
@@ -275,6 +273,7 @@ Decisions already made with the user. Do not reopen them without a reason.
 | 2026-11-23 | 3D world from real game models (option A); own art or simple shapes where that is hard, terrain first | Chosen by the user |
 | 2026-11-23 | Character list read at run time from the account's addon data (Syndicator, trace addon), not copied into the repo | Personal data stays in the game folder |
 | 2026-11-23 | Early events recorded by a separate `!WowProgrammingTrace` addon | The `!` makes it load before other third-party addons (user's advice) |
+| 2026-11-24 | Only the default UI loads. Third-party addons load only when named (`--addon`), for testing; never from the character's enabled list in the game | The default UI is the focus now; addons are for testing and later work |
 | 2026-11-24 | One branch per goal or major milestone, merged into `main` when the goal is complete | User's rule |
 | 2026-11-24 | Next goal: the frame runtime (the C++ foundations of the UI), not 3D rendering | The user cares about the interface and its interactions, not the game world |
 | 2026-11-24 | Facts come from static sources first: `UI.xsd`, the widget API documentation, `Wow.exe`, Blizzard code, files the client writes, warcraft.wiki.gg. In-game recording is the last resort: questions are collected and answered in one small probe session | Recording is slow for the user, gives single traces and can produce huge files |

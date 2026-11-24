@@ -37,7 +37,7 @@ exit; SavedVariables are written to `.sandbox/WTF`.
 Useful options:
 
 ```
-cargo run -- run --addon HelloWorld          # load only this addon
+cargo run -- run --addon HelloWorld          # load this third-party addon
 cargo run -- run --exec "/hello" --seconds 2 # run without a console
 cargo run -- run --no-blizzard               # skip Blizzard addons
 cargo run -- lua path/to/file.lua            # run one Lua file
