@@ -176,6 +176,8 @@ Last updated: 2026-11-24.
   `S.ApplyCVars`, `S.SpellbookStandIns` (for reduced UIs).
 - Capture addon (`tools/capture/WowProgrammingCapture`) and
   `wowprogramming import-capture`; see [capture.md](capture.md).
+- Sliders (`slider.rs`): the thumb follows the value; pressing and
+  dragging changes the value. Scroll frames report range changes.
 - Edit boxes (`editbox.rs`): cursor, highlight, letter and byte limits,
   numeric input, autoFocus, editing keys, OnCursorChanged, OnTextSet.
 - Edit Mode: enter, drag a HUD frame, save a new layout, leave; layouts
@@ -261,8 +263,10 @@ done criteria; rules and open questions in
    key blocking in the full UI), Edit Mode end to end (the same test:
    drag the player frame, save a new layout, leave, `/reload`; the test
    needs the game data from `config.local.toml` and takes about 50 s in
-   release), edit box editing. Next: sliders and scroll bars,
-   cooldowns (scope.md has the order).
+   release), edit box editing, sliders, scroll bar thumbs and scroll
+   ranges (the same test drags a Settings slider and the Settings list's
+   scroll bar). Next: cooldown frames, MessageFrame (`UIErrorsFrame`),
+   hyperlinks, then the remaining coverage gaps.
 4. When a behavior is unknown, implement a best guess, mark it
    "inferred" in client-runtime.md and add a question to its "Open
    questions for a probe session". Do not ask the user to record a
@@ -350,6 +354,7 @@ Decisions already made with the user. Do not reopen them without a reason.
 | `crates/engine/src/input.rs`, `movement.rs` | Mouse input and click rules; moving, sizing, clamping, raising |
 | `crates/engine/src/layoutcache.rs` | User-placed positions in the sandbox's `layout-local.txt` |
 | `crates/engine/src/editbox.rs` | Edit box editing: cursor, highlight, limits, keys, autoFocus |
+| `crates/engine/src/slider.rs` | Slider thumb placement and dragging |
 | `crates/engine/src/coverage.rs` | The coverage report (`wowprogramming coverage`) |
 | `crates/engine/src/apidoc.rs` | `Enum` and `Constants` from the API documentation |
 | `crates/engine/src/savedvars.rs` | SavedVariables reading and writing |

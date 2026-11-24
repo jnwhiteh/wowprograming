@@ -62,6 +62,7 @@ pub const DOUBLE_CLICK_TIME: f64 = 0.5;
 pub fn mouse_move(lua: &Lua, x: f64, y: f64) {
     state(lua).mouse = (x, y);
     crate::movement::follow_mouse(lua);
+    crate::slider::follow_mouse(lua);
     maybe_start_drag(lua);
     update_focus(lua, true);
 }
@@ -219,6 +220,9 @@ pub fn mouse_down(lua: &Lua, button: &str) {
         }
     }
     fire_script(lua, id, "OnMouseDown", button);
+    if button == "LeftButton" {
+        crate::slider::press(lua, id);
+    }
     if registered_for(lua, id, button, true) {
         click_or_double(lua, id, button, true);
     }
@@ -233,6 +237,7 @@ pub fn mouse_up(lua: &Lua, button: &str) {
         }
     };
     let Some(press) = press else { return };
+    crate::slider::release(lua);
     let id = press.frame;
     if let Some(b) = state(lua).frames[id].button.as_deref_mut() {
         b.pushed = false;

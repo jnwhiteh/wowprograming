@@ -87,22 +87,59 @@ fn set_cursor(lua: &Lua, id: FrameId, pos: usize) {
 }
 
 /// `SetText`: replaces the text, puts the cursor at the end and clears
-/// the highlight. OnTextSet fires, then OnTextChanged if the text changed.
+/// the highlight. OnTextSet fires at once; OnTextChanged(false) follows on
+/// the next frame if the text then differs from the last reported text
+/// (inferred: Blizzard's currency transfer box calls SetNumber in OnLoad,
+/// and its handler would fail if OnTextChanged fired inside the call).
 pub fn set_text_api(lua: &Lua, id: FrameId, s: String) {
     let s = limit(&edit(lua, id), &s);
-    let unchanged = text(lua, id) == s;
     let len = s.len();
     set_text(lua, id, s);
     with_edit(lua, id, |e| {
         e.cursor = len;
         e.highlight = None;
+        e.text_change_pending = true;
     });
     fire_script(lua, id, "OnTextSet", ());
-    // Setting the same text again does not count as a change (handlers
-    // that set the text from OnTextChanged would loop otherwise).
-    if !unchanged {
+}
+
+/// Fire the OnTextChanged(false) calls due from `SetText`. Setting the
+/// same text again does not count as a change (handlers that set the text
+/// from OnTextChanged would loop otherwise).
+pub fn fire_pending_text_changes(lua: &Lua) {
+    let due: Vec<FrameId> = {
+        let mut st = state(lua);
+        let mut out = Vec::new();
+        for id in 0..st.frames.len() {
+            let f = &mut st.frames[id];
+            let Some(e) = f.edit.as_deref_mut() else {
+                continue;
+            };
+            if !e.text_change_pending {
+                continue;
+            }
+            e.text_change_pending = false;
+            let current = f.text.as_deref().map(|t| t.text.as_str()).unwrap_or("");
+            if e.reported_text != current {
+                e.reported_text = current.to_string();
+                out.push(id);
+            }
+        }
+        out
+    };
+    for id in due {
         fire_script(lua, id, "OnTextChanged", false);
     }
+}
+
+/// OnTextChanged at once, for changes the user made.
+fn text_changed_now(lua: &Lua, id: FrameId, user_input: bool) {
+    let t = text(lua, id);
+    with_edit(lua, id, |e| {
+        e.reported_text = t;
+        e.text_change_pending = false;
+    });
+    fire_script(lua, id, "OnTextChanged", user_input);
 }
 
 /// Insert text at the cursor, replacing the highlighted text. Returns
@@ -153,7 +190,11 @@ pub fn insert(lua: &Lua, id: FrameId, s: &str, user_input: bool) -> bool {
         e.cursor = cursor;
         e.highlight = None;
     });
-    fire_script(lua, id, "OnTextChanged", user_input);
+    if user_input {
+        text_changed_now(lua, id, true);
+    } else {
+        with_edit(lua, id, |e| e.text_change_pending = true);
+    }
     cursor_changed(lua, id);
     !add.is_empty()
 }
@@ -195,7 +236,7 @@ fn delete(lua: &Lua, id: FrameId, back: bool) {
     let new = format!("{}{}", &t[..start], &t[end..]);
     set_text(lua, id, new);
     with_edit(lua, id, |e| e.cursor = start);
-    fire_script(lua, id, "OnTextChanged", true);
+    text_changed_now(lua, id, true);
     cursor_changed(lua, id);
 }
 

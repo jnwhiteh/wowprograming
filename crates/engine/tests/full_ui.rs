@@ -132,7 +132,55 @@ fn full_ui_interactions() {
     e.key_down("ESCAPE");
     e.key_up("ESCAPE");
 
+    settings_panel(&mut e);
     edit_mode(&mut e);
+}
+
+/// Settings: drag the list's scroll bar thumb, then a slider's thumb.
+fn settings_panel(e: &mut Engine) {
+    e.exec("SettingsPanel:Open()");
+    e.tick(0.1);
+    e.exec(
+        "SettingsScrollBar = SettingsPanel.Container.SettingsList.ScrollBar
+         SettingsScrollBox = SettingsPanel.Container.SettingsList.ScrollBox",
+    );
+    let before: f64 = e
+        .eval("return SettingsScrollBox:GetScrollPercentage()")
+        .unwrap();
+    assert_eq!(before, 0.0);
+    let thumb = center(e, "SettingsScrollBar:GetThumb()");
+    e.drag(thumb, (0.0, -50.0), "LeftButton", 10);
+    let (bar, list): (f64, f64) = e
+        .eval("return SettingsScrollBar:GetScrollPercentage(), SettingsScrollBox:GetScrollPercentage()")
+        .unwrap();
+    assert!(
+        bar > 0.0 && (bar - list).abs() < 1e-9,
+        "scroll bar {bar}, list {list}"
+    );
+    e.exec("SettingsScrollBar:SetScrollPercentage(0)");
+    e.tick(0.1);
+
+    // The first visible slider (Mouse Look Speed in the Controls page).
+    e.exec(
+        "local function walk(f)
+             if SettingsSlider or not f:IsVisible() then return end
+             if f:GetObjectType() == 'Slider' then SettingsSlider = f return end
+             for _, c in ipairs({ f:GetChildren() }) do walk(c) end
+         end
+         walk(SettingsPanel)",
+    );
+    let (value, min, max): (f64, f64, f64) = e
+        .eval("local min, max = SettingsSlider:GetMinMaxValues() return SettingsSlider:GetValue(), min, max")
+        .unwrap();
+    let thumb = center(e, "SettingsSlider:GetThumbTexture()");
+    let width: f64 = e.eval("return SettingsSlider:GetWidth()").unwrap();
+    e.drag(thumb, (width / 2.0, 0.0), "LeftButton", 10);
+    let after: f64 = e.eval("return SettingsSlider:GetValue()").unwrap();
+    assert!(
+        after > value && after <= max,
+        "slider {value} -> {after} in {min}..{max}"
+    );
+    e.exec("SettingsPanel:Close(true)");
 }
 
 /// Enter Edit Mode, drag the player frame, save it as a new layout,

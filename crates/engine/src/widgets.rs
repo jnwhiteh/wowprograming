@@ -840,6 +840,50 @@ fn script_region_methods(lua: &Lua) -> Result<Table> {
 /// Fire `OnSizeChanged` for frames whose size changed since the last call,
 /// as the client does after layout, not inside `SetSize`. Handlers may
 /// change more sizes; a few passes settle that.
+/// Horizontal and vertical scroll range of a scroll frame.
+fn scroll_ranges(st: &mut State, id: FrameId) -> Option<(f64, f64)> {
+    let child = st.frames[id].scroll_child?;
+    layout::rect(st, child)?;
+    let (cw, ch) = layout::size(st, child);
+    let (w, h) = layout::size(st, id);
+    Some(((cw - w).max(0.0), (ch - h).max(0.0)))
+}
+
+/// Fire OnScrollRangeChanged for scroll frames whose range changed since
+/// the last report (all of them, or only `only`).
+pub fn fire_scroll_range_changes(lua: &Lua, only: Option<FrameId>) {
+    let changed: Vec<(FrameId, (f64, f64))> = {
+        let mut st = state(lua);
+        let ids: Vec<FrameId> = match only {
+            Some(id) => vec![id],
+            None => (0..st.frames.len())
+                .filter(|&i| {
+                    st.frames[i].scroll_child.is_some()
+                        && st.frames[i].has_script("OnScrollRangeChanged")
+                })
+                .collect(),
+        };
+        let mut out = Vec::new();
+        for id in ids {
+            let Some(r) = scroll_ranges(&mut st, id) else {
+                continue;
+            };
+            let last = st.last_scroll_ranges.insert(id, r);
+            let differs = match last {
+                Some((x, y)) => (x - r.0).abs() > 1e-3 || (y - r.1).abs() > 1e-3,
+                None => true,
+            };
+            if differs {
+                out.push((id, r));
+            }
+        }
+        out
+    };
+    for (id, (x, y)) in changed {
+        fire_script(lua, id, "OnScrollRangeChanged", (x, y));
+    }
+}
+
 pub fn fire_size_changes(lua: &Lua) {
     for _ in 0..8 {
         let candidates: Vec<FrameId> = {
@@ -2840,8 +2884,13 @@ fn value_methods(lua: &Lua, slider: bool) -> Result<Table> {
         &this_,
         |f| (f.value.0, f.value.1)
     ));
-    method!(lua, m, "SetValue", |lua, (this_, v): (Value, f64)| {
+    method!(lua, m, "SetValue", move |lua, (this_, v): (Value, f64)| {
         let id = this(&this_)?;
+        if slider {
+            // SetValue does not round to the step (inferred).
+            crate::slider::set_value(lua, id, v, false, false);
+            return Ok(());
+        }
         let changed = {
             let mut st = state(lua);
             let f = &mut st.frames[id];
@@ -2880,7 +2929,7 @@ fn value_methods(lua: &Lua, slider: bool) -> Result<Table> {
     };
     m.raw_set(
         format!("Set{tex_name}"),
-        lua.create_function(|lua, (this_, v): (Value, Value)| {
+        lua.create_function(move |lua, (this_, v): (Value, Value)| {
             let id = this(&this_)?;
             let tex = match &v {
                 Value::Table(t) => frame_id(t)?,
@@ -2890,7 +2939,8 @@ fn value_methods(lua: &Lua, slider: bool) -> Result<Table> {
                         Some(t) => t,
                         None => {
                             let t = frame_id(&create_object(lua, "Texture", None, Some(id))?)?;
-                            state(lua).frames[t].draw_layer = 2;
+                            // UI.xsd: a slider's thumb is drawn in OVERLAY.
+                            state(lua).frames[t].draw_layer = if slider { 3 } else { 2 };
                             t
                         }
                     };
@@ -2945,17 +2995,38 @@ fn value_methods(lua: &Lua, slider: bool) -> Result<Table> {
             .unwrap_or([1.0; 4]);
         Ok((c[0], c[1], c[2], c[3]))
     });
-    empty!(lua, m, "SetValueStep", |_, _args: Variadic<Value>| Ok(()));
-    empty!(lua, m, "GetValueStep", |_, _this: Value| Ok(0.0));
-    empty!(lua, m, "SetObeyStepOnDrag", |_, _args: Variadic<Value>| Ok(
-        ()
+    method!(lua, m, "SetValueStep", |lua, (this_, v): (Value, f64)| {
+        with(lua, &this_, |f| f.value_step = v.max(0.0))
+    });
+    method!(lua, m, "GetValueStep", |lua, this_: Value| with(
+        lua,
+        &this_,
+        |f| f.value_step
     ));
-    empty!(
+    method!(
+        lua,
+        m,
+        "SetObeyStepOnDrag",
+        |lua, (this_, v): (Value, Value)| {
+            with(lua, &this_, |f| f.obey_step_on_drag = truthy(&v))
+        }
+    );
+    method!(lua, m, "GetObeyStepOnDrag", |lua, this_: Value| with(
+        lua,
+        &this_,
+        |f| f.obey_step_on_drag
+    ));
+    method!(
         lua,
         m,
         "SetStepsPerPage",
-        |_, _args: Variadic<Value>| Ok(())
+        |lua, (this_, v): (Value, f64)| { with(lua, &this_, |f| f.steps_per_page = v) }
     );
+    method!(lua, m, "GetStepsPerPage", |lua, this_: Value| with(
+        lua,
+        &this_,
+        |f| f.steps_per_page
+    ));
     empty!(lua, m, "SetFillStyle", |_, _args: Variadic<Value>| Ok(()));
     empty!(lua, m, "SetReverseFill", |_, _args: Variadic<Value>| Ok(()));
     empty!(lua, m, "SetRotatesTexture", |_, _args: Variadic<Value>| Ok(
@@ -3068,7 +3139,11 @@ fn scroll_frame_methods(lua: &Lua) -> Result<Table> {
         let (w, _) = layout::size(&mut st, id);
         Ok((cw - w).max(0.0))
     });
-    empty!(lua, m, "UpdateScrollChildRect", |_, _this: Value| Ok(()));
+    method!(lua, m, "UpdateScrollChildRect", |lua, this_: Value| {
+        let id = this(&this_)?;
+        fire_scroll_range_changes(lua, Some(id));
+        Ok(())
+    });
     Ok(m)
 }
 

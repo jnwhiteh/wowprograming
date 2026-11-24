@@ -700,6 +700,9 @@ fn apply_attributes(
                 }
             }
             "defaultValue" => state(lua).frames[id].value.2 = f,
+            "valueStep" => state(lua).frames[id].value_step = f.max(0.0),
+            "obeyStepOnDrag" => state(lua).frames[id].obey_step_on_drag = b,
+            "stepsPerPage" => state(lua).frames[id].steps_per_page = f,
             "orientation" => state(lua).frames[id].orientation = value.to_ascii_uppercase(),
             "looping" => {
                 native(lua, table, "SetLooping", value.as_str())?;
@@ -1015,7 +1018,10 @@ fn apply_child(
             )?;
         }
         "ThumbTexture" | "BarTexture" => {
-            let tex = build_region_for(lua, build, child, id, (2, 0))?;
+            // UI.xsd: the thumb is drawn in OVERLAY unless the slider's
+            // drawLayer says otherwise.
+            let layer = if tag == "ThumbTexture" { 3 } else { 2 };
+            let tex = build_region_for(lua, build, child, id, (layer, 0))?;
             let method = if tag == "ThumbTexture" {
                 "SetThumbTexture"
             } else {

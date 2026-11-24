@@ -21,6 +21,7 @@ pub mod natives;
 pub mod render;
 pub mod savedvars;
 pub mod scene;
+pub mod slider;
 pub mod state;
 pub mod text;
 pub mod timers;
@@ -393,8 +394,10 @@ impl Engine {
             st.last_elapsed = elapsed;
         }
         timers::run_due(lua);
+        editbox::fire_pending_text_changes(lua);
         frames::run_on_update(lua, elapsed);
         widgets::fire_size_changes(lua);
+        widgets::fire_scroll_range_changes(lua, None);
         input::refresh_focus(lua);
     }
 
@@ -532,14 +535,19 @@ impl Engine {
     }
 
     /// Press a mouse button at `(x, y)`, move by `(dx, dy)` in `steps`
-    /// equal moves, and release. Positions are in screen units, y up.
+    /// equal moves, and release. Positions are in screen units, y up. A
+    /// frame (1/60 s) passes after the press and after each move, as in a
+    /// real drag: Blizzard's scroll bars follow the cursor in OnUpdate.
     pub fn drag(&mut self, from: (f64, f64), by: (f64, f64), button: &str, steps: u32) {
+        const FRAME: f64 = 1.0 / 60.0;
         let steps = steps.max(1);
         self.mouse_move(from.0, from.1);
         self.mouse_down(button);
+        self.tick(FRAME);
         for i in 1..=steps {
             let t = i as f64 / steps as f64;
             self.mouse_move(from.0 + by.0 * t, from.1 + by.1 * t);
+            self.tick(FRAME);
         }
         self.mouse_up(button);
     }
@@ -812,10 +820,12 @@ fn build_runtime(
         press: None,
         last_click: None,
         moving: None,
+        slider_drag: None,
         hover_generation: 0,
         key_targets: HashMap::new(),
         anim_fx: HashMap::new(),
         last_sizes: HashMap::new(),
+        last_scroll_ranges: HashMap::new(),
     });
     let lua = runtime.lua();
     natives::install(lua)?;

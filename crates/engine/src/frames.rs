@@ -314,6 +314,12 @@ pub fn create_object(
         // edit box sets it (inferred).
         data.mouse_enabled = true;
     }
+    if object_type == "Slider" {
+        // UI.xsd: sliders are vertical unless told otherwise. They take
+        // the mouse without enableMouse (inferred, as edit boxes).
+        data.orientation = "VERTICAL".into();
+        data.mouse_enabled = true;
+    }
     if matches!(object_type, "Slider" | "StatusBar") {
         data.value = (0.0, 0.0, 0.0);
     }
@@ -591,6 +597,7 @@ pub const FIRED_SCRIPTS: &[&str] = &[
     "OnMouseDown",
     "OnMouseUp",
     "OnMouseWheel",
+    "OnScrollRangeChanged",
     "OnShow",
     "OnSizeChanged",
     "OnSpacePressed",

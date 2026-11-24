@@ -165,6 +165,10 @@ pub struct EditState {
     pub count_invisible_letters: bool,
     pub history: Vec<String>,
     pub history_lines: usize,
+    /// The text last reported to OnTextChanged.
+    pub reported_text: String,
+    /// OnTextChanged(false) is due on the next frame.
+    pub text_change_pending: bool,
 }
 
 impl Default for EditState {
@@ -183,6 +187,8 @@ impl Default for EditState {
             count_invisible_letters: false,
             history: Vec::new(),
             history_lines: 0,
+            reported_text: String::new(),
+            text_change_pending: false,
         }
     }
 }
@@ -309,6 +315,10 @@ pub struct FrameData {
     pub value: (f64, f64, f64),
     pub status_texture: Option<FrameId>,
     pub orientation: String,
+    /// Slider step (`SetValueStep`), 0 for none.
+    pub value_step: f64,
+    pub obey_step_on_drag: bool,
+    pub steps_per_page: f64,
     pub scroll_child: Option<FrameId>,
     pub scroll: (f64, f64),
     pub focus: bool,
@@ -374,6 +384,9 @@ impl FrameData {
             value: (0.0, 0.0, 0.0),
             status_texture: None,
             orientation: "HORIZONTAL".into(),
+            value_step: 0.0,
+            obey_step_on_drag: false,
+            steps_per_page: 1.0,
             scroll_child: None,
             scroll: (0.0, 0.0),
             focus: false,
@@ -542,6 +555,9 @@ pub struct State {
     pub press: Option<Press>,
     /// The last click, for double clicks.
     pub last_click: Option<LastClick>,
+    /// The slider whose thumb follows the mouse, and where the thumb was
+    /// grabbed relative to its centre.
+    pub slider_drag: Option<(FrameId, (f64, f64))>,
     /// The frame being moved or sized with the mouse.
     pub moving: Option<Moving>,
     /// Keys held down, and the frame that took each one (it gets OnKeyUp).
@@ -552,6 +568,8 @@ pub struct State {
     pub raise_counter: u64,
     /// Visual effects of the animations that are playing, by target.
     pub anim_fx: HashMap<FrameId, crate::animfx::AnimFx>,
+    /// Scroll ranges last reported to `OnScrollRangeChanged` handlers.
+    pub last_scroll_ranges: HashMap<FrameId, (f64, f64)>,
     /// Sizes last reported to `OnSizeChanged` handlers.
     pub last_sizes: HashMap<FrameId, (f64, f64)>,
 }

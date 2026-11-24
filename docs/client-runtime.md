@@ -279,9 +279,13 @@ Implemented in `editbox.rs`.
   then fires for each inserted character. `SetMaxLetters` and
   `SetMaxBytes` limit typing, `SetText` and `Insert`; a lower limit cuts
   the current text (inferred). Numeric edit boxes drop non-digits.
-- `SetText` puts the cursor at the end and clears the highlight, then
-  fires OnTextSet, then OnTextChanged(false) if the text changed (order
-  inferred). `HighlightText()` selects all; `(start, end)` selects a
+- `SetText` (and `SetNumber`, `Insert`) puts the cursor at the end and
+  clears the highlight, and fires OnTextSet at once. OnTextChanged(false)
+  follows on the next frame, once, if the text then differs from the
+  text last reported (inferred: Blizzard's currency transfer box calls
+  `SetNumber` in its OnLoad, before its parent's OnLoad, and its
+  OnTextChanged handler fails if it runs inside the call). Typed text
+  fires OnTextChanged(true) at once. `HighlightText()` selects all; `(start, end)` selects a
   range; a negative end means the end; equal positions clear it.
   `SetCursorPosition` clears the highlight (inferred).
 - Keys: BACKSPACE, DELETE, LEFT, RIGHT, HOME, END (to the line ends in
@@ -293,6 +297,30 @@ Implemented in `editbox.rs`.
   height times the line number, width 1 (width inferred).
 - Not yet: clicking places the cursor at the click (the cursor stays
   where it was), history keys, IME.
+
+### Sliders and scroll frames
+
+Implemented in `slider.rs` and `widgets.rs`.
+
+- Sliders are vertical unless told otherwise, and the thumb is drawn in
+  the OVERLAY layer (UI.xsd defaults). Sliders take the mouse without
+  `enableMouse` (inferred).
+- The thumb keeps its own size and moves along the slider, inside it:
+  left to right, or top to bottom for vertical sliders (inferred; its
+  anchors are ignored).
+- A left press on an enabled slider grabs the thumb where it was
+  pressed; a press beside the thumb moves the thumb's centre to the
+  mouse. While the button is held, the value follows the mouse, rounded
+  to the value step if `SetObeyStepOnDrag(true)`; OnValueChanged gets
+  `userInput` true (inferred). `SetValue` clamps but does not round
+  (inferred).
+- Blizzard's scroll bars (`ScrollBarMixin`) are Lua: the thumb's
+  OnMouseDown installs an OnUpdate that reads `GetCursorPosition`. They
+  need frames to pass while the mouse moves; `Engine::drag` and the
+  `drag` command advance one frame (1/60 s) per step.
+- OnScrollRangeChanged `(xrange, yrange)` fires once per frame when a
+  scroll frame's range (scroll child size minus frame size) changed, and
+  at once from `UpdateScrollChildRect` (inferred).
 
 ### Edit Mode
 
@@ -392,9 +420,12 @@ justify one session. Each question names what the probe measures.
 17. Edit Mode: after `C_EditMode.SetActiveLayout`, does
     EDIT_MODE_LAYOUTS_UPDATED arrive, and with `reconcileLayouts`
     true or false? Which layout is active after deleting the active one?
-18. Edit box: the order of OnTextSet and OnTextChanged after `SetText`;
+18. Edit box: does OnTextChanged after `SetText` arrive in the call or on
+    the next frame (and the order with OnTextSet);
     does `SetCursorPosition` clear the highlight; does a multi-line
     edit box with an OnEnterPressed handler also insert the new line?
+19. Slider: does a press beside the thumb jump to the mouse, or page by
+    `stepsPerPage`? Does `SetValue` round to the value step?
 
 ## Later layers (not part of the current goal)
 

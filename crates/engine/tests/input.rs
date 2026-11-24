@@ -553,3 +553,108 @@ fn edit_boxes_take_the_focus_when_shown() {
     e.exec("A:Show()");
     assert!(e.eval::<bool>("return A:HasFocus()").unwrap());
 }
+
+#[test]
+fn dragging_a_slider_thumb_changes_the_value() {
+    let wtf = tempfile::tempdir().unwrap();
+    let mut e = started(wtf.path());
+    e.exec(
+        r#"
+        Log = {}
+        SL = CreateFrame("Slider", nil, UIParent)
+        SL:SetOrientation("HORIZONTAL")
+        SL:SetSize(200, 20)
+        SL:SetPoint("BOTTOMLEFT", 100, 100)
+        SL:SetThumbTexture("Interface\\Buttons\\WHITE8X8")
+        SL:GetThumbTexture():SetSize(20, 20)
+        SL:SetMinMaxValues(0, 100)
+        SL:SetValueStep(10)
+        SL:SetObeyStepOnDrag(true)
+        SL:SetScript("OnValueChanged", function(_, v, user)
+            table.insert(Log, tostring(v) .. ":" .. tostring(user))
+        end)
+        "#,
+    );
+    let thumb_left =
+        |e: &Engine| -> f64 { e.eval("return (SL:GetThumbTexture():GetLeft())").unwrap() };
+    assert_eq!(thumb_left(&e), 100.0);
+    // A press on the track moves the thumb's centre there: 50 at the middle.
+    e.mouse_move(200.0, 110.0);
+    e.mouse_down("LeftButton");
+    assert_eq!(log(&e), "50:true");
+    assert_eq!(thumb_left(&e), 190.0);
+    // Dragging follows the mouse in steps of 10, and stops at the end.
+    e.mouse_move(236.0, 110.0);
+    e.mouse_move(400.0, 110.0);
+    e.mouse_up("LeftButton");
+    assert_eq!(log(&e), "70:true 100:true");
+    // After the release the mouse does not move it.
+    e.mouse_move(100.0, 110.0);
+    assert_eq!(log(&e), "");
+    // SetValue does not round, and is not user input.
+    e.exec("SL:SetValue(33)");
+    assert_eq!(log(&e), "33:false");
+    // Disabled sliders ignore the mouse.
+    e.exec("SL:Disable()");
+    e.mouse_move(110.0, 110.0);
+    e.mouse_down("LeftButton");
+    e.mouse_up("LeftButton");
+    assert_eq!(log(&e), "");
+}
+
+#[test]
+fn scroll_frames_report_range_changes() {
+    let wtf = tempfile::tempdir().unwrap();
+    let mut e = started(wtf.path());
+    e.exec(
+        r#"
+        Log = {}
+        SF = CreateFrame("ScrollFrame", nil, UIParent)
+        SF:SetSize(100, 100)
+        SF:SetPoint("CENTER")
+        local child = CreateFrame("Frame", nil, SF)
+        child:SetSize(100, 300)
+        SF:SetScrollChild(child)
+        SF:SetScript("OnScrollRangeChanged", function(_, x, y)
+            table.insert(Log, x .. "," .. y)
+        end)
+        SFChild = child
+        "#,
+    );
+    e.tick(0.01);
+    assert_eq!(log(&e), "0,200");
+    e.tick(0.01);
+    assert_eq!(log(&e), "");
+    e.exec("SFChild:SetHeight(150) SF:UpdateScrollChildRect()");
+    assert_eq!(log(&e), "0,50");
+}
+
+#[test]
+fn set_text_reports_the_change_on_the_next_frame() {
+    let wtf = tempfile::tempdir().unwrap();
+    let mut e = started(wtf.path());
+    e.exec(
+        r#"
+        Log = {}
+        T = CreateFrame("EditBox", nil, UIParent)
+        T:SetAutoFocus(false)
+        T:SetScript("OnTextSet", function() table.insert(Log, "set") end)
+        T:SetScript("OnTextChanged", function(self, user)
+            table.insert(Log, "changed:" .. self:GetText() .. ":" .. tostring(user))
+        end)
+        T:SetText("a")
+        T:SetText("b")
+        "#,
+    );
+    assert_eq!(log(&e), "set set");
+    e.tick(0.01);
+    assert_eq!(log(&e), "changed:b:false");
+    // The same text again is no change.
+    e.exec("T:SetText('b')");
+    e.tick(0.01);
+    assert_eq!(log(&e), "set");
+    // Typing reports at once.
+    e.exec("T:SetFocus()");
+    e.text_input("c");
+    assert_eq!(log(&e), "changed:bc:true");
+}

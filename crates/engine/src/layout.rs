@@ -128,6 +128,24 @@ pub fn rect(st: &mut State, id: FrameId) -> Option<Rect> {
 }
 
 fn compute(st: &mut State, id: FrameId) -> Option<Rect> {
+    // A slider's thumb sits on the track according to the value.
+    if let Some(slider) = crate::slider::thumb_owner(st, id) {
+        let track = rect(st, slider)?;
+        let es = effective_scale(st, id);
+        let (mut w, mut h) = (st.frames[id].width, st.frames[id].height);
+        if w <= 0.0
+            && h <= 0.0
+            && let Some(n) = natural_size(st, id)
+        {
+            (w, h) = n;
+        }
+        return Some(crate::slider::thumb_rect(
+            st,
+            slider,
+            track,
+            (w * es, h * es),
+        ));
+    }
     let mut points = st.frames[id].points.clone();
     if points.is_empty() {
         // A button's text without anchors is centred on the button; a
