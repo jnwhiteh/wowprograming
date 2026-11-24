@@ -41,6 +41,8 @@ pub const FRAME_TYPES: &[(&str, &str)] = &[
     ("ModelFFX", "Model"),
     ("MovieFrame", "Frame"),
     ("Browser", "Frame"),
+    // The in-game shop's checkout page (a browser in the client).
+    ("Checkout", "Frame"),
     ("Minimap", "Frame"),
     ("OffScreenFrame", "Frame"),
     ("ArchaeologyDigSiteFrame", "Frame"),

@@ -566,3 +566,33 @@ end
 -- (the stub's empty message has an invalid type).
 C_AddOnProfiler = C_AddOnProfiler or {}
 function C_AddOnProfiler.CheckForPerformanceMessage() return nil end
+
+-- Classes and races (ChrClasses and ChrRaces in the game data). English
+-- names; a capture's localized names replace them in scenarios.
+C_CreatureInfo = C_CreatureInfo or {}
+local classes = {
+    { "Warrior", "WARRIOR" }, { "Paladin", "PALADIN" }, { "Hunter", "HUNTER" },
+    { "Rogue", "ROGUE" }, { "Priest", "PRIEST" }, { "Death Knight", "DEATHKNIGHT" },
+    { "Shaman", "SHAMAN" }, { "Mage", "MAGE" }, { "Warlock", "WARLOCK" },
+    { "Monk", "MONK" }, { "Druid", "DRUID" }, { "Demon Hunter", "DEMONHUNTER" },
+    { "Evoker", "EVOKER" },
+}
+function C_CreatureInfo.GetClassInfo(classID)
+    local c = classes[classID]
+    if not c then return nil end
+    return { className = c[1], classFile = c[2], classID = classID }
+end
+local races = {
+    [1] = { "Human", "Human" }, [2] = { "Orc", "Orc" }, [3] = { "Dwarf", "Dwarf" },
+    [4] = { "Night Elf", "NightElf" }, [5] = { "Undead", "Scourge" },
+    [6] = { "Tauren", "Tauren" }, [7] = { "Gnome", "Gnome" }, [8] = { "Troll", "Troll" },
+    [9] = { "Goblin", "Goblin" }, [10] = { "Blood Elf", "BloodElf" },
+    [11] = { "Draenei", "Draenei" }, [22] = { "Worgen", "Worgen" },
+    [24] = { "Pandaren", "Pandaren" }, [52] = { "Dracthyr", "Dracthyr" },
+    [84] = { "Earthen", "EarthenDwarf" },
+}
+function C_CreatureInfo.GetRaceInfo(raceID)
+    local r = races[raceID]
+    if not r then return nil end
+    return { raceName = r[1], clientFileString = r[2], raceID = raceID }
+end

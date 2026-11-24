@@ -234,7 +234,21 @@ pub fn load_addon(lua: &Lua, name: &str) -> LoadState {
     }
 
     let started = std::time::Instant::now();
+    // Blizzard_EnvironmentCleanup removes globals that only the client's
+    // secure environment keeps. The sandbox runs secure-environment
+    // addons in the global environment, so the ones they call stay.
+    let kept: Vec<(&str, Value)> = if addon_name == "Blizzard_EnvironmentCleanup" {
+        SECURE_ENVIRONMENT_GLOBALS
+            .iter()
+            .map(|&k| (k, lua.globals().raw_get(k).unwrap_or(Value::Nil)))
+            .collect()
+    } else {
+        Vec::new()
+    };
     run_addon_files(lua, index, false);
+    for (k, v) in kept {
+        let _ = lua.globals().raw_set(k, v);
+    }
     if std::env::var_os("WOWPROGRAMMING_PROFILE").is_some() {
         let ms = started.elapsed().as_millis();
         if ms >= 200 {
@@ -248,6 +262,18 @@ pub fn load_addon(lua: &Lua, name: &str) -> LoadState {
     }
     LoadState::Loaded
 }
+
+/// Globals that `Blizzard_EnvironmentCleanup` removes from the global
+/// environment but secure-environment addons call (`secretunwrap` in
+/// `Blizzard_AuraContainerGroups.lua`, for example).
+const SECURE_ENVIRONMENT_GLOBALS: &[&str] = &[
+    "secretunwrap",
+    "SecureMixin",
+    "CreateFromSecureMixins",
+    "CreateSecureDelegate",
+    "CreateSecureMixinCopy",
+    "loadstring_untainted",
+];
 
 /// Run one file of a Blizzard addon without loading the addon, such as
 /// `Blizzard_ActionBar/Shared/ActionButtonUtil.lua`.

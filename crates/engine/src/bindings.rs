@@ -14,6 +14,7 @@ pub const DEFAULT_KEYS: &[(&str, &str)] = &[
     ("C", "TOGGLECHARACTER0"),
     ("B", "OPENALLBAGS"),
     ("ESCAPE", "TOGGLEGAMEMENU"),
+    ("TAB", "TARGETNEARESTENEMY"),
     ("1", "ACTIONBUTTON1"),
     ("2", "ACTIONBUTTON2"),
     ("3", "ACTIONBUTTON3"),
@@ -105,8 +106,13 @@ pub fn key_down(lua: &Lua, key: &str) -> bool {
         return false;
     };
     if *action == "TOGGLEGAMEMENU" {
-        // The game menu is not loaded; Escape closes open panels instead.
-        let close = lua.load("if CloseAllWindows then return CloseAllWindows() end");
+        // Blizzard's handler stops a cast, closes windows, clears the
+        // target, then shows the game menu. Without the game menu addon,
+        // Escape closes open panels.
+        let close = lua.load(
+            "if ToggleGameMenu then return ToggleGameMenu() end \
+             if CloseAllWindows then return CloseAllWindows() end",
+        );
         if let Ok(f) = close.set_name("=ESCAPE").into_function() {
             safe_call(lua, &f, ());
         }

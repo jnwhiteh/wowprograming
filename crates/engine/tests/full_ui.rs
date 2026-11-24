@@ -37,7 +37,7 @@ fn game_dir() -> Option<PathBuf> {
     Some(PathBuf::from(value))
 }
 
-fn full_ui(wtf: &Path) -> Option<Engine> {
+fn full_ui(wtf: &Path, scenario: &str) -> Option<Engine> {
     let ui = ui_source()?;
     let Some(gamedata) = game_dir().and_then(|d| GameData::open(&d).ok()) else {
         eprintln!("skipping: no game data (config.local.toml game_dir)");
@@ -51,7 +51,11 @@ fn full_ui(wtf: &Path) -> Option<Engine> {
             // A third-party window with BugSack's code, named with --addon.
             addons_dir: Some(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/AddOns")),
             only_addons: Some(vec!["MovableWindow".into()]),
-            scenario: Some(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios/hud")),
+            scenario: Some(
+                Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("../../scenarios")
+                    .join(scenario),
+            ),
             ..EngineConfig::default()
         },
         Some(std::rc::Rc::new(gamedata)),
@@ -87,7 +91,7 @@ fn click(e: &mut Engine, expr: &str) {
 #[test]
 fn full_ui_interactions() {
     let wtf = tempfile::tempdir().unwrap();
-    let Some(mut e) = full_ui(wtf.path()) else {
+    let Some(mut e) = full_ui(wtf.path(), "hud") else {
         return;
     };
 
@@ -317,4 +321,159 @@ fn edit_mode(e: &mut Engine) {
         .eval("return PlayerFrame:GetLeft(), PlayerFrame:GetBottom()")
         .unwrap();
     assert_eq!(reloaded, moved);
+}
+
+/// Lua errors printed since the last call.
+fn errors(e: &mut Engine) -> Vec<String> {
+    e.drain_output()
+        .into_iter()
+        .filter_map(|o| match o {
+            Output::Error(e) => Some(e),
+            _ => None,
+        })
+        .collect()
+}
+
+fn press(e: &mut Engine, key: &str) {
+    assert!(e.key_down(key), "no binding for {key}");
+    e.key_up(key);
+    e.tick(0.05);
+}
+
+/// The client state goal in scenarios/dummy: an invented character in
+/// front of a training dummy, driven by keys and the mouse.
+#[test]
+fn training_dummy_session() {
+    let wtf = tempfile::tempdir().unwrap();
+    let Some(mut e) = full_ui(wtf.path(), "dummy") else {
+        return;
+    };
+
+    // 1. Drag Blinkstep from the spellbook to action button 5.
+    press(&mut e, "P");
+    e.tick(0.2);
+    let button = "(function() for _, f in PlayerSpellsFrame.SpellBookFrame.PagedSpellsFrame:EnumerateFrames() do \
+        if f.spellBookItemInfo and f.spellBookItemInfo.name == 'Blinkstep' then return f.Button end end end)()";
+    let from = center(&e, button);
+    let to = center(&e, "ActionButton5");
+    e.drag(from, (to.0 - from.0, to.1 - from.1), "LeftButton", 10);
+    e.tick(0.1);
+    let (kind, id, held): (String, i64, bool) = e
+        .eval("local t, id = GetActionInfo(5) return t, id, GetCursorInfo() ~= nil")
+        .unwrap();
+    assert_eq!((kind.as_str(), id, held), ("spell", 1900005, false));
+    let icon: bool = e
+        .eval("return ActionButton5.icon:IsShown() and ActionButton5.icon:GetTexture() == C_Spell.GetSpellTexture(1900005)")
+        .unwrap();
+    assert!(icon, "action button 5 does not show the Blinkstep icon");
+    press(&mut e, "ESCAPE");
+
+    // 2. Tab targets the dummy and the target frame shows it.
+    press(&mut e, "TAB");
+    let (name, shown): (String, bool) = e
+        .eval("return UnitName('target'), TargetFrame:IsShown()")
+        .unwrap();
+    assert_eq!((name.as_str(), shown), ("Straw Sentinel", true));
+
+    // 3. Key 1 casts Emberlance (2 s): the cast bar fills, the global
+    // cooldown shows on the other buttons, mana goes down.
+    let mana_before: i64 = e.eval("return UnitPower('player')").unwrap();
+    press(&mut e, "1");
+    e.tick(1.0);
+    let (casting, bar, value): (String, bool, f64) = e
+        .eval("return UnitCastingInfo('player'), PlayerCastingBarFrame:IsShown(), PlayerCastingBarFrame:GetValue()")
+        .unwrap();
+    assert_eq!((casting.as_str(), bar), ("Emberlance", true));
+    assert!((0.8..1.3).contains(&value), "cast bar value {value}");
+    let (gcd, blink): (f64, f64) = e
+        .eval("local _, d = ActionButton3.cooldown:GetCooldownTimes() local _, b = ActionButton5.cooldown:GetCooldownTimes() return d, b")
+        .unwrap();
+    assert_eq!(
+        (gcd, blink),
+        (1500.0, 0.0),
+        "global cooldown, Blinkstep has none"
+    );
+    let mana: i64 = e.eval("return UnitPower('player')").unwrap();
+    assert_eq!(mana, mana_before - 2000);
+    e.tick(1.2);
+    assert!(
+        e.eval::<Option<String>>("return UnitCastingInfo('player')")
+            .unwrap()
+            .is_none()
+    );
+
+    // Frostbind: a debuff on the dummy, shown on the target frame, and
+    // its own 12 s cooldown on the button.
+    press(&mut e, "2");
+    e.tick(0.1);
+    let (debuff, cd): (String, f64) = e
+        .eval("local _, d = ActionButton2.cooldown:GetCooldownTimes() return C_UnitAuras.GetAuraDataByIndex('target', 1, 'HARMFUL').name, d")
+        .unwrap();
+    assert_eq!((debuff.as_str(), cd), ("Frostbind", 12000.0));
+    let shown: bool = e
+        .eval(
+            "local icon = C_Spell.GetSpellTexture(1900002)
+             local function find(f)
+                 for _, r in ipairs({ f:GetRegions() }) do
+                     if r:IsObjectType('Texture') and r:IsVisible() and r:GetTexture() == icon then return true end
+                 end
+                 for _, c in ipairs({ f:GetChildren() }) do
+                     if find(c) then return true end
+                 end
+                 return false
+             end
+             return find(TargetFrame)",
+        )
+        .unwrap();
+    assert!(shown, "the target frame shows no debuff");
+
+    // Aegis of Dawn twice: a buff with two stacks in the buff frame.
+    e.tick(1.5);
+    press(&mut e, "3");
+    e.tick(1.6);
+    press(&mut e, "3");
+    e.tick(0.1);
+    let (count, shown): (String, bool) = e
+        .eval("local f = BuffFrame.auraFrames[1] return f.Count:GetText(), f:IsShown()")
+        .unwrap();
+    assert_eq!((count.as_str(), shown), ("2", true));
+
+    // Starfall Torrent is channeled; the cast bar drains.
+    e.tick(1.6);
+    press(&mut e, "4");
+    e.tick(0.5);
+    let (channel, channeling): (String, bool) = e
+        .eval("return UnitChannelInfo('player'), PlayerCastingBarFrame.channeling")
+        .unwrap();
+    assert_eq!((channel.as_str(), channeling), ("Starfall Torrent", true));
+    e.tick(3.0);
+
+    // Escape stops a cast first, then clears the target.
+    press(&mut e, "1");
+    e.tick(0.5);
+    press(&mut e, "ESCAPE");
+    let (casting, target): (Option<String>, bool) = e
+        .eval("return UnitCastingInfo('player'), UnitExists('target')")
+        .unwrap();
+    assert_eq!((casting, target), (None, true));
+    press(&mut e, "ESCAPE");
+    let (target, frame): (bool, bool) = e
+        .eval("return UnitExists('target'), TargetFrame:IsShown()")
+        .unwrap();
+    assert_eq!((target, frame), (false, false));
+
+    // The debuff on the dummy ends after 8 s.
+    e.tick(5.0);
+    let left: i64 = e
+        .eval("return #C_UnitAuras.GetUnitAuras('dummy', 'HARMFUL')")
+        .unwrap();
+    assert_eq!(left, 0);
+
+    // The arranged bar is still there after /reload.
+    e.reload();
+    e.tick(0.1);
+    let (kind, id): (String, i64) = e.eval("return GetActionInfo(5)").unwrap();
+    assert_eq!((kind.as_str(), id), ("spell", 1900005));
+    let errs = errors(&mut e);
+    assert!(errs.is_empty(), "Lua errors:\n{}", errs.join("\n"));
 }

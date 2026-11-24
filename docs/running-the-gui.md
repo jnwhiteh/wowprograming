@@ -54,7 +54,11 @@ cargo run --release -- gui --scenario scenarios/monk
   `blizzard_addons = ["*"]`). `scenarios/hud` shows unit frames, party
   frames and action bars with described units.
 - `--scenario scenarios/monk` loads the Monk capture; `scenarios/evoker`
-  loads the Evoker. To make new captures, see [capture.md](capture.md).
+  loads the Evoker.
+- `--scenario scenarios/dummy` is a training dummy session with an
+  invented character and spells. Press **P** and drag a spell to the
+  bar, **Tab** to target the dummy, **1** to **4** to cast, **Escape** to
+  stop a cast, then to clear the target. To make new captures, see [capture.md](capture.md).
 - Only the default UI loads. To load a third-party addon from
   `addons_dir` for testing, name it: `--addon BugSack` (repeat for more).
   Which addons a character has enabled in the game does not matter.

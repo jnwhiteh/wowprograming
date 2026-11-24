@@ -6,13 +6,24 @@ work (see "Keeping this file current" below).
 
 For goals, design and the full roadmap, see [scope.md](scope.md).
 
-Last updated: 2026-11-24 (console errors fixed; client state goal started).
+Last updated: 2026-11-24 (client state model: spellbook, bars, target, casting, auras).
 
 ## Current state
 
-- **Client state goal: started on 2026-11-24**, branch `client-state`
-  (from `main`), with the user's go-ahead. See "Client state: a training
-  dummy session" in [scope.md](scope.md) and "Next steps".
+- **Client state goal: in progress**, branch `client-state` (from
+  `main`). The console error fixes were merged into `main` on 2026-11-24
+  (fast-forward, not pushed) as a finished checkpoint, at the user's
+  request. The client state model (`lua/clientstate.lua`) works with an
+  invented character in `scenarios/dummy`: drag a spell from the
+  spellbook to a bar (kept after `/reload`), Tab targets the training
+  dummy, instant, cast and channeled spells fill the cast bar, the global
+  and spell cooldowns show, mana goes down and comes back, buffs and
+  debuffs show with timers and stacks, Escape stops a cast, then clears
+  the target, then opens the game menu. Criteria 1 to 3 of the goal work;
+  4 partly (see scope.md). The user asked to invent fantasy data where
+  needed and to list where real data or templates are needed: see
+  [client-runtime.md](client-runtime.md), "Client state: invented data
+  and where real data is needed".
 - **Console errors fixed (2026-11-24, branch `client-state`):** the user
   reported constant errors in the console. The default UI now loads and
   runs without Lua errors in all scenarios (`monk`, `evoker`, `paladin`,
@@ -90,6 +101,25 @@ Last updated: 2026-11-24 (console errors fixed; client state goal started).
   `cargo clippy --all-targets -- -D warnings` pass.
 
 ## What works
+
+- Client state model (`crates/engine/src/lua/clientstate.lua`, `S.State`
+  in scenarios): spells, spellbook skill lines, action slots (saved per
+  character in the sandbox's `WowProgramming_ClientState` file), the
+  cursor (`PickupSpellBookItem`, `PickupAction`, `PlaceAction`,
+  `GetCursorInfo`, show and hide grid), the target (`TargetUnit`,
+  `TargetNearestEnemy` on Tab, `ClearTarget`), casting (`UseAction`,
+  `CastSpellByID`, `CastSpellByName`, `SpellStopCasting`,
+  `UnitCastingInfo`, `UnitChannelInfo`), the global cooldown and spell
+  cooldowns, mana cost and return, auras (`C_UnitAuras` by index, slot,
+  instance ID and spell ID; UNIT_AURA with update info; expiry; stacks;
+  `CancelUnitBuff`). Rules and gaps in client-runtime.md ("Client
+  state").
+- `scenarios/dummy`: Ilyndra, an invented night elf mage, with two
+  spellbook sections of invented spells and the Straw Sentinel training
+  dummy. Run it with `gui --scenario scenarios/dummy`.
+- Escape runs Blizzard's `ToggleGameMenu`: stop a cast, close windows,
+  clear the target, then the game menu.
+- `C_CreatureInfo.GetClassInfo` and `GetRaceInfo` (English names).
 
 - Everything from M1 (Lua 5.1 runtime, watchdog, addon loading, frames,
   timers, SavedVariables, console).
@@ -260,7 +290,7 @@ Last updated: 2026-11-24 (console errors fixed; client state goal started).
   are one pixel wider in the captures).
 - Frame runtime leftovers (backlog in scope.md): cooldown countdown
   numbers, edge and bling; the cursor does not move to a click in an
-  edit box; no game menu on a second Escape; no OnKeyDown for modifier
+  edit box; no OnKeyDown for modifier
   keys alone; indented word wrap is stored but not drawn.
 - Portraits (a placeholder portrait is shown), minimap,
   3D models inside UI frames (PlayerModel, ModelScene).
@@ -293,6 +323,10 @@ Last updated: 2026-11-24 (console errors fixed; client state goal started).
 - Compact raid frames are not tried yet (`scenarios/hud` is a party with
   classic party frames).
 - Taint and secret values.
+- Client state: no tooltips from data, no macros or slash commands such
+  as `/cast`, no Clique, no icon at the mouse pointer while a spell is
+  held, no click on a unit frame to target (secure unit buttons not
+  tried), no spell data from DB2 (only invented spells).
 
 ## Next steps
 
@@ -300,11 +334,19 @@ Console errors: ask the user to run the GUI again and report any error
 that is left (interactions such as opening panels can still raise some;
 the headless runs only cover loading and idle play).
 
-Client state goal: work through the seven done criteria in scope.md in
-order, each with a headless test in `crates/engine/tests/full_ui.rs`.
-Spell data comes from DB2 (SpellName, SpellMisc and others); find their
-FileDataIDs first (the CASC lookup by `DBFilesClient/<name>.db2` path
-finds nothing).
+Client state goal: continue the done criteria in scope.md with
+`scenarios/dummy` and extend `training_dummy_session` in
+`crates/engine/tests/full_ui.rs` for each step. In order: finish 4
+(right-click a buff to remove it, a scenario debuff on the player with
+its type color), the open parts of 2 and 3 (click the player frame to
+target, `/stopcasting`), then 5 (tooltips: build `C_TooltipInfo` lines
+from the model, using the Monk capture's spell tooltips as the template),
+6 (slash commands and macros from `macros-cache.txt`) and 7 (Clique on
+party frames). Also worth doing: draw the held spell's icon at the mouse
+pointer in the GUI. Real spell data from DB2 can come later, when a
+captured character should use the model; find the tables' FileDataIDs
+first (the CASC lookup by `DBFilesClient/<name>.db2` path finds nothing).
+Ask the user to try `gui --scenario scenarios/dummy` on the desktop.
 
 Desktop feedback (merged). Not reproduced: buff tooltips "adding lines until full"
 (with the fixes, buff tooltips show the aura name, description and time
@@ -389,6 +431,8 @@ Decisions already made with the user. Do not reopen them without a reason.
 | `crates/engine/src/world.rs` | 3D view: model loading, demo scene, software rasterizer |
 | `crates/formats/src/m2.rs` | M2 model and skin file reader |
 | `crates/engine/src/lua/glue.lua` | Glue client functions (login state, character list, EnterWorld) |
+| `crates/engine/src/lua/clientstate.lua` | Client state model: spells, spellbook, action slots, cursor, target, casting, cooldowns, power, auras (`S.State`) |
+| `scenarios/dummy` | Training dummy session with an invented character and spells |
 | `scenarios/charselect`, `scenarios/world` | Character select from account data; any character without its own scenario |
 | `tools/capture/!WowProgrammingTrace` | In-game addon that records login and zone change events |
 | `crates/engine/src/lua/client.lua` | Client functions written in Lua (quality colors, placeholder enums) |
@@ -558,6 +602,14 @@ Things that cost time once and should not cost it again.
 - To find console errors, run each scenario headless, group the
   `[error]` lines with `sort | uniq -c`, and print the Blizzard source
   line of each: most come from a client function that returns nothing.
+- `Blizzard_EnvironmentCleanup` sets client functions such as
+  `secretunwrap` to nil in the global environment; the client's secure
+  environment keeps them. A "call global (a nil value)" error for a
+  function the sandbox defines may come from there.
+- `cargo test` does not rebuild the `wowprogramming` binary. Run
+  `cargo build` before checking a change with `run` or `ctl`.
+- `ctl` needs `--` before arguments that start with a minus sign
+  (`ctl -- drag 961 860 401 -792`).
 - Some strings are missing from GlobalStrings.db2 as the sandbox reads it
   (probably in encrypted sections), such as
   `SOCIAL_ENABLE_DISCORD_FUNCTIONALITY`; `client.lua` defines stand-ins.

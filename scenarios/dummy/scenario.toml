@@ -1,0 +1,6 @@
+# A training dummy session with a made-up character and spells. Every
+# answer about spells, action slots, casting, auras and the target comes
+# from the client state model (crates/engine/src/lua/clientstate.lua).
+blizzard_addons = ["*"]
+screen = [2866.67, 1200.0]
+physical_screen = [3440, 1440]

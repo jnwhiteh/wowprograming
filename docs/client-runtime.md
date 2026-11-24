@@ -447,6 +447,79 @@ data on each run.
 - `GetDefaultScale()` is 768 divided by the physical screen height
   (inferred; the client may clamp it).
 
+### Client state
+
+The model is `crates/engine/src/lua/clientstate.lua`. A scenario turns it
+on through `S.State` (`scenarios/dummy` is the example); scenarios that
+replay a capture keep their captured answers. These rules are inferred
+from Blizzard code and the API documentation unless a source is named:
+
+- Events that follow a request (cursor, slots, casts, auras, the target)
+  arrive on the next frame, in the order the model sent them, as with the
+  glue functions. The real order for one cast is a probe question.
+- Picking up a spell or an action fires ACTIONBAR_SHOWGRID; an empty
+  cursor fires ACTIONBAR_HIDEGRID (`ActionBarMixin` raises the bars for
+  these cursor types). CURSOR_CHANGED gets `(isDefault, newType, oldType,
+  0)` with `Enum.UICursorType` values.
+- `PlaceAction` puts the cursor's spell into the slot; the slot's old
+  action goes on the cursor. `UseAction` with something on the cursor
+  places it (`SECURE_ACTIONS.action` calls `UseAction` for a click with
+  a held spell). `PickupAction` while holding something swaps the two.
+- `GetCursorInfo` for a spell returns `"spell", slot, "spell", spellID,
+  spellID`.
+- A cast: cost paid and cooldowns started at the start; UNIT_SPELLCAST_SENT,
+  then START (cast), CHANNEL_START (channel) or SUCCEEDED (instant); at
+  the end STOP and SUCCEEDED. Auras from a cast spell land at SUCCEEDED,
+  or at the start of a channel. `SpellStopCasting` sends INTERRUPTED and
+  STOP. Times in `UnitCastingInfo` are milliseconds of `GetTime()`.
+- The global cooldown is 1.5 s for every spell unless the spell says
+  `gcd = 0`. A button shows the spell's own cooldown or the global one,
+  whichever ends later.
+- Escape runs `ToggleGameMenu`. Blizzard's handlers then stop a cast
+  (`SpellStopCasting` returns true), close windows, clear the target
+  (`ClearTarget` returns whether there was one), and last open the game
+  menu (`Blizzard_Game/Shared/Game.lua`, `Blizzard_GameMenuEsc`).
+- Aura slots from `GetAuraSlots` are the aura instance IDs; a second cast
+  of a stacking aura refreshes it and adds a stack.
+- Power comes back at 5% of the maximum every half second outside a cast.
+  This is a simple rule, not the game's.
+- `Blizzard_EnvironmentCleanup` removes globals from the global
+  environment that the client's secure environment keeps
+  (`secretunwrap`, `SecureMixin`, ...). The sandbox runs secure
+  addons in the global environment, so it puts those six back.
+
+### Client state: invented data and where real data is needed
+
+`scenarios/dummy` uses an invented character (Ilyndra, a night elf
+mage), invented spells (Emberlance, Frostbind, Aegis of Dawn, ...) and an
+invented training dummy (the Straw Sentinel). Only the icons come from
+the game. This lets the interaction work go on without any capture.
+Where the invented data stops being good enough, in order of need:
+
+1. **Spell data for real characters** (static, no capture): SpellName,
+   SpellMisc, SpellCastTimes, SpellCooldowns, SpellPower, SpellDuration,
+   SpellAuraOptions from DB2. Needs the FileDataIDs from the community
+   listfile and the column layouts from WoWDBDefs. Then a captured
+   character's own spells can drive the same model.
+2. **Tooltip line templates.** `C_TooltipInfo` returns typed lines
+   (`Enum.TooltipDataLineType`). The Monk capture has spell tooltips
+   (name line type 13, cast time line, description type 34 in gold
+   0xFFD100, wrapped). Still missing: an action tooltip with cost and
+   range, an aura tooltip and a unit tooltip. A capture with a target and
+   a buff gives all three (the deferred "capture with a target").
+3. **Event order for one cast** (probe question 22 below).
+4. **The real training dummy**: its name, level (`??` is -1), creature
+   type, classification and tooltip. A capture with a dummy targeted.
+5. **Portraits**: `SetPortraitTexture` draws the unit's 3D model. The
+   sandbox shows a question mark. Either the 3D renderer draws a head
+   shot, or a template image per race and creature type is used.
+6. **Failure messages**: which `UI_ERROR_MESSAGE` type IDs go with "Not
+   yet recovered" and "Not enough mana" (`Enum.GameError` values; static
+   data in the API documentation, no capture).
+7. **Macros, bindings and click bindings** come from the character's WTF
+   files (`macros-cache.txt`, `bindings-cache.wtf`,
+   `click-bindings-cache.txt`), read only. No capture needed.
+
 ## Open questions for a probe session
 
 Collect questions here. Do not record anything until there are enough to
@@ -502,6 +575,13 @@ justify one session. Each question names what the probe measures.
     template that has an OnShow handler get it? (Probe: an addon XML
     frame and a template that log OnLoad and OnShow.)
 21. `GetDefaultScale()` at 1080 and 1440 physical pixels.
+22. One cast, in order: the events (with arguments) from pressing an
+    action key with a 2 s cast through its end, for an instant spell, and
+    for `/stopcasting` mid-cast. Include SPELL_UPDATE_COOLDOWN,
+    ACTIONBAR_UPDATE_COOLDOWN, CURRENT_SPELL_CAST_CHANGED and
+    UNIT_POWER_FREQUENT, and which arrive in the same frame as the key.
+23. Picking up a spell from the spellbook and dropping it on a slot: the
+    events and the `GetCursorInfo()` values at each step.
 
 ## Later layers (not part of the current goal)
 

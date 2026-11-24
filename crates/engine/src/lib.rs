@@ -342,6 +342,7 @@ impl Engine {
         // Data the client keeps for the UI (Edit Mode layouts), from the
         // sandbox's own files.
         savedvars::load(lua, EDIT_MODE_FILE);
+        savedvars::load(lua, CLIENT_STATE_FILE);
         if let Some(dir) = &self.config.scenario {
             let full_ui = self.config.blizzard_addons.iter().any(|n| n == "*");
             load_scenario(lua, dir, full_ui);
@@ -877,6 +878,11 @@ impl Engine {
 /// (`C_EditMode` in `lua/client.lua`).
 const EDIT_MODE_FILE: &str = "WowProgramming_EditMode";
 
+/// SavedVariables file name of the client state the server would keep:
+/// the action slots the player arranged (`lua/clientstate.lua`).
+const CLIENT_STATE_FILE: &str = "WowProgramming_ClientState";
+const ACTION_SLOTS_VAR: &str = "WowProgramming_ActionSlots";
+
 /// Write the data the client keeps for the UI: moved frames and Edit
 /// Mode layouts.
 fn save_client_files(lua: &Lua) {
@@ -889,6 +895,9 @@ fn save_client_files(lua: &Lua) {
             .raw_get::<Value>(name)
             .is_ok_and(|v| !v.is_nil())
     };
+    if has(ACTION_SLOTS_VAR) {
+        savedvars::save(lua, CLIENT_STATE_FILE, &[], &[ACTION_SLOTS_VAR.to_string()]);
+    }
     if has("WowProgramming_EditModeAccount") || has("WowProgramming_EditModeCharacter") {
         savedvars::save(
             lua,
@@ -1261,7 +1270,8 @@ fn scenario_helpers(lua: &Lua, dir: &std::path::Path) -> mlua::Result<Table> {
         frames::dispatch_event(lua, &event, args.collect());
         Ok(())
     })?;
-    lua.load(include_str!("lua/scenario.lua"))
+    let helpers: Table = lua
+        .load(include_str!("lua/scenario.lua"))
         .set_name("=[scenario]")
         .call((
             read_file,
@@ -1270,9 +1280,14 @@ fn scenario_helpers(lua: &Lua, dir: &std::path::Path) -> mlua::Result<Table> {
             decode_json,
             add_atlas,
             lua.named_registry_value::<Value>(apidoc::RETURN_MIXINS_KEY)?,
-            fire_event,
+            fire_event.clone(),
             read_game_file,
-        ))
+        ))?;
+    // The client state model (S.State); a scenario turns it on.
+    lua.load(include_str!("lua/clientstate.lua"))
+        .set_name("=[C]")
+        .call::<()>((helpers.clone(), fire_event))?;
+    Ok(helpers)
 }
 
 /// Create globals that FrameXML normally defines, when the Blizzard addons
