@@ -6,72 +6,42 @@ work (see "Keeping this file current" below).
 
 For goals, design and the full roadmap, see [scope.md](scope.md).
 
-Last updated: 2026-11-23.
+Last updated: 2026-11-24.
 
 ## Current state
 
-- **Milestone:** the spellbook GUI goal is functionally complete but not
-  closed. Text width is fixed: all 48 captured spellbook rectangles match
-  the game within 0.5 units for the Monk, Evoker and Paladin. To close it: a
-  check of the captured tooltips and sample abilities, and a first run of
-  the window on the user's machine (the user will test it; see
-  [running-the-gui.md](running-the-gui.md)). Then merge `spellbook-gui`
-  into `main` (ask first).
-- **Goal in progress:** the spellbook as a native GUI app (P opens it).
-  It works for the Monk, Evoker and Paladin scenarios: tabs, paging, maximize and
-  minimize, close and Escape, spell tooltips, search (typing, preview,
-  Enter for full results, clear button), the settings menu (Hide
-  Passives), flyouts (Hero's Path) and the Specialization tab. The
-  scenarios now load the **whole default UI** (`blizzard_addons = ["*"]`),
-  as the client does; the spellbook needs action bars, menus and
-  tooltips. About 55 startup errors remain, none in the spellbook.
-- **Next goal (started):** player and target frames, party and raid
-  frames, action buttons. `scenarios/hud` shows the player frame, target
-  frame, target-of-target, party frames (described units, no capture
-  needed) and the main action bar with spell icons and key labels.
-- **Data:** addon captures (version 2, build 12.1.5.70961) are imported
-  for the Monk (Ohnoregard-Draenor), the Evoker (Ohnodwagon-Draenor) and
-  the Paladin (Ohnohealme-Draenor, new `scenarios/paladin`). The Evoker
-  capture was redone on 2026-11-23 in a party of 5, without a target: it
-  has `party1`..`party4` unit calls and trees for `CompactPartyFrame` and
-  `CompactRaidFrameManager`. The Monk and Paladin captures have no target
-  or group. No capture has a target, raid units or trait data. The
-  spellbook layout matches the game.
-- **Data collection is deferred.** The user will make new captures later
-  (with a target, later in a raid). Until then, develop with
-  the existing captures and described units. Prepare the capture addon
-  first (see "Next steps"), so one round of captures covers everything.
-- **Goal started 2026-11-23:** character select screen (Blizzard's
-  GlueXML), then entering the world as the chosen character, with a
-  simple rendered world. The window opens borderless at the monitor's
-  native size (3440x1440 on the user's machine) to compare with game
-  screenshots. The login event order will come from the new
-  `!WowProgrammingTrace` addon (see [capture.md](capture.md)).
-- **Branch:** `character-select`, from `main` (the spellbook work is merged).
+- **Goal in progress (started 2026-11-23, user's request):** the sandbox
+  should feel like the game. It opens borderless full screen at the
+  monitor's native size (3440x1440 on the user's machine), starts at
+  Blizzard's character select screen, enters the world through a loading
+  screen, and draws a 3D scene from game models behind the UI. The user
+  chose "real game models" (option A), falling back to own art or simple
+  shapes where that gets hard (terrain especially).
+- **Where it stands:** all four parts work end to end (tested under Xvfb
+  at 3440x1440): `gui --glue --scenario scenarios/charselect` shows
+  character select with 13 characters from the account's addon data and
+  the selected character's race model standing in a clearing with trees;
+  Enter World shows the map's loading screen, then the full game UI over
+  the same scene seen from behind the player. Not yet tried on the user's
+  desktop.
+- **Branch:** `character-select`, from `main` (the spellbook work is
+  merged). Commit each tested step on this branch without asking (the
+  user's rule for this project); still ask before pushing or merging.
+- **Earlier goals on hold:** spellbook (functionally complete) and HUD
+  (player, target, party frames, action bars). See "Next steps".
+- **Data:** addon captures (version 2, build 12.1.5.70961) for the Monk
+  (Ohnoregard-Draenor), Evoker (Ohnodwagon-Draenor) and Paladin
+  (Ohnohealme-Draenor). The Evoker capture has a party of 5. No capture
+  has a target, raid units or trait data; those captures are deferred.
 - **Reference data for this goal** (in the game folders, never commit
   it): character select and in-game screenshots at 3440x1440 in
   `_retail_/Screenshots/WoWScrnShot_112326_*.png` (225345 and 225508 are
-  character select); the same screen from the Windows tool in
-  `/mnt/c/Users/jnwhi/OneDrive/Pictures/Screenshots 1/Screenshot 2026-11-23 2253*.png`;
-  a 33 s video (character select, loading screen, Arcantina, portal,
-  loading screen, Silvermoon) in
+  character select; Print Screen works on that screen); a 33 s video
+  (character select, loading screen, Arcantina, portal, loading screen,
+  Silvermoon) in
   `/mnt/c/Users/jnwhi/Videos/Captures/World of Warcraft 2026-11-23 22-55-52.mp4`;
-  traces in `SavedVariables/!WowProgrammingTrace.lua`: Evoker (1 login,
-  3 reloads, zone changes) and Monk (1 login). The character list
-  (names, race, class, sex, faction, guild, equipment for 15 characters)
-  is in Syndicator's SavedVariables; the order is in
-  `WTF/Account/<ACCOUNT>/character-list-order.txt` (GUIDs).
-- **Real login order** (Monk trace, ms after the first addon loads):
-  ADDON_LOADED..., UPDATE_BINDINGS (1664), DISPLAY_SIZE_CHANGED,
-  UI_SCALE_CHANGED, VARIABLES_LOADED (12518), EDIT_MODE_LAYOUTS_UPDATED
-  (13513), PLAYER_LOGIN (14661), PLAYER_ENTERING_WORLD (14870),
-  LOADING_SCREEN_DISABLED (16560), SPELLS_CHANGED (16792). The sandbox
-  still sends PLAYER_LOGIN first; fix this with the login sequence.
-- **Character select screen** (from the screenshots): the 3D scene and
-  the glue UI fill a 2880x1440 area in the middle of the 3440x1440
-  screen, with black bars at the sides. Commit
-  each tested step on this branch without asking (the user's rule for
-  this project); still ask before pushing or merging.
+  login traces in `SavedVariables/!WowProgrammingTrace.lua` (Evoker: 1
+  login, 3 reloads, zone changes; Monk: 1 login).
 - **Tests:** `cargo test`, `cargo fmt --check` and
   `cargo clippy --all-targets -- -D warnings` pass.
 
@@ -85,11 +55,53 @@ Last updated: 2026-11-23.
   `lua/client.lua`), then `LoadFirst` addons, then the rest by name.
   `--full-ui` forces this for any scenario. Startup takes about 20 s
   (mostly file reads from `/mnt/d`; 2 s of CPU).
-- Login sequence: PLAYER_LOGIN, PLAYER_ENTERING_WORLD,
-  EDIT_MODE_LAYOUTS_UPDATED (from `C_EditMode.GetLayouts()`),
-  VARIABLES_LOADED, UPDATE_BINDINGS, then UIParent is shown (it is hidden
-  while loading, like the client's loading screen, so visible frames get
-  OnShow) and LOADING_SCREEN_DISABLED.
+- Login sequence in the client's order, taken from the traces (logins and
+  reloads agree): UPDATE_BINDINGS, DISPLAY_SIZE_CHANGED, UI_SCALE_CHANGED,
+  VARIABLES_LOADED, EDIT_MODE_LAYOUTS_UPDATED (from
+  `C_EditMode.GetLayouts()`), PLAYER_LOGIN, PLAYER_ENTERING_WORLD, then
+  UIParent is shown (hidden while loading, so visible frames get OnShow),
+  LOADING_SCREEN_DISABLED, SPELLS_CHANGED.
+- Glue environment (`--glue`): loads the Blizzard addons whose TOC says
+  `AllowLoad: Glue` or `Both`, applies `[AllowLoad glue]`/`[AllowLoad
+  game]` tags on files and dependencies, includes glue-only GlobalStrings,
+  sends FRAMES_LOADED, LOGIN_STATE_CHANGED and CHARACTER_LIST_UPDATE.
+  `lua/glue.lua` holds the glue client functions: always logged in and
+  connected (`C_Login.GetState`), the character list API
+  (`GetNumCharacters`, `GetCharacterGUID`, `GetBasicCharacterInfo`,
+  `GetCharacterInfo` with the 45 values from the Wow.exe usage string,
+  `SelectCharacter`, `EnterWorld`), answers delivered on the next frame
+  as in the client. Widget types `MapScene` and `ModelFFX` exist.
+- `scenarios/charselect` reads the account's data at run time, read only:
+  Syndicator's SavedVariables (names, race, class, sex, faction), the
+  trace profiles (level, zone, GUID, map, equipment) and
+  `character-list-order.txt`. Characters without a trace show level 90
+  and no zone. Constants come from the Evoker capture.
+- Enter World: the window shows the map's loading screen
+  (`loading.rs`: LoadingScreens.db2 and LoadingScreenSkin.db2, layout
+  measured from the video; old maps use one wide image), then builds a
+  new engine with the character's scenario: the one whose
+  `scenario.toml` has `character = "Name-Realm"`, else `scenarios/world`
+  (described player from `S.character`). The build blocks for about 20 s
+  while the loading screen shows.
+- Window: borderless and covers the monitor (`--windowed` for a normal
+  window). The engine keeps the UI height in UI units and takes the
+  monitor's aspect ratio and pixel size (`Engine::set_display_size`, fires
+  DISPLAY_SIZE_CHANGED). F12 shows or hides the console. Third-party
+  addons still load from `addons_dir`; `--no-addons` leaves them out.
+- 3D view (`world.rs`, `formats/m2.rs`): M2 models and skins (vertices,
+  textures, materials, sections, batches), creature skins from
+  CreatureDisplayInfo, race models through ChrRaceXChrModel and ChrModel,
+  a multi-threaded software rasterizer (near-plane clipping, depth buffer,
+  alpha test and blending, sun light, fog, sky gradient). The demo scene:
+  a grass ground (Elwynn tileset), Elwynn trees, bushes and rocks, a deer
+  and a rabbit, the player's race model at the origin. About 50 ms per
+  frame at 1720x720. Drawn at half resolution behind the UI
+  (`render::render_over`); on character select the camera faces the
+  character, in the game it is behind the player.
+- Tools: `wowprogramming db2 <FileDataID> [ids]` prints table rows,
+  `image`, `extract`, `model`, `world` and `loading-screen` help inspect
+  game files. Table FileDataIDs come from the community listfile (in the
+  scratchpad, not in the repo).
 - XML: templates (with their own `parentKey`, `parentArray` and
   `parent`), intrinsics, `<Mixins>`, `<MaskedTextures>`, `<TextInsets>`,
   `<ViewInsets>`, all animation attributes, attributes without
@@ -146,11 +158,6 @@ Last updated: 2026-11-23.
   `click` take one word: store frames in a global first.
 - Image tools: ImageMagick (`magick`) is installed with Homebrew, for
   cropping and comparing screenshots.
-- The window opens borderless and covers the monitor (`--windowed` for a
-  normal window). The engine keeps the UI height in UI units and takes
-  the monitor's aspect ratio and pixel size (`Engine::set_display_size`,
-  fires DISPLAY_SIZE_CHANGED). F12 shows or hides the console. Tested
-  under Xvfb at 3440x1440.
 
 ## What does not work yet
 
@@ -160,7 +167,19 @@ Last updated: 2026-11-23.
   shadow; the game seems to keep it (ObjectiveTrackerHeaderFont strings
   are one pixel wider in the captures).
 - Cooldown swipes, portraits (a placeholder portrait is shown), minimap,
-  3D models.
+  3D models inside UI frames (PlayerModel, ModelScene).
+- 3D view: models are in their bind pose (arms out); character skin and
+  hair are flat colors per race; no equipment; the ground is a flat plane;
+  textures have no mipmaps (distant grass shimmers); the scene is the same
+  for every map. Only the selected character stands on character select
+  (the game shows the warband group in a camp scene).
+- Character select: class names are not class colored; the list shows a
+  frame above the first card that the game does not show; the 3D scene
+  fills the whole screen (the game's fills a 2880x1440 area in the
+  middle); warband groups are not shown. Back, Shop, Menu and the other
+  top buttons are not tried.
+- Entering the world blocks the window for about 20 s; the loading bar
+  does not move. There is no way back to character select (logout).
 - The Talents tab (needs trait data); spec sample abilities are captured
   but not checked yet.
 - Health and power were secret during the capture, so they are not
@@ -179,39 +198,30 @@ Last updated: 2026-11-23.
 
 ## Next steps
 
-Goal: character select, then the world (branch `character-select`).
-The spellbook and HUD items from before are on hold; they are listed at
-the end.
+Character select and world goal (branch `character-select`):
 
-1. **Glue mode.** Start in the glue environment: load the 66 Blizzard
-   addons whose TOC has `AllowLoad: Glue` or `Both` (GlueParent,
-   GlueXML, CharacterSelectNavBar, ...), not the game ones. Skip the
-   login and realm screens with the client functions they ask
-   (`C_Login.IsLauncherLogin`, `C_Login.GetState`,
-   `C_RealmList.GetRealmInfo`).
-2. **Character list.** `GetNumCharacters`, `GetCharacterInfoTable`,
-   `GetCharacterInfoByGUID`, `SelectCharacter`, from Syndicator's
-   SavedVariables (15 characters), the trace profiles (level, zone) and
-   `character-list-order.txt` (order, GUIDs). Read them at run time from
-   the WTF folder; do not copy personal data into the repo beyond what
-   the captures already hold.
-3. **Character select layout.** Compare with the screenshots
-   (2880x1440 area centred on 3440x1440).
-4. **Enter World.** `EnterWorld` shows the loading screen (art from the
-   LoadingScreens DB2 for the character's map), then switches to the game
-   environment and loads the full default UI with the scenario of that
-   character (Monk, Evoker, Paladin; others get described units). Send
-   the login events in the traced order (see "Real login order").
-5. **World view.** Draw a simple 3D scene behind the UI, on the
-   character select screen and in the world. The approach is not decided
-   yet (game models through DB2 FileDataIDs, or own artwork).
+1. Ask the user to try `gui --glue --scenario scenarios/charselect
+   --no-addons` on the desktop (see [running-the-gui.md](running-the-gui.md))
+   and act on the report.
+2. 3D view: play the Stand animation (read sequences and bones; animation
+   data is in `.anim` files listed in the AFID chunk), so models stop
+   standing in the bind pose. Then mipmaps for textures.
+3. Character skin textures: compose from `ChrCustomizationMaterial` and
+   related tables (FileDataIDs in the listfile, layouts in WoWDBDefs), or
+   pick one baked texture per race as a stand-in.
+4. Character select: class colors in the list, the 2880x1440 area, the
+   frame above the first card, then several characters (the warband
+   group) in the scene.
+5. Logout (`Logout()`/`/logout` in the game returns to character select);
+   loading in the background so the loading bar moves.
+6. Use the character's map: terrain from the map's ADT files is a large
+   step; until then pick a scene per zone type.
 
-On hold (from the spellbook and HUD goals): check the captured tooltips
-and sample abilities; health consistent with the captured maximum; HUD
-problems (first action button key label, white chat background, stray
-"Issue Reporter" button, outlined text width); compare party frames with
-the capture; a raid scenario; capture addon support for raid units and
-trait data.
+On hold (spellbook and HUD goals): check the captured tooltips and sample
+abilities; HUD problems (first action button key label, white chat
+background, stray "Issue Reporter" button, outlined text width); compare
+party frames with the capture; a raid scenario; capture addon support for
+raid units and trait data.
 
 How to run: see [running-the-gui.md](running-the-gui.md).
 
@@ -229,6 +239,10 @@ Decisions already made with the user. Do not reopen them without a reason.
 | 2026-11-22 | One `<Name>.toc` per addon; no TOC conditionals or placeholders | Build only what a concrete goal needs; the rest is in the backlog |
 | 2026-11-22 | Script watchdog and memory limit from the start | A runaway script must never hang a session |
 | 2026-11-22 | Visual goal after M5: Blizzard's Character Frame and spellbook | Chosen by the user |
+| 2026-11-23 | The sandbox opens full screen at native resolution, starts at character select and enters the world | Compare with game screenshots; feel like the game (user's request) |
+| 2026-11-23 | 3D world from real game models (option A); own art or simple shapes where that is hard, terrain first | Chosen by the user |
+| 2026-11-23 | Character list read at run time from the account's addon data (Syndicator, trace addon), not copied into the repo | Personal data stays in the game folder |
+| 2026-11-23 | Early events recorded by a separate `!WowProgrammingTrace` addon | The `!` makes it load before other third-party addons (user's advice) |
 
 ## Environment
 
@@ -261,6 +275,12 @@ Decisions already made with the user. Do not reopen them without a reason.
 | `crates/engine/src/animfx.rs` | Visual effects of playing animations (alpha, offset, scale, rotation, flipbook) |
 | `crates/engine/src/clientnames.rs` | Undocumented client functions from `Wow.exe` and the UI source |
 | `crates/engine/src/scene.rs`, `render.rs` | Scene (quads, text, masks) and the multi-threaded software renderer |
+| `crates/engine/src/loading.rs` | Loading screen from LoadingScreens.db2; small RGBA image helper |
+| `crates/engine/src/world.rs` | 3D view: model loading, demo scene, software rasterizer |
+| `crates/formats/src/m2.rs` | M2 model and skin file reader |
+| `crates/engine/src/lua/glue.lua` | Glue client functions (login state, character list, EnterWorld) |
+| `scenarios/charselect`, `scenarios/world` | Character select from account data; any character without its own scenario |
+| `tools/capture/!WowProgrammingTrace` | In-game addon that records login and zone change events |
 | `crates/engine/src/lua/client.lua` | Client functions written in Lua (quality colors, placeholder enums) |
 | `crates/engine/src/lua/scenario.lua` | Scenario helpers (`S.LoadStandardCapture`, `S.Replay`, ...) |
 | `crates/engine/src/data/cvar_defaults.txt` | CVar defaults for runs without a CVar capture |
@@ -365,6 +385,29 @@ Things that cost time once and should not cost it again.
   -frames:v 1 out.png`. `xdotool` and `libxkbcommon-x11-0` are installed.
 - Without a window manager (Xvfb), a fullscreen request does nothing; the
   GUI also moves and resizes the window to the monitor by hand.
+- Wow.exe holds a usage string for most client functions, with every
+  return value in order (`strings Wow.exe | grep "^Usage: "`), for
+  example the 45 values of `GetCharacterInfo`. Check it before guessing
+  an undocumented function's shape.
+- Glue client functions answer requests with events (SelectCharacter ->
+  UPDATE_SELECTED_CHARACTER). Firing them inside the call nested deep
+  enough to overflow Lua's C stack; deliver them on the next frame.
+- Generated stubs for undocumented functions return "" or nothing. In
+  glue code that broke screen selection (`GetGameModeGlueScreenName`
+  returned "") and loops (`GetSavedAccountList`). An edit box must not
+  fire OnTextChanged when SetText sets the same text (AccountLogin loops).
+- DB2 tables have no names in the root file; their FileDataIDs come from
+  the community listfile and the column layouts from WoWDBDefs (the
+  layout block for build 12.1.5.70961). Inline ID columns appear as
+  value 0; non-inline IDs do not. Relation columns appear as a column and
+  again as the last value.
+- The loading screen's main image is 16:9 with transparent bands; drawn
+  at the full screen height it matches the game exactly.
+- M2 geosets differ by model: the Dracthyr dragon keeps its body in
+  groups such as 34xx and 41xx. Showing the first variant of every group
+  (except tabard and cape) works for all models tried.
+- The commit command must not run after a failed check: use
+  `if checks; then git commit ...; fi`, not `checks; git commit`.
 - Never run `git stash` to compare against the old state: all work was
   uncommitted, and stashing hid it (it was restored at once).
 

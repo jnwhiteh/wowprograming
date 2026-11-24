@@ -14,12 +14,20 @@ The sandbox is a development tool. It does not connect to any server and
 it does not simulate the game world. Later we may add simple fakes (units,
 auras, combat log events) to drive addons through combat scenarios.
 
+Since 2026-11-23 the sandbox should also *feel* like the game: it opens
+full screen at the monitor's resolution (to compare with game
+screenshots), starts at Blizzard's character select screen, and enters the
+world through a loading screen. A simple 3D scene made from the game's own
+models stands in for the world (ground, trees, creatures, the player's race
+model). It is a backdrop for the UI, not a world simulation.
+
 A second goal is to view and click addon UIs in a web browser, so that
 prototypes can be shown without the game running.
 
 ## Non-goals
 
-- No game client, networking, world rendering or gameplay.
+- No game client, networking, map rendering or gameplay. The 3D view is a
+  stand-in scene, not the map the character is on.
 - No redistribution of game assets. The sandbox reads them from the local
   install at run time. Nothing extracted from the game is committed here.
 - Classic and other flavors are out of scope at first. The design must not
@@ -220,6 +228,20 @@ own Character Frame (`Blizzard_UIPanels_Game`) and spellbook
 loader to pick `<Name>_Mainline.toc` for Blizzard addons that have no plain
 `.toc`.
 
+**Character select and world (started 2026-11-23, branch
+`character-select`).**
+- Borderless full-screen window at the monitor's native resolution.
+- Glue environment: Blizzard's glue addons (`AllowLoad: Glue`), character
+  select filled from the account's addon data (Syndicator, the trace
+  addon), glue client functions in `lua/glue.lua`.
+- Enter World: the loading screen from `LoadingScreens.db2` (drawn like the
+  client, measured from a video), then a new game session with the
+  character's scenario and the login events in the traced order.
+- 3D view: M2 models and BLP textures from the game data, a software
+  rasterizer, behind character select and the game UI.
+- Test: a fresh login matches the traced event order; character select
+  and the loading screen match the screenshots.
+
 **M6 and later.** Fake units and combat log scenarios. `PlayerModel` and
 `ModelScene` with M2 rendering in a native `wgpu` window. Taint and secure
 frames. WebAssembly export. Classic flavors.
@@ -233,15 +255,18 @@ Not needed yet. Each item is added when a concrete goal requires it.
   `AllowLoadTextLocale`).
 - Flavor-specific TOC files for third-party addons
   (`<Name>_Mainline.toc`, `<Name>_Classic.toc`, ...).
-- `C_UIColor.GetColors()` returns nothing until DB2 reading (M4) can read
-  the `GlobalColor` table. Until then named colors such as
-  `NORMAL_FONT_COLOR` do not exist.
+- `C_UIColor.GetColors()` returns nothing without a capture. The
+  `GlobalColor` table is `dbfilesclient/globalcolor.db2` (FileDataID
+  4328468); reading it would remove the need for a capture.
 - Lua shortens chunk names longer than 60 characters in its own error
   messages (`...erface/AddOns/...`). Fixing this needs our own copy of the
   Lua 5.1 source with a larger `LUA_IDSIZE`, which taint support will need
   anyway.
-- Exact order of the login events (`PLAYER_LOGIN`, `PLAYER_ENTERING_WORLD`,
-  `VARIABLES_LOADED`) should be checked against the client.
+- 3D view: animation (the Stand pose instead of the bind pose), composed
+  character skin textures (`ChrCustomization*` tables), equipment models,
+  real terrain from the map's ADT files, mipmaps for distant textures.
+- Character select: warband groups and their scenes (`WarbandScene*`
+  tables), the camp scene, several characters at once.
 
 ## Risks
 

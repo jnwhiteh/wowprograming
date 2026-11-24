@@ -23,9 +23,26 @@ spellbook.
    addons_dir = "/mnt/d/World of Warcraft/_retail_/Interface/AddOns"
    ```
 
-## Start the window
+## Start at character select
 
 From the repo root:
+
+```sh
+cargo run --release -- gui --glue --scenario scenarios/charselect --no-addons
+```
+
+- Character select lists the characters found in your account's addon data
+  (Syndicator, and the `!WowProgrammingTrace` addon for level and zone).
+  The selected character's race model stands in a clearing behind the
+  list. Click a card to select a character.
+- **Enter World** shows the loading screen of the character's map, then
+  the game UI for that character (about 20 seconds; the window does not
+  respond meanwhile). The Monk, Evoker and Paladin use their captures;
+  other characters use `scenarios/world`.
+- There is no logout yet: close the window and start again.
+
+## Start in the world
+
 
 ```sh
 cargo run --release -- gui --scenario scenarios/monk --no-addons
