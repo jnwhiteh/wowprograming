@@ -41,7 +41,7 @@ each one needs the one before it:
 Use them in this order. Each later source costs more than the one before.
 
 1. **`Blizzard_SharedXML/UI.xsd`** in the UI source. It defines every
-   widget type, XML attribute and script handler (`ScriptsType` lists 82
+   widget type, XML attribute and script handler (`ScriptsType` lists 75
    handlers). A handler in the schema is a promise that the client fires
    it under some condition.
 2. **Widget API documentation**, `Blizzard_APIDocumentationGenerated/
@@ -91,48 +91,39 @@ When two sources disagree, the higher-numbered source that observed the
 real client wins over a lower one that only describes it (a probe answer
 beats the wiki; `layout-local.txt` beats the wiki).
 
-## Coverage snapshot (2026-11-24)
+## Coverage
 
-Measured with a static scan: script names that the engine passes to
-`fire_script`, and widget method names it registers, compared with the
-schema and the documentation. The use count is how often Blizzard's Lua
-and XML in the UI source set the handler or call the method. The scan has
-false positives (methods built from generated names, such as the button
-texture setters, look missing), so the first task of the frame runtime
-goal is a precise runtime report (see `docs/scope.md`).
+`wowprogramming coverage` prints the report (`--all` lists every row). It
+reads the widget metatables of a fresh engine at run time: a documented
+method is *implemented*, *empty* (registered with the `empty!` macro or
+`empty_fn` in `widgets.rs`: it does nothing or returns a fixed value),
+a documented *stub* (built from the API documentation), or *missing*. A
+handler is *fired* if it is in `frames::FIRED_SCRIPTS`; a unit test keeps
+that list equal to the names passed to `fire_script` in the source. Use
+counts are how often Blizzard's Lua and XML call `:Method(` or name the
+handler (`"OnX"`, `<OnX`). They count by name over all widget types, so
+`SetEnabled` counts button calls too.
 
-**Script handlers in `UI.xsd` that the engine never fires**, with
-Blizzard uses: OnDragStart 118, OnKeyDown 73, OnDragStop 54,
-OnReceiveDrag 52, OnEnable 51, OnDisable 51, OnHyperlinkClick 30,
-OnDoubleClick 17, OnModelLoaded 16, OnHyperlinkEnter 15, OnCursorChanged
-14, OnKeyUp 13, OnTooltipCleared 12, OnCooldownDone 12, OnHyperlinkLeave
-9, OnScrollRangeChanged 8, OnGamePadButtonDown 6, OnAnimFinished 5, and
-about 30 more with fewer than 5 uses.
+Areas: *frames* (this goal), *later* (GameTooltip methods and the
+`OnTooltipSet*` handlers, for the client state goal), *out* (models,
+model scenes, map scenes, the minimap, movies, the browser, game pads,
+IME). A *gap* is an empty or missing method, or an unfired handler, in
+the frames area with 5 or more uses. The goal is done for coverage when
+no gap remains.
 
-**Handlers already fired:** OnLoad, OnClick, OnEnter, OnLeave, OnShow,
-OnEvent, OnHide, OnUpdate, OnMouseUp, OnMouseDown, OnTextChanged,
-OnEnterPressed, OnMouseWheel, OnEscapePressed, OnSizeChanged,
-OnEditFocusLost, OnEditFocusGained, OnValueChanged, OnTabPressed,
-OnAttributeChanged, OnVerticalScroll, OnHorizontalScroll, OnChar,
-PreClick, PostClick.
-
-**Widget methods that do nothing** (an explicit empty function in
-`widgets.rs`), with Blizzard uses: RegisterForDrag 93, UnlockHighlight
-70, LockHighlight 58, StopMovingOrSizing 53, StartMoving 40, HighlightText
-30, SetMaxLetters 23, SetCursorPosition (edit box) 15, EnableKeyboard 13,
-SetUserPlaced 12, StartSizing 10, EnableMouseWheel 9, SetClampRectInsets
-9, SetClampedToScreen 7, SetResizable 6, SetHyperlinksEnabled 6. Their
-getters return fixed values (`IsUserPlaced` false, `IsKeyboardEnabled`
-false).
-
-**Documented methods that are only stubs** (likely real gaps): Cooldown
-`Clear` 197, `SetCooldown` 19 and the swipe setters; MessageFrame
-`AddMessage` 274 (UIErrorsFrame); `DesaturateHierarchy` 25;
-`SetHighlightLocked` 13; edit box `SetNumber` 22, `HasText` 8; SimpleHTML
-`GetContentHeight` 13.
-
-Totals from the scan for the main widget documentation files: 395
-methods implemented, 41 empty, 263 stubs (some of them false positives).
+First report (2026-11-24): 75 handlers in `ScriptsType`, 27 fired;
+1040 documented methods, 436 implemented, 76 empty, 512 stubs, 16
+missing (790 in the frames area). 45 gaps. The largest: OnDragStart 175
+uses, OnKeyDown 110, OnReceiveDrag 80, OnDragStop 70, OnHyperlinkClick
+41, OnDoubleClick 23, OnHyperlinkEnter 22, OnCursorChanged 20, OnKeyUp
+18, OnScrollRangeChanged 15, OnCooldownDone 14, OnTooltipCleared 12,
+OnAnimFinished 10; edit box `Enable`/`Disable`/`SetEnabled`/`IsEnabled`,
+`RegisterForDrag`, `IsCollapsed`, frame `LockHighlight`, `StartMoving`,
+`StopMovingOrSizing`, `HighlightText`, `Raise`, `SetMaxLetters`, edit box
+cursor position, `EnableKeyboard`, `SetUserPlaced`, `StartSizing`,
+clamping. Stubs with many uses in the area: Slider enable methods,
+MessageFrame `AddMessage` and `Clear`, Cooldown `Clear`, `SetCooldown`
+and the swipe setters, Animation `SetParent`, `Restart`, `SetPlaying`.
 
 ## Rules for the frame runtime
 

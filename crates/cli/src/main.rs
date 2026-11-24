@@ -25,6 +25,20 @@ enum Command {
     Gui(RunArgs),
     /// Run a Lua file in the sandbox's Lua environment, without addons.
     Lua { file: PathBuf },
+    /// Report which UI.xsd script handlers the engine fires and which
+    /// documented widget methods it implements, with their uses in
+    /// Blizzard's code.
+    Coverage {
+        /// Config file. Defaults to config.local.toml when it exists.
+        #[arg(long)]
+        config: Option<PathBuf>,
+        /// Blizzard UI source tree.
+        #[arg(long)]
+        ui_source: Option<PathBuf>,
+        /// List every handler and method, not only the gaps.
+        #[arg(long)]
+        all: bool,
+    },
     /// Send a command to a running sandbox (see `ctl help`).
     Ctl {
         /// Control port of the sandbox.
@@ -427,6 +441,11 @@ fn main() -> ExitCode {
             table,
             ids,
         } => db2_rows(game_dir, table, &ids),
+        Command::Coverage {
+            config,
+            ui_source,
+            all,
+        } => coverage(config, ui_source, all),
         Command::Ctl { port, command } => {
             match wowprogramming_engine::control::send(port, &command.join(" ")) {
                 Ok(reply) => {
@@ -438,6 +457,60 @@ fn main() -> ExitCode {
                     ExitCode::FAILURE
                 }
             }
+        }
+    }
+}
+
+fn coverage(config: Option<PathBuf>, ui_source: Option<PathBuf>, all: bool) -> ExitCode {
+    #[derive(Parser)]
+    struct Defaults {
+        #[command(flatten)]
+        args: RunArgs,
+    }
+    let args = Defaults::parse_from(["run"]).args;
+    let args = RunArgs {
+        config,
+        ui_source,
+        no_game_data: true,
+        ..args
+    };
+    let (mut config, _) = match build_config(&args) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("{e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let Some(ui) = config.ui_source_dir.clone() else {
+        eprintln!("coverage needs the UI source (--ui-source or ui_source_dir in the config)");
+        return ExitCode::FAILURE;
+    };
+    let xsd_path = ui.join("Interface/AddOns/Blizzard_SharedXML/UI.xsd");
+    let xsd = match std::fs::read_to_string(&xsd_path) {
+        Ok(x) => x,
+        Err(e) => {
+            eprintln!("cannot read {}: {e}", xsd_path.display());
+            return ExitCode::FAILURE;
+        }
+    };
+    config.blizzard_addons.clear();
+    config.scenario = None;
+    let engine = match Engine::new(config) {
+        Ok(e) => e,
+        Err(e) => {
+            eprintln!("cannot start sandbox: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let uses = wowprogramming_engine::coverage::scan_uses(&ui);
+    match wowprogramming_engine::coverage::collect(engine.lua(), &xsd, &uses) {
+        Ok(report) => {
+            print!("{}", report.to_text(all));
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            eprintln!("{e}");
+            ExitCode::FAILURE
         }
     }
 }

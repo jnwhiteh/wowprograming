@@ -17,7 +17,8 @@ Last updated: 2026-11-24.
   scroll bars, cooldown swipes. The goal, its done criteria and its steps
   are in [scope.md](scope.md) ("Frame runtime"); the facts, sources,
   coverage snapshot and open questions are in
-  [client-runtime.md](client-runtime.md). Not started in code yet.
+  [client-runtime.md](client-runtime.md). Step 1 done: the
+  `wowprogramming coverage` report (45 gaps at the start).
 - **Direction after that (proposed 2026-11-24):** client state (a
   training dummy session: drag spells to the bar, instant, cast and
   channeled spells, cooldowns, buffs and debuffs, target, tooltips, macros, Clique), then the security model
@@ -115,6 +116,9 @@ Last updated: 2026-11-24.
   frame at 1720x720. Drawn at half resolution behind the UI
   (`render::render_over`); on character select the camera faces the
   character, in the game it is behind the player.
+- `wowprogramming coverage`: script handlers in `UI.xsd` and documented
+  widget methods with their state in the engine and their uses in
+  Blizzard code; lists the frame runtime's gaps (`--all` for every row).
 - Tools: `wowprogramming db2 <FileDataID> [ids]` prints table rows,
   `image`, `extract`, `model`, `world` and `loading-screen` help inspect
   game files. Table FileDataIDs come from the community listfile (in the
@@ -224,13 +228,8 @@ Frame runtime goal (see "Frame runtime" in [scope.md](scope.md) for the
 done criteria; rules and open questions in
 [client-runtime.md](client-runtime.md)):
 
-1. Write `wowprogramming coverage`: a runtime report of every script
-   handler in `UI.xsd` and every documented widget method, with its state
-   in the engine (implemented, empty, documented stub, missing) and its
-   number of uses in Blizzard's Lua and XML. Mark empty methods in
-   `widgets.rs` so the report can tell them from real ones. A static scan
-   on 2026-11-24 found 41 empty methods and about 50 unfired handlers;
-   the snapshot is in client-runtime.md.
+1. Done: `wowprogramming coverage` (see "Coverage" in
+   client-runtime.md). Run it after each step; it lists the remaining gaps.
 2. A `drag` command in the control bridge and an engine test helper.
 3. Mouse capture and click rules, then dragging, then moving, sizing,
    clamping and `layout-local.txt`, then toplevel, keyboard, Edit Mode,
@@ -320,6 +319,7 @@ Decisions already made with the user. Do not reopen them without a reason.
 | `crates/engine/src/data/cvar_defaults.txt` | CVar defaults for runs without a CVar capture |
 | `tools/capture/WowProgrammingCapture` | In-game capture addon |
 | `tools/compare/compare_frames.lua` | Compares sandbox rectangles with a capture |
+| `crates/engine/src/coverage.rs` | The coverage report (`wowprogramming coverage`) |
 | `crates/engine/src/apidoc.rs` | `Enum` and `Constants` from the API documentation |
 | `crates/engine/src/savedvars.rs` | SavedVariables reading and writing |
 | `crates/engine/src/lua/*.lua` | Engine helpers written in Lua (prelude, curves, API doc builder) |

@@ -20,9 +20,12 @@ const FUNCTION_STUBS_KEY: &str = "wowprogramming.function_stubs";
 const CALLED_STUBS_KEY: &str = "wowprogramming.called_stubs";
 /// Registry key of the documented mixins of return values.
 pub const RETURN_MIXINS_KEY: &str = "wowprogramming.return_mixins";
+/// Registry key of the documented widget methods: documentation table name
+/// -> { [method] = stub }. The coverage report reads it.
+pub const WIDGET_DOCS_KEY: &str = "wowprogramming.widget_docs";
 
 /// Widget method groups (see `frames::method_chain`) of each documentation table.
-const WIDGET_DOCS: &[(&str, &str)] = &[
+pub const WIDGET_DOCS: &[(&str, &str)] = &[
     ("SimpleObjectAPI", "Object"),
     ("SimpleFrameScriptObjectAPI", "Object"),
     ("SimpleScriptRegionAPI", "ScriptRegion"),
@@ -120,6 +123,7 @@ pub fn install(lua: &Lua, ui_source_dir: Option<&Path>) -> Result<HashMap<String
     lua.globals().set("Constants", constants)?;
     lua.set_named_registry_value(FUNCTION_STUBS_KEY, function_stubs)?;
     lua.set_named_registry_value(RETURN_MIXINS_KEY, return_mixins)?;
+    lua.set_named_registry_value(WIDGET_DOCS_KEY, widget_stubs.clone())?;
 
     let mut groups: HashMap<String, Table> = HashMap::new();
     for pair in widget_stubs.pairs::<String, Table>() {

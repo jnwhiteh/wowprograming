@@ -549,8 +549,50 @@ pub fn clear_scripts(lua: &Lua, id: FrameId) -> Result<()> {
     Ok(())
 }
 
+/// Every script handler the engine fires. `wowprogramming coverage`
+/// compares it with the handlers in `UI.xsd`; a test checks it against the
+/// calls to [`fire_script`] in the source.
+pub const FIRED_SCRIPTS: &[&str] = &[
+    "OnAttributeChanged",
+    "OnChar",
+    "OnClick",
+    "OnDisable",
+    "OnEditFocusGained",
+    "OnEditFocusLost",
+    "OnEnable",
+    "OnEnter",
+    "OnEnterPressed",
+    "OnEscapePressed",
+    "OnEvent",
+    "OnHide",
+    "OnHorizontalScroll",
+    "OnLeave",
+    "OnLoad",
+    "OnMouseDown",
+    "OnMouseUp",
+    "OnMouseWheel",
+    "OnShow",
+    "OnSizeChanged",
+    "OnTabPressed",
+    "OnTextChanged",
+    "OnUpdate",
+    "OnValueChanged",
+    "OnVerticalScroll",
+    "PostClick",
+    "PreClick",
+    // Animation scripts (not in ScriptsType).
+    "OnFinished",
+    "OnLoop",
+    "OnPlay",
+    "OnStop",
+];
+
 /// Run a widget's script handler and its hooks with `(self, args...)`.
 pub fn fire_script(lua: &Lua, id: FrameId, script: &str, args: impl IntoLuaMulti) {
+    debug_assert!(
+        FIRED_SCRIPTS.contains(&script),
+        "{script} is missing from FIRED_SCRIPTS"
+    );
     let has = state(lua)
         .frames
         .get(id)
@@ -664,6 +706,33 @@ pub fn ensure_tex(data: &mut FrameData) -> &mut TexState {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// FIRED_SCRIPTS lists exactly the handler names passed to fire_script.
+    #[test]
+    fn fired_scripts_match_the_source() {
+        let sources = [
+            include_str!("frames.rs"),
+            include_str!("input.rs"),
+            include_str!("widgets.rs"),
+            include_str!("xml.rs"),
+        ];
+        let mut found = std::collections::BTreeSet::new();
+        for src in sources {
+            for (i, _) in src.match_indices("fire_script(") {
+                let call = &src[i..src.len().min(i + 200)];
+                let call = &call[..call.find(';').unwrap_or(call.len())];
+                for part in call.split('"').skip(1).step_by(2) {
+                    let handler = part.starts_with("On") || part.ends_with("Click");
+                    if handler && part.chars().all(|c| c.is_ascii_alphabetic()) {
+                        found.insert(part.to_string());
+                    }
+                }
+            }
+        }
+        let listed: std::collections::BTreeSet<String> =
+            FIRED_SCRIPTS.iter().map(|s| s.to_string()).collect();
+        assert_eq!(found, listed);
+    }
 
     #[test]
     fn object_type_hierarchy() {

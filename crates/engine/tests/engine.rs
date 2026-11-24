@@ -677,3 +677,42 @@ S.Replay({
         .unwrap();
     assert_eq!(got, ("function".into(), true, "xxXX".into()));
 }
+
+#[test]
+fn coverage_report_classifies_methods_and_handlers() {
+    let Some(ui) = ui_source() else { return };
+    let wtf = tempfile::tempdir().unwrap();
+    let engine = Engine::new(EngineConfig {
+        ui_source_dir: Some(ui.clone()),
+        blizzard_addons: Vec::new(),
+        ..config(&[], wtf.path())
+    })
+    .unwrap();
+    let xsd =
+        std::fs::read_to_string(ui.join("Interface/AddOns/Blizzard_SharedXML/UI.xsd")).unwrap();
+    let uses = wowprogramming_engine::coverage::Uses::default();
+    let report = wowprogramming_engine::coverage::collect(engine.lua(), &xsd, &uses).unwrap();
+    use wowprogramming_engine::coverage::MethodState;
+    let state = |doc: &str, m: &str| {
+        report
+            .methods
+            .iter()
+            .find(|r| r.doc == doc && r.method == m)
+            .map(|r| r.state)
+    };
+    assert_eq!(
+        state("SimpleScriptRegionResizingAPI", "SetPoint"),
+        Some(MethodState::Implemented)
+    );
+    assert_eq!(
+        state("SimpleColorSelectAPI", "GetColorRGB"),
+        Some(MethodState::Stub)
+    );
+    let on_click = report
+        .handlers
+        .iter()
+        .find(|h| h.name == "OnClick")
+        .unwrap();
+    assert!(on_click.fired);
+    assert!(report.handlers.len() > 70);
+}

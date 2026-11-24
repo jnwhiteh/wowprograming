@@ -8,6 +8,7 @@ pub mod apidoc;
 pub mod bindings;
 pub mod clientnames;
 pub mod control;
+pub mod coverage;
 pub mod frames;
 pub mod gamedata;
 pub mod input;

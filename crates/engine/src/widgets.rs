@@ -241,6 +241,39 @@ macro_rules! method {
     };
 }
 
+/// A method that does nothing yet or returns a fixed value. It is marked
+/// so that `wowprogramming coverage` reports it as empty.
+macro_rules! empty {
+    ($lua:ident, $t:ident, $name:literal, $f:expr) => {
+        let f = $lua.create_function($f)?;
+        mark_empty($lua, &f)?;
+        $t.raw_set($name, f)?;
+    };
+}
+
+/// Registry key of the set of empty methods (function -> true).
+pub const EMPTY_METHODS_KEY: &str = "wowprogramming.empty_methods";
+
+/// Mark a method as empty for the coverage report.
+pub fn mark_empty(lua: &Lua, f: &Function) -> Result<()> {
+    let set = match lua.named_registry_value::<Value>(EMPTY_METHODS_KEY)? {
+        Value::Table(t) => t,
+        _ => {
+            let t = lua.create_table()?;
+            lua.set_named_registry_value(EMPTY_METHODS_KEY, t.clone())?;
+            t
+        }
+    };
+    set.raw_set(f.clone(), true)
+}
+
+/// A marked method that does nothing.
+fn empty_fn(lua: &Lua) -> Result<Function> {
+    let f = lua.create_function(|_, _: MultiValue| Ok(()))?;
+    mark_empty(lua, &f)?;
+    Ok(f)
+}
+
 fn object_methods(lua: &Lua) -> Result<Table> {
     let m = lua.create_table()?;
     method!(lua, m, "GetName", |lua, this_: Value| with(
@@ -647,8 +680,8 @@ fn script_region_methods(lua: &Lua) -> Result<Table> {
     });
     method!(lua, m, "IsAnchoringRestricted", |_, _this: Value| Ok(false));
     method!(lua, m, "IsAnchoringSecret", |_, _this: Value| Ok(false));
-    method!(lua, m, "IsCollapsed", |_, _this: Value| Ok(false));
-    method!(lua, m, "IsDragging", |_, _this: Value| Ok(false));
+    empty!(lua, m, "IsCollapsed", |_, _this: Value| Ok(false));
+    empty!(lua, m, "IsDragging", |_, _this: Value| Ok(false));
     method!(lua, m, "GetSourceLocation", |_, _this: Value| Ok(
         Value::Nil
     ));
@@ -1386,13 +1419,13 @@ fn font_instance_methods(lua: &Lua) -> Result<Table> {
         &this_,
         |f| f.alpha
     ));
-    method!(
+    empty!(
         lua,
         m,
         "SetIndentedWordWrap",
         |_, _args: Variadic<Value>| Ok(())
     );
-    method!(lua, m, "GetIndentedWordWrap", |_, _this: Value| Ok(false));
+    empty!(lua, m, "GetIndentedWordWrap", |_, _this: Value| Ok(false));
     method!(lua, m, "GetFontObjectForAlphabet", |_, this_: Value| Ok(
         this_
     ));
@@ -1855,8 +1888,8 @@ fn frame_methods(lua: &Lua) -> Result<Table> {
         &this_,
         |f| f.toplevel
     ));
-    method!(lua, m, "Raise", |_, _this: Value| Ok(()));
-    method!(lua, m, "Lower", |_, _this: Value| Ok(()));
+    empty!(lua, m, "Raise", |_, _this: Value| Ok(()));
+    empty!(lua, m, "Lower", |_, _this: Value| Ok(()));
     method!(
         lua,
         m,
@@ -1923,15 +1956,15 @@ fn frame_methods(lua: &Lua) -> Result<Table> {
         "LockHighlight",
         "UnlockHighlight",
     ] {
-        m.raw_set(name, lua.create_function(|_, _: MultiValue| Ok(()))?)?;
+        m.raw_set(name, empty_fn(lua)?)?;
     }
-    method!(lua, m, "IsUserPlaced", |_, _this: Value| Ok(false));
-    method!(lua, m, "IsClampedToScreen", |_, _this: Value| Ok(false));
-    method!(lua, m, "IsKeyboardEnabled", |_, _this: Value| Ok(false));
-    method!(lua, m, "GetPropagateKeyboardInput", |_, _this: Value| Ok(
+    empty!(lua, m, "IsUserPlaced", |_, _this: Value| Ok(false));
+    empty!(lua, m, "IsClampedToScreen", |_, _this: Value| Ok(false));
+    empty!(lua, m, "IsKeyboardEnabled", |_, _this: Value| Ok(false));
+    empty!(lua, m, "GetPropagateKeyboardInput", |_, _this: Value| Ok(
         true
     ));
-    method!(lua, m, "IsResizable", |_, _this: Value| Ok(false));
+    empty!(lua, m, "IsResizable", |_, _this: Value| Ok(false));
     method!(lua, m, "GetBoundsRect", |lua, this_: Value| {
         let id = this(&this_)?;
         match own_rect(lua, id) {
@@ -2607,10 +2640,10 @@ fn edit_box_methods(lua: &Lua) -> Result<Table> {
         let id = this(&this_)?;
         Ok(state(lua).focus == Some(id))
     });
-    method!(lua, m, "Enable", |_, _this: Value| Ok(()));
-    method!(lua, m, "Disable", |_, _this: Value| Ok(()));
-    method!(lua, m, "SetEnabled", |_, _args: Variadic<Value>| Ok(()));
-    method!(lua, m, "IsEnabled", |_, _this: Value| Ok(true));
+    empty!(lua, m, "Enable", |_, _this: Value| Ok(()));
+    empty!(lua, m, "Disable", |_, _this: Value| Ok(()));
+    empty!(lua, m, "SetEnabled", |_, _args: Variadic<Value>| Ok(()));
+    empty!(lua, m, "IsEnabled", |_, _this: Value| Ok(true));
     for name in [
         "SetAutoFocus",
         "SetMaxLetters",
@@ -2629,13 +2662,13 @@ fn edit_box_methods(lua: &Lua) -> Result<Table> {
         "SetSecurityDisablePaste",
         "SetSecurityDisableSetText",
     ] {
-        m.raw_set(name, lua.create_function(|_, _: MultiValue| Ok(()))?)?;
+        m.raw_set(name, empty_fn(lua)?)?;
     }
-    method!(lua, m, "IsAutoFocus", |_, _this: Value| Ok(false));
-    method!(lua, m, "IsMultiLine", |_, _this: Value| Ok(false));
-    method!(lua, m, "IsNumeric", |_, _this: Value| Ok(false));
-    method!(lua, m, "GetMaxLetters", |_, _this: Value| Ok(0));
-    method!(lua, m, "GetCursorPosition", |_, _this: Value| Ok(0));
+    empty!(lua, m, "IsAutoFocus", |_, _this: Value| Ok(false));
+    empty!(lua, m, "IsMultiLine", |_, _this: Value| Ok(false));
+    empty!(lua, m, "IsNumeric", |_, _this: Value| Ok(false));
+    empty!(lua, m, "GetMaxLetters", |_, _this: Value| Ok(0));
+    empty!(lua, m, "GetCursorPosition", |_, _this: Value| Ok(0));
     method!(lua, m, "SetTextInsets", |lua, args: Variadic<Value>| {
         let id = this(args.first().unwrap_or(&Value::Nil))?;
         let v: Vec<f64> = (1..5).map(|i| num(args.get(i))).collect();
@@ -2786,20 +2819,20 @@ fn value_methods(lua: &Lua, slider: bool) -> Result<Table> {
             .unwrap_or([1.0; 4]);
         Ok((c[0], c[1], c[2], c[3]))
     });
-    method!(lua, m, "SetValueStep", |_, _args: Variadic<Value>| Ok(()));
-    method!(lua, m, "GetValueStep", |_, _this: Value| Ok(0.0));
-    method!(lua, m, "SetObeyStepOnDrag", |_, _args: Variadic<Value>| Ok(
+    empty!(lua, m, "SetValueStep", |_, _args: Variadic<Value>| Ok(()));
+    empty!(lua, m, "GetValueStep", |_, _this: Value| Ok(0.0));
+    empty!(lua, m, "SetObeyStepOnDrag", |_, _args: Variadic<Value>| Ok(
         ()
     ));
-    method!(
+    empty!(
         lua,
         m,
         "SetStepsPerPage",
         |_, _args: Variadic<Value>| Ok(())
     );
-    method!(lua, m, "SetFillStyle", |_, _args: Variadic<Value>| Ok(()));
-    method!(lua, m, "SetReverseFill", |_, _args: Variadic<Value>| Ok(()));
-    method!(lua, m, "SetRotatesTexture", |_, _args: Variadic<Value>| Ok(
+    empty!(lua, m, "SetFillStyle", |_, _args: Variadic<Value>| Ok(()));
+    empty!(lua, m, "SetReverseFill", |_, _args: Variadic<Value>| Ok(()));
+    empty!(lua, m, "SetRotatesTexture", |_, _args: Variadic<Value>| Ok(
         ()
     ));
     Ok(m)
@@ -2909,7 +2942,7 @@ fn scroll_frame_methods(lua: &Lua) -> Result<Table> {
         let (w, _) = layout::size(&mut st, id);
         Ok((cw - w).max(0.0))
     });
-    method!(lua, m, "UpdateScrollChildRect", |_, _this: Value| Ok(()));
+    empty!(lua, m, "UpdateScrollChildRect", |_, _this: Value| Ok(()));
     Ok(m)
 }
 
@@ -3163,7 +3196,7 @@ fn anim_group_methods(lua: &Lua) -> Result<Table> {
                 .unwrap_or_default()
         })
     });
-    method!(lua, m, "GetLoopState", |_, _this: Value| Ok("NONE"));
+    empty!(lua, m, "GetLoopState", |_, _this: Value| Ok("NONE"));
     method!(
         lua,
         m,
@@ -3211,7 +3244,7 @@ fn anim_group_methods(lua: &Lua) -> Result<Table> {
                                                     _args: Variadic<
         Value,
     >| Ok(()));
-    method!(lua, m, "GetAnimationSpeedMultiplier", |_, _this: Value| Ok(
+    empty!(lua, m, "GetAnimationSpeedMultiplier", |_, _this: Value| Ok(
         1.0
     ));
     Ok(m)
