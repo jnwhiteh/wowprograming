@@ -48,6 +48,9 @@ fn full_ui(wtf: &Path) -> Option<Engine> {
             ui_source_dir: Some(ui),
             wtf_dir: wtf.to_path_buf(),
             blizzard_addons: vec!["*".into()],
+            // A third-party window with BugSack's code, named with --addon.
+            addons_dir: Some(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/AddOns")),
+            only_addons: Some(vec!["MovableWindow".into()]),
             scenario: Some(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios/hud")),
             ..EngineConfig::default()
         },
@@ -134,7 +137,43 @@ fn full_ui_interactions() {
 
     settings_panel(&mut e);
     cooldown_swipe(&mut e);
+    let window = movable_window(&mut e);
     edit_mode(&mut e);
+    // edit_mode reloaded the UI: the moved window is where it was left.
+    let after: (f64, f64) = e
+        .eval("return MovableWindowFrame:GetLeft(), MovableWindowFrame:GetBottom()")
+        .unwrap();
+    assert_eq!(after, window);
+}
+
+/// Drag the fixture window (BugSack's window code) and off the screen
+/// edge: it follows the mouse and stays on screen. Returns where it ends.
+fn movable_window(e: &mut Engine) -> (f64, f64) {
+    let pos = |e: &Engine| -> (f64, f64) {
+        e.eval("return MovableWindowFrame:GetLeft(), MovableWindowFrame:GetBottom()")
+            .unwrap()
+    };
+    let start = pos(e);
+    let from = center(e, "MovableWindowFrame");
+    // The press and the first move (past the drag threshold) do not move
+    // the window: BugSack's OnDragStart is StartMoving itself, so the
+    // button name arrives as alwaysStartFromMouse.
+    e.mouse_move(from.0, from.1);
+    e.mouse_down("LeftButton");
+    e.mouse_move(from.0 - 10.0, from.1);
+    e.mouse_move(from.0 - 110.0, from.1 + 50.0);
+    e.mouse_up("LeftButton");
+    assert_eq!(pos(e), (start.0 - 100.0, start.1 + 50.0));
+    // Far off the left edge: clamped to the screen.
+    e.drag(
+        center(e, "MovableWindowFrame"),
+        (-5000.0, 0.0),
+        "LeftButton",
+        10,
+    );
+    let clamped = pos(e);
+    assert_eq!(clamped.0, 0.0);
+    clamped
 }
 
 /// An action button shows a cooldown swipe after SetCooldown, and
@@ -231,7 +270,22 @@ fn edit_mode(e: &mut Engine) {
         e.eval::<bool>("return EditModeLayoutDialog.LayoutNameEditBox:HasFocus()")
             .unwrap()
     );
-    e.text_input("Sandbox Layout");
+    // Edit box editing in Blizzard's dialog: letters="30" from the XML,
+    // typing replaces a highlight, the cursor moves with HOME and END.
+    let max: i64 = e
+        .eval("return EditModeLayoutDialog.LayoutNameEditBox:GetMaxLetters()")
+        .unwrap();
+    assert_eq!(max, 30);
+    e.text_input("xyz");
+    e.exec("EditModeLayoutDialog.LayoutNameEditBox:HighlightText()");
+    e.text_input("Sandbox Layoutt");
+    e.key_down("BACKSPACE");
+    e.key_down("HOME");
+    let (text, cursor): (String, i64) = e
+        .eval("local b = EditModeLayoutDialog.LayoutNameEditBox return b:GetText(), b:GetCursorPosition()")
+        .unwrap();
+    assert_eq!((text.as_str(), cursor), ("Sandbox Layout", 0));
+    e.key_down("END");
     click(e, "EditModeLayoutDialog.AcceptButton");
     e.tick(0.1);
     let (preset, name): (bool, String) = e

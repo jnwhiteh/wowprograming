@@ -249,6 +249,8 @@ pub struct CooldownState {
     pub abbrev_threshold: f64,
     pub milliseconds_threshold: f64,
     pub minimum_countdown_duration: f64,
+    pub countdown_font: Option<String>,
+    pub tex_coord_range: Option<((f64, f64), (f64, f64))>,
 }
 
 impl Default for CooldownState {
@@ -274,6 +276,8 @@ impl Default for CooldownState {
             abbrev_threshold: 0.0,
             milliseconds_threshold: 0.0,
             minimum_countdown_duration: 2000.0,
+            countdown_font: None,
+            tex_coord_range: None,
         }
     }
 }
@@ -380,6 +384,10 @@ pub struct FrameData {
     pub propagate_keyboard: bool,
     /// `LockHighlight` on a frame: the HIGHLIGHT layer stays shown.
     pub highlight_locked: bool,
+    /// `SetCollapsesLayout`: a hidden region takes no room in layouts.
+    pub collapses_layout: bool,
+    /// `SetIndentedWordWrap` (stored; wrapped lines are not indented yet).
+    pub indented_word_wrap: bool,
     /// `SetHyperlinksEnabled`: the frame gets OnHyperlink* scripts.
     pub hyperlinks_enabled: bool,
     /// Disabled edit box or slider (buttons keep this in `button`).
@@ -457,6 +465,8 @@ impl FrameData {
             highlight_locked: false,
             disabled: false,
             hyperlinks_enabled: false,
+            collapses_layout: false,
+            indented_word_wrap: false,
             clips_children: false,
             ignore_parent_alpha: false,
             ignore_parent_scale: false,

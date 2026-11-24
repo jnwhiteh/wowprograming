@@ -111,6 +111,15 @@ IME). A *gap* is an empty or missing method, or an unfired handler, in
 the frames area with 5 or more uses. The goal is done for coverage when
 no gap remains.
 
+Report at the end of the frame runtime goal (2026-11-24): 42 handlers
+fired, 570 methods implemented, 23 empty, 431 stubs, 16 missing (in the
+frames area: 563 implemented, 23 empty, 204 stubs). **No gaps.** Handler
+names now count only in `<OnX` elements and `...Script("OnX"` calls, so
+Lua methods that share a handler's name (OnAnimFinished) no longer
+count. The unfired handlers in the frames area all have fewer than 5
+uses (OnArrowPressed, OnColorSelect, OnMinMaxChanged, OnAnimStarted,
+OnMessageScrollChanged).
+
 First report (2026-11-24): 75 handlers in `ScriptsType`, 27 fired;
 1040 documented methods, 436 implemented, 76 empty, 512 stubs, 16
 missing (790 in the frames area). 45 gaps. The largest: OnDragStart 175

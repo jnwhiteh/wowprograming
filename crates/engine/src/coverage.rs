@@ -289,6 +289,7 @@ fn handler_area(name: &str) -> Area {
         "OnUpdateModel",
         "OnModelCleared",
         "OnModelLoaded",
+        "OnAnimFinished",
         "OnDressModel",
         "OnPanFinished",
         "OnGamePadButtonDown",
@@ -329,8 +330,9 @@ pub fn schema_handlers(xsd: &str) -> Vec<String> {
         .collect()
 }
 
-/// Uses in Blizzard's Lua and XML: `:Name(` calls, and handler names
-/// after `"` or `<` (SetScript, HookScript and XML script elements).
+/// Uses in Blizzard's Lua and XML: `:Name(` calls, and handler names in
+/// XML script elements (`<OnX`) and in `SetScript("OnX"`, `HookScript`,
+/// `GetScript` and `HasScript` calls.
 #[derive(Default)]
 pub struct Uses {
     pub methods: HashMap<String, usize>,
@@ -381,9 +383,10 @@ fn count_tokens(bytes: &[u8], uses: &mut Uses) {
             if end > start && bytes[start].is_ascii_alphabetic() {
                 let word = String::from_utf8_lossy(&bytes[start..end]).into_owned();
                 let next = bytes.get(end).copied();
+                let after_script = i >= 7 && &bytes[i - 7..i] == b"Script(";
                 if c == b':' && next == Some(b'(') {
                     *uses.methods.entry(word).or_default() += 1;
-                } else if c != b':' {
+                } else if c == b'<' || (c == b'"' && after_script) {
                     *uses.names.entry(word).or_default() += 1;
                 }
                 i = end;
@@ -481,7 +484,7 @@ mod tests {
     fn counts_calls_and_handler_names() {
         let mut uses = Uses::default();
         count_tokens(
-            br#"f:SetScript("OnDragStart", fn) f:StartMoving() <OnDragStart method="X"/> a:b"#,
+            br#"f:SetScript("OnDragStart", fn) f:StartMoving() <OnDragStart method="OnDragStart"/> a:b"#,
             &mut uses,
         );
         assert_eq!(uses.names.get("OnDragStart"), Some(&2));

@@ -276,6 +276,32 @@ pub fn methods(lua: &Lua) -> Result<Table> {
         let id = this(&this_)?;
         Ok(cd(lua, id).paused_at.is_some())
     });
+    method!("SetCountdownFont", |lua, (this_, font): (Value, Value)| {
+        let id = this(&this_)?;
+        let name = match font {
+            Value::String(s) => Some(s.to_string_lossy()),
+            _ => None,
+        };
+        with_cd(lua, id, |c| c.countdown_font = name);
+        Ok(())
+    });
+    // The part of the swipe texture used: low (left, top), high (right,
+    // bottom) as two vectors (stored; the swipe uses the whole texture).
+    method!("SetTexCoordRange", |lua, args: Variadic<Value>| {
+        let id = id_of(&args)?;
+        let v = |i: usize| -> (f64, f64) {
+            match args.get(i) {
+                Some(Value::Table(t)) => (
+                    t.get::<Option<f64>>("x").ok().flatten().unwrap_or(0.0),
+                    t.get::<Option<f64>>("y").ok().flatten().unwrap_or(0.0),
+                ),
+                _ => (0.0, 0.0),
+            }
+        };
+        let range = (v(1), v(2));
+        with_cd(lua, id, |c| c.tex_coord_range = Some(range));
+        Ok(())
+    });
     method!("SetSwipeColor", |lua, args: Variadic<Value>| {
         let id = id_of(&args)?;
         let a = match args.get(4) {
@@ -319,8 +345,6 @@ pub fn methods(lua: &Lua) -> Result<Table> {
         "SetBlingTexture",
         "SetEdgeColor",
         "SetUseCircularEdge",
-        "SetTexCoordRange",
-        "SetCountdownFont",
         "SetCountdownFormatter",
     ] {
         m.raw_set(name, crate::widgets::empty_fn(lua)?)?;

@@ -6,23 +6,27 @@ work (see "Keeping this file current" below).
 
 For goals, design and the full roadmap, see [scope.md](scope.md).
 
-Last updated: 2026-11-24.
+Last updated: 2026-11-24 (frame runtime done).
 
 ## Current state
 
-- **Next goal (chosen 2026-11-24, user's request): the frame runtime.**
-  Make the generic widget behavior of the C++ client work: mouse capture
-  and click rules, dragging, moving and sizing windows, clamping,
-  toplevel raising, keyboard input, Edit Mode, edit boxes, sliders,
-  scroll bars, cooldown swipes. The goal, its done criteria and its steps
-  are in [scope.md](scope.md) ("Frame runtime"); the facts, sources,
-  coverage snapshot and open questions are in
-  [client-runtime.md](client-runtime.md). Done: the
-  `wowprogramming coverage` report (45 gaps at the start), the `drag`
-  command, mouse capture and click rules, dragging, moving, sizing,
-  clamping, `Raise` and toplevel raising, user-placed positions in the
-  sandbox's own `layout-local.txt`.
-- **Direction after that (proposed 2026-11-24):** client state (a
+- **Frame runtime goal: done on 2026-11-24**, on branch `frame-runtime`,
+  waiting for the user's go-ahead to merge into `main`. All done
+  criteria in [scope.md](scope.md) ("Frame runtime") hold:
+  `wowprogramming coverage` shows no gap (it started with 45), and every
+  interaction has a test. The full-UI test
+  (`crates/engine/tests/full_ui.rs`) drags the fixture window with
+  BugSack's code (clamped, back after `/reload`), raises a toplevel
+  window by a click, closes windows with Escape, blocks a key binding
+  with a keyboard frame, drags a Settings slider and the Settings list's
+  scroll bar, edits text in Blizzard's Edit Mode dialog, checks an action
+  button's cooldown swipe and OnCooldownDone, and moves the player frame
+  in Edit Mode and finds it after `/reload`. Rules, inferred behavior and
+  the open questions for a probe session are in
+  [client-runtime.md](client-runtime.md).
+- **Next goal (after the merge, user's go-ahead needed): client state**,
+  a training dummy session, on its own branch.
+- **Direction (proposed 2026-11-24):** client state (a
   training dummy session: drag spells to the bar, instant, cast and
   channeled spells, cooldowns, buffs and debuffs, target, tooltips, macros, Clique), then the security model
   (taint, protected functions, secret values), then tools for addon
@@ -39,7 +43,8 @@ Last updated: 2026-11-24.
   the backlog in scope.md.
 - **Branches:** one branch per goal or major milestone, merged into
   `main` when the goal is complete (the user's rule, 2026-11-24). The
-  frame runtime goal is on `frame-runtime`, from `character-select`.
+  frame runtime goal is on `frame-runtime`, from `character-select`
+  (so merging it also brings the character select work into `main`).
   `character-select` (paused, all parts working) is not merged into
   `main` yet. Commit each tested step on the goal's branch without
   asking; still ask before pushing or merging.
@@ -216,7 +221,11 @@ Last updated: 2026-11-24.
 - After `Font:SetFontObject`, the sandbox drops the font object's own
   shadow; the game seems to keep it (ObjectiveTrackerHeaderFont strings
   are one pixel wider in the captures).
-- Cooldown countdown numbers, portraits (a placeholder portrait is shown), minimap,
+- Frame runtime leftovers (backlog in scope.md): cooldown countdown
+  numbers, edge and bling; the cursor does not move to a click in an
+  edit box; no game menu on a second Escape; no OnKeyDown for modifier
+  keys alone; indented word wrap is stored but not drawn.
+- Portraits (a placeholder portrait is shown), minimap,
   3D models inside UI frames (PlayerModel, ModelScene).
 - 3D view: models hold the first frame of Stand (no animation playback;
   Stand stored in `.anim` files is not read, which leaves those models in
@@ -253,30 +262,13 @@ Last updated: 2026-11-24.
 
 ## Next steps
 
-Frame runtime goal (see "Frame runtime" in [scope.md](scope.md) for the
-done criteria; rules and open questions in
-[client-runtime.md](client-runtime.md)):
-
-1. Done: `wowprogramming coverage` (see "Coverage" in
-   client-runtime.md). Run it after each step; it lists the remaining gaps.
-2. Done: `drag` in the control bridge (`drag <expr> <dx> <dy>`) and
-   `Engine::drag` for tests.
-3. Done: mouse capture, click rules, dragging, moving, sizing, clamping,
-   raising, `layout-local.txt` (real BugSack checked with `--addon
-   BugSack`), the enabled state of edit boxes and sliders, keyboard
-   input (`crates/engine/tests/full_ui.rs` checks raising, Escape and
-   key blocking in the full UI), Edit Mode end to end (the same test:
-   drag the player frame, save a new layout, leave, `/reload`; the test
-   needs the game data from `config.local.toml` and takes about 50 s in
-   release), edit box editing, sliders, scroll bar thumbs and scroll
-   ranges (the same test drags a Settings slider and the Settings list's
-   scroll bar), cooldown frames (the same test checks an action
-   button's swipe and OnCooldownDone), message frames, hyperlinks.
-   Next: the remaining coverage gaps (`wowprogramming coverage`).
-4. When a behavior is unknown, implement a best guess, mark it
-   "inferred" in client-runtime.md and add a question to its "Open
-   questions for a probe session". Do not ask the user to record a
-   session for one question.
+Frame runtime goal: done. Ask the user to merge `frame-runtime` into
+`main` (the user pushes and merges). Then, with the user's go-ahead,
+start the client state goal on a new branch (see "Client state: a
+training dummy session" in [scope.md](scope.md)). Leftovers of the frame
+runtime are in the backlog in scope.md. When the open questions in
+client-runtime.md are worth a session (there are 19), write the probe
+addon described there and ask the user before running it.
 
 Paused character select and world goal: ask the user to try
 `gui --glue --scenario scenarios/charselect` on the desktop

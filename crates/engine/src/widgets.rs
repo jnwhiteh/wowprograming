@@ -230,7 +230,14 @@ pub fn method_groups(lua: &Lua) -> Result<HashMap<&'static str, Table>> {
     let tooltip: Table = lua
         .load(include_str!("lua/tooltip.lua"))
         .set_name("=[C]")
-        .call(groups["ScriptRegion"].clone())?;
+        .call((
+            groups["ScriptRegion"].clone(),
+            lua.create_function(|lua, this_: Value| {
+                let id = this(&this_)?;
+                fire_script(lua, id, "OnTooltipCleared", ());
+                Ok(())
+            })?,
+        ))?;
     groups.insert("GameTooltip", tooltip);
     groups.insert("AnimationGroup", anim_group_methods(lua)?);
     groups.insert("Animation", animation_methods(lua)?);
@@ -251,6 +258,19 @@ macro_rules! empty {
         mark_empty($lua, &f)?;
         $t.raw_set($name, f)?;
     };
+}
+
+/// The table of windows set with `SetWindow`, by widget id + 1.
+fn window_table(lua: &Lua) -> Result<Table> {
+    const KEY: &str = "wowprogramming.windows";
+    match lua.named_registry_value::<Value>(KEY)? {
+        Value::Table(t) => Ok(t),
+        _ => {
+            let t = lua.create_table()?;
+            lua.set_named_registry_value(KEY, t.clone())?;
+            Ok(t)
+        }
+    }
 }
 
 /// Registry key of the set of empty methods (function -> true).
@@ -682,7 +702,25 @@ fn script_region_methods(lua: &Lua) -> Result<Table> {
     });
     method!(lua, m, "IsAnchoringRestricted", |_, _this: Value| Ok(false));
     method!(lua, m, "IsAnchoringSecret", |_, _this: Value| Ok(false));
-    empty!(lua, m, "IsCollapsed", |_, _this: Value| Ok(false));
+    method!(lua, m, "SetCollapsesLayout", |lua,
+                                           (this_, v): (
+        Value,
+        Value
+    )| {
+        with(lua, &this_, |f| f.collapses_layout = truthy(&v))
+    });
+    method!(lua, m, "CollapsesLayout", |lua, this_: Value| with(
+        lua,
+        &this_,
+        |f| f.collapses_layout
+    ));
+    // A region is collapsed when it collapses layout and is not visible
+    // (inferred).
+    method!(lua, m, "IsCollapsed", |lua, this_: Value| {
+        let id = this(&this_)?;
+        let st = state(lua);
+        Ok(st.frames[id].collapses_layout && !is_visible(&st.frames, id))
+    });
     method!(lua, m, "GetSourceLocation", |_, _this: Value| Ok(
         Value::Nil
     ));
@@ -1464,13 +1502,18 @@ fn font_instance_methods(lua: &Lua) -> Result<Table> {
         &this_,
         |f| f.alpha
     ));
-    empty!(
+    method!(lua, m, "SetIndentedWordWrap", |lua,
+                                            (this_, v): (
+        Value,
+        Value
+    )| {
+        with(lua, &this_, |f| f.indented_word_wrap = truthy(&v))
+    });
+    method!(lua, m, "GetIndentedWordWrap", |lua, this_: Value| with(
         lua,
-        m,
-        "SetIndentedWordWrap",
-        |_, _args: Variadic<Value>| Ok(())
-    );
-    empty!(lua, m, "GetIndentedWordWrap", |_, _this: Value| Ok(false));
+        &this_,
+        |f| f.indented_word_wrap
+    ));
     method!(lua, m, "GetFontObjectForAlphabet", |_, this_: Value| Ok(
         this_
     ));
@@ -2141,6 +2184,18 @@ fn frame_methods(lua: &Lua) -> Result<Table> {
     method!(lua, m, "GetPropagateKeyboardInput", |lua, this_: Value| {
         with(lua, &this_, |f| f.propagate_keyboard)
     });
+    // Windows (SimpleWindow objects) belong to the client; the sandbox
+    // keeps what was set and returns it.
+    method!(lua, m, "SetWindow", |lua, (this_, w): (Value, Value)| {
+        let id = this(&this_)?;
+        let windows = window_table(lua)?;
+        windows.raw_set(id as i64 + 1, w)
+    });
+    method!(lua, m, "GetWindow", |lua, this_: Value| {
+        let id = this(&this_)?;
+        let windows = window_table(lua)?;
+        windows.raw_get::<Value>(id as i64 + 1)
+    });
     method!(lua, m, "SetHyperlinksEnabled", |lua,
                                              (this_, v): (
         Value,
@@ -2181,7 +2236,6 @@ fn frame_methods(lua: &Lua) -> Result<Table> {
         "SetDrawLayerEnabled",
         "SetIsFrameBuffer",
         "SetUsingParentLevel",
-        "SetWindow",
     ] {
         m.raw_set(name, empty_fn(lua)?)?;
     }

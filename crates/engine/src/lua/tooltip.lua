@@ -5,7 +5,7 @@
 -- <Tooltip>TextLeft<n> and <Tooltip>TextRight<n>, sizes itself to them on
 -- Show and anchors itself to its owner. Content comes from Blizzard's Lua
 -- (TooltipDataHandlerMixin) through C_TooltipInfo, or from AddLine.
-local FrameMethods = ...
+local FrameMethods, fireTooltipCleared = ...
 local setmetatable, select, tostring, type, math, rawget, _G =
       setmetatable, select, tostring, type, math, rawget, _G
 
@@ -120,10 +120,9 @@ function M:ClearLines()
     end
     t.numLines = 0
     t.lines = {}
-    -- Script errors are reported without stopping the tooltip, as in the
-    -- client.
-    local onCleared = self:GetScript("OnTooltipCleared")
-    if onCleared then securecall(onCleared, self) end
+    -- The handler and its hooks; script errors are reported without
+    -- stopping the tooltip, as in the client.
+    fireTooltipCleared(self)
 end
 
 function M:AddLine(text, r, g, b, wrap)

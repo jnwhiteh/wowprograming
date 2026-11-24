@@ -614,6 +614,7 @@ pub const FIRED_SCRIPTS: &[&str] = &[
     "OnTabPressed",
     "OnTextChanged",
     "OnTextSet",
+    "OnTooltipCleared",
     "OnUpdate",
     "OnValueChanged",
     "OnVerticalScroll",

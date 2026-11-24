@@ -798,3 +798,30 @@ fn hyperlinks_fire_enter_leave_and_click() {
     e.mouse_move(x + 300.0, y);
     assert_eq!(log(&e), "leave:item:19019");
 }
+
+#[test]
+fn small_region_and_tooltip_rules() {
+    let wtf = tempfile::tempdir().unwrap();
+    let e = started(wtf.path());
+    let ok: bool = e
+        .eval(
+            r#"
+            local f = CreateFrame("Frame", nil, UIParent)
+            f:SetCollapsesLayout(true)
+            local shownCollapsed = f:IsCollapsed()
+            f:Hide()
+            local hiddenCollapsed = f:IsCollapsed()
+            local w = {}
+            f:SetWindow(w)
+            local tip = CreateFrame("GameTooltip", "TestTip", UIParent)
+            local cleared = 0
+            tip:HookScript("OnTooltipCleared", function() cleared = cleared + 1 end)
+            tip:SetOwner(UIParent, "ANCHOR_NONE")
+            tip:AddLine("x")
+            tip:ClearLines()
+            return not shownCollapsed and hiddenCollapsed and f:GetWindow() == w and cleared == 2
+            "#,
+        )
+        .unwrap();
+    assert!(ok);
+}

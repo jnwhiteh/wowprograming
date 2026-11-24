@@ -244,7 +244,8 @@ loader to pick `<Name>_Mainline.toc` for Blizzard addons that have no plain
 - Paused on 2026-11-24 with all four parts working. The remaining 3D
   work is in the backlog. The UI matters more than the scene behind it.
 
-**Frame runtime (goal chosen 2026-11-24).** Make the generic widget
+**Frame runtime (goal chosen 2026-11-24, done 2026-11-24 on branch
+`frame-runtime`; all done criteria below hold).** Make the generic widget
 behavior of the C++ client work, so that windows, buttons, edit boxes,
 sliders and scroll bars behave as in the game. Facts, sources and open
 questions are in [client-runtime.md](client-runtime.md). This goal needs
@@ -376,6 +377,17 @@ frames. WebAssembly export. Classic flavors.
 ## Backlog
 
 Not needed yet. Each item is added when a concrete goal requires it.
+
+- Frame runtime leftovers: cooldown countdown numbers (with
+  `SetCountdownFont`), the edge and bling textures, swipe rotation and
+  `SetTexCoordRange`; placing the edit box cursor at a click; edit box
+  history keys and IME; drawing indented word wrap; OnKeyDown for
+  modifier keys alone; the game menu on a second Escape; slider paging
+  with `stepsPerPage`; the documented stubs that `coverage` still lists
+  (SimpleHTML, Line endpoints, ColorSelect, `DesaturateHierarchy`,
+  `FontString:SetRotation`).
+- Real Edit Mode layouts and other character data from the game's WTF
+  folder (`edit-mode-cache-*.txt`), read only (client state goal).
 
 - TOC path placeholders (`[Family]`, `[Game]`, `[TextLocale]`) and load
   conditions (`AllowLoadGameType`, `ExcludeLoadGameType`,
