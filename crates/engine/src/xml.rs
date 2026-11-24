@@ -26,7 +26,7 @@ use crate::frames::{
     self, canonical_any_type, canonical_type, create_object, fire_script, frame_id,
 };
 use crate::natives::run_chunk;
-use crate::state::{FrameId, state};
+use crate::state::{FrameId, TexFile, state};
 use crate::widgets::{layer_index, strata_name};
 
 /// An XML element, owned so templates outlive the parsed document.
@@ -600,6 +600,25 @@ fn apply_attributes(
                     _ => e.history_lines = f.max(0.0) as usize,
                 }
             }
+            "reverse"
+            | "drawSwipe"
+            | "drawEdge"
+            | "drawBling"
+            | "hideCountdownNumbers"
+            | "rotation"
+                if state(lua).frames[id].cooldown.is_some() =>
+            {
+                let mut st = state(lua);
+                let cd = st.frames[id].cooldown.as_deref_mut().expect("cooldown");
+                match key.as_str() {
+                    "reverse" => cd.reverse = b,
+                    "drawSwipe" => cd.draw_swipe = b,
+                    "drawEdge" => cd.draw_edge = b,
+                    "drawBling" => cd.draw_bling = b,
+                    "hideCountdownNumbers" => cd.hide_numbers = b,
+                    _ => cd.rotation = f,
+                }
+            }
             "registerForDrag" => {
                 state(lua).frames[id].drag_buttons =
                     value.split(',').map(|s| s.trim().to_string()).collect();
@@ -1064,6 +1083,18 @@ fn apply_child(
             && state(lua).frames[id].object_type == "AnimationGroup" =>
         {
             build_object(lua, build, child, Some(id), None)?;
+        }
+        "SwipeTexture" if state(lua).frames[id].cooldown.is_some() => {
+            let file = child.attr("file").map(|f| TexFile::Path(f.to_string()));
+            let c = child.child("Color").map(|c| color(c.as_ref()));
+            let mut st = state(lua);
+            let cd = st.frames[id].cooldown.as_deref_mut().expect("cooldown");
+            if let Some(f) = file {
+                cd.swipe_texture = f;
+            }
+            if let Some(c) = c {
+                cd.swipe_color = c;
+            }
         }
         "Offset" | "Rect" | "AbsDimension" | "ResizeBounds" | "TitleRegion" | "Backdrop"
         | "SwipeTexture" | "EdgeTexture" | "BlingTexture" | "FlipBook" | "KeyValue" => {}

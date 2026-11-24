@@ -133,7 +133,36 @@ fn full_ui_interactions() {
     e.key_up("ESCAPE");
 
     settings_panel(&mut e);
+    cooldown_swipe(&mut e);
     edit_mode(&mut e);
+}
+
+/// An action button shows a cooldown swipe after SetCooldown, and
+/// OnCooldownDone fires at the end.
+fn cooldown_swipe(e: &mut Engine) {
+    e.exec(
+        "ActionButton1.cooldown:HookScript('OnCooldownDone', function() CooldownDoneCount = (CooldownDoneCount or 0) + 1 end)
+         ActionButton1.cooldown:SetCooldown(GetTime(), 1.5)",
+    );
+    e.tick(0.5);
+    let sweeps: Vec<f32> = e
+        .scene()
+        .items
+        .iter()
+        .filter_map(|i| match i {
+            wowprogramming_engine::scene::Item::Quad(q) => q.sweep.map(|s| s.0),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(sweeps.len(), 1, "{sweeps:?}");
+    assert!((sweeps[0] - 1.0 / 3.0).abs() < 0.02, "{sweeps:?}");
+    e.tick(1.1);
+    let done: i64 = e.eval("return CooldownDoneCount or 0").unwrap();
+    assert_eq!(done, 1);
+    assert!(
+        !e.eval::<bool>("return ActionButton1.cooldown:IsShown()")
+            .unwrap()
+    );
 }
 
 /// Settings: drag the list's scroll bar thumb, then a slider's thumb.

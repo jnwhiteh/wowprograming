@@ -314,6 +314,9 @@ pub fn create_object(
         // edit box sets it (inferred).
         data.mouse_enabled = true;
     }
+    if object_type == "Cooldown" {
+        data.cooldown = Some(Box::default());
+    }
     if object_type == "Slider" {
         // UI.xsd: sliders are vertical unless told otherwise. They take
         // the mouse without enableMouse (inferred, as edit boxes).
@@ -576,6 +579,7 @@ pub const FIRED_SCRIPTS: &[&str] = &[
     "OnAttributeChanged",
     "OnChar",
     "OnClick",
+    "OnCooldownDone",
     "OnCursorChanged",
     "OnDisable",
     "OnDoubleClick",
@@ -746,6 +750,7 @@ mod tests {
             include_str!("widgets.rs"),
             include_str!("xml.rs"),
             include_str!("editbox.rs"),
+            include_str!("cooldown.rs"),
         ];
         let mut found = std::collections::BTreeSet::new();
         for src in sources {

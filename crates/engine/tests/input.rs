@@ -658,3 +658,44 @@ fn set_text_reports_the_change_on_the_next_frame() {
     e.text_input("c");
     assert_eq!(log(&e), "changed:bc:true");
 }
+
+#[test]
+fn cooldowns_sweep_and_finish() {
+    let wtf = tempfile::tempdir().unwrap();
+    let mut e = started(wtf.path());
+    e.exec(
+        r#"
+        Log = {}
+        CD = CreateFrame("Cooldown", nil, UIParent)
+        CD:SetSize(40, 40)
+        CD:SetPoint("CENTER")
+        CD:Hide()
+        CD:SetScript("OnCooldownDone", function() table.insert(Log, "done") end)
+        CD:SetCooldown(GetTime(), 2)
+        "#,
+    );
+    let sweep = |e: &Engine| {
+        e.scene().items.iter().find_map(|i| match i {
+            wowprogramming_engine::scene::Item::Quad(q) => q.sweep,
+            _ => None,
+        })
+    };
+    assert!(e.eval::<bool>("return CD:IsShown()").unwrap());
+    assert_eq!(sweep(&e), Some((0.0, false)));
+    e.tick(1.0);
+    let (elapsed, _) = sweep(&e).unwrap();
+    assert!((elapsed - 0.5).abs() < 1e-6, "{elapsed}");
+    let (start, duration): (f64, f64) = e.eval("return CD:GetCooldownTimes()").unwrap();
+    assert_eq!(duration, 2000.0);
+    assert!(start > 0.0);
+    e.tick(1.1);
+    assert_eq!(log(&e), "done");
+    assert!(!e.eval::<bool>("return CD:IsShown()").unwrap());
+    assert_eq!(sweep(&e), None);
+    // Clear ends a cooldown without OnCooldownDone; 0 duration clears.
+    e.exec("CD:SetCooldown(GetTime(), 5) CD:Clear()");
+    e.tick(6.0);
+    e.exec("CD:SetCooldown(0, 0)");
+    assert_eq!(log(&e), "");
+    assert!(!e.eval::<bool>("return CD:IsShown()").unwrap());
+}

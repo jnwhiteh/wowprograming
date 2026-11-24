@@ -193,6 +193,56 @@ impl Default for EditState {
     }
 }
 
+/// Cooldown frame state. Times are `GetTime()` seconds.
+#[derive(Clone, Debug)]
+pub struct CooldownState {
+    pub start: f64,
+    pub duration: f64,
+    pub mod_rate: f64,
+    pub active: bool,
+    pub paused_at: Option<f64>,
+    pub reverse: bool,
+    pub draw_swipe: bool,
+    pub draw_edge: bool,
+    pub draw_bling: bool,
+    pub hide_numbers: bool,
+    pub use_aura_display_time: bool,
+    pub swipe_color: [f32; 4],
+    pub swipe_texture: TexFile,
+    pub rotation: f64,
+    pub edge_scale: f64,
+    pub abbrev_threshold: f64,
+    pub milliseconds_threshold: f64,
+    pub minimum_countdown_duration: f64,
+}
+
+impl Default for CooldownState {
+    fn default() -> Self {
+        Self {
+            start: 0.0,
+            duration: 0.0,
+            mod_rate: 1.0,
+            active: false,
+            paused_at: None,
+            reverse: false,
+            // Blizzard XML turns the swipe and the bling off but never on,
+            // so both are on by default (inferred); the edge is off.
+            draw_swipe: true,
+            draw_edge: false,
+            draw_bling: true,
+            hide_numbers: false,
+            use_aura_display_time: false,
+            swipe_color: [0.0, 0.0, 0.0, 0.8],
+            swipe_texture: TexFile::None,
+            rotation: 0.0,
+            edge_scale: 1.0,
+            abbrev_threshold: 0.0,
+            milliseconds_threshold: 0.0,
+            minimum_countdown_duration: 2000.0,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct ButtonState {
     pub enabled: bool,
@@ -310,6 +360,7 @@ pub struct FrameData {
     pub text: Option<Box<TextState>>,
     pub button: Option<Box<ButtonState>>,
     pub edit: Option<Box<EditState>>,
+    pub cooldown: Option<Box<CooldownState>>,
     pub anim: Option<Box<AnimState>>,
     /// Slider and status bar values: min, max, value.
     pub value: (f64, f64, f64),
@@ -380,6 +431,7 @@ impl FrameData {
             text: None,
             button: None,
             edit: None,
+            cooldown: None,
             anim: None,
             value: (0.0, 0.0, 0.0),
             status_texture: None,

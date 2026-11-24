@@ -22,6 +22,10 @@ pub struct Quad {
     pub clip: Option<Rect>,
     /// Mask textures: the quad's alpha is multiplied by each mask's alpha.
     pub masks: Vec<Mask>,
+    /// A cooldown swipe: only the part of the quad that the cooldown still
+    /// covers is drawn. The value is the elapsed fraction (0 to 1) and
+    /// whether the swipe is reversed.
+    pub sweep: Option<(f32, bool)>,
     pub id: FrameId,
 }
 
@@ -197,6 +201,16 @@ pub fn build(st: &mut State) -> Scene {
                 region: None,
             });
         }
+        // A cooldown's swipe goes over the ARTWORK layer of its level and
+        // under OVERLAY (inferred: action button counts and key labels
+        // stay readable).
+        if st.frames[fid].cooldown.is_some() {
+            entries.push(Entry {
+                key: (strata, level, 2, i64::MAX, pos, std::cmp::Reverse(0)),
+                frame: fid,
+                region: None,
+            });
+        }
         let regions: Vec<FrameId> = st.frames[fid]
             .regions
             .iter()
@@ -223,7 +237,11 @@ pub fn build(st: &mut State) -> Scene {
     for e in entries {
         let (alpha, clip) = frame_info[&e.frame];
         let Some(r) = e.region else {
-            edit_box_text(st, e.frame, clip, alpha, &mut scene);
+            if st.frames[e.frame].cooldown.is_some() {
+                cooldown_swipe(st, e.frame, clip, alpha, &mut scene);
+            } else {
+                edit_box_text(st, e.frame, clip, alpha, &mut scene);
+            }
             continue;
         };
         let ralpha = alpha * crate::animfx::own_alpha(st, r);
@@ -322,6 +340,44 @@ fn texture_quad(
         tile: (tex.horiz_tile, tex.vert_tile),
         clip,
         masks,
+        sweep: None,
+        id,
+    }));
+}
+
+/// The swipe of a running cooldown, drawn over the frame.
+fn cooldown_swipe(st: &mut State, id: FrameId, clip: Option<Rect>, alpha: f64, scene: &mut Scene) {
+    let now = st.time;
+    let Some(c) = st.frames[id].cooldown.as_deref().cloned() else {
+        return;
+    };
+    if !c.draw_swipe {
+        return;
+    }
+    let Some(elapsed) = crate::cooldown::elapsed_fraction(&c, now) else {
+        return;
+    };
+    let Some(rect) = layout::rect(st, id) else {
+        return;
+    };
+    let image = match &c.swipe_texture {
+        TexFile::Id(i) => Some(ImageKey::Id(*i as u32)),
+        TexFile::Path(p) => Some(ImageKey::Path(p.clone())),
+        _ => None,
+    };
+    let mut color = c.swipe_color;
+    color[3] *= alpha as f32;
+    scene.items.push(Item::Quad(Quad {
+        rect,
+        uv: [0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0],
+        color,
+        image,
+        additive: false,
+        desaturate: false,
+        tile: (false, false),
+        clip,
+        masks: Vec::new(),
+        sweep: Some((elapsed as f32, c.reverse)),
         id,
     }));
 }

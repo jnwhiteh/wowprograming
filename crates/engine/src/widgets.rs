@@ -223,6 +223,7 @@ pub fn method_groups(lua: &Lua) -> Result<HashMap<&'static str, Table>> {
     groups.insert("Slider", value_methods(lua, true)?);
     groups.insert("StatusBar", value_methods(lua, false)?);
     groups.insert("ScrollFrame", scroll_frame_methods(lua)?);
+    groups.insert("Cooldown", crate::cooldown::methods(lua)?);
     groups.insert("AnimCommon", anim_common_methods(lua)?);
     // Tooltip methods override some frame methods (Show) and call them.
     let tooltip: Table = lua
@@ -268,7 +269,7 @@ pub fn mark_empty(lua: &Lua, f: &Function) -> Result<()> {
 }
 
 /// A marked method that does nothing.
-fn empty_fn(lua: &Lua) -> Result<Function> {
+pub fn empty_fn(lua: &Lua) -> Result<Function> {
     let f = lua.create_function(|_, _: MultiValue| Ok(()))?;
     mark_empty(lua, &f)?;
     Ok(f)
@@ -997,7 +998,7 @@ fn set_texture_file(lua: &Lua, id: FrameId, file: TexFile) {
     tex.file = file;
 }
 
-fn tex_file_arg(v: &Value) -> TexFile {
+pub fn tex_file_arg(v: &Value) -> TexFile {
     match v {
         Value::Integer(i) => TexFile::Id(*i),
         Value::Number(n) => TexFile::Id(*n as i64),

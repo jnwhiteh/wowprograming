@@ -176,6 +176,8 @@ Last updated: 2026-11-24.
   `S.ApplyCVars`, `S.SpellbookStandIns` (for reduced UIs).
 - Capture addon (`tools/capture/WowProgrammingCapture`) and
   `wowprogramming import-capture`; see [capture.md](capture.md).
+- Cooldown frames (`cooldown.rs`): the swipe is drawn and shrinks over
+  time; the widget hides and OnCooldownDone fires at the end.
 - Sliders (`slider.rs`): the thumb follows the value; pressing and
   dragging changes the value. Scroll frames report range changes.
 - Edit boxes (`editbox.rs`): cursor, highlight, letter and byte limits,
@@ -211,7 +213,7 @@ Last updated: 2026-11-24.
 - After `Font:SetFontObject`, the sandbox drops the font object's own
   shadow; the game seems to keep it (ObjectiveTrackerHeaderFont strings
   are one pixel wider in the captures).
-- Cooldown swipes, portraits (a placeholder portrait is shown), minimap,
+- Cooldown countdown numbers, portraits (a placeholder portrait is shown), minimap,
   3D models inside UI frames (PlayerModel, ModelScene).
 - 3D view: models hold the first frame of Stand (no animation playback;
   Stand stored in `.anim` files is not read, which leaves those models in
@@ -265,8 +267,9 @@ done criteria; rules and open questions in
    needs the game data from `config.local.toml` and takes about 50 s in
    release), edit box editing, sliders, scroll bar thumbs and scroll
    ranges (the same test drags a Settings slider and the Settings list's
-   scroll bar). Next: cooldown frames, MessageFrame (`UIErrorsFrame`),
-   hyperlinks, then the remaining coverage gaps.
+   scroll bar), cooldown frames (the same test checks an action
+   button's swipe and OnCooldownDone). Next: MessageFrame
+   (`UIErrorsFrame`), hyperlinks, then the remaining coverage gaps.
 4. When a behavior is unknown, implement a best guess, mark it
    "inferred" in client-runtime.md and add a question to its "Open
    questions for a probe session". Do not ask the user to record a
@@ -355,6 +358,7 @@ Decisions already made with the user. Do not reopen them without a reason.
 | `crates/engine/src/layoutcache.rs` | User-placed positions in the sandbox's `layout-local.txt` |
 | `crates/engine/src/editbox.rs` | Edit box editing: cursor, highlight, limits, keys, autoFocus |
 | `crates/engine/src/slider.rs` | Slider thumb placement and dragging |
+| `crates/engine/src/cooldown.rs` | Cooldown frames: swipe, OnCooldownDone |
 | `crates/engine/src/coverage.rs` | The coverage report (`wowprogramming coverage`) |
 | `crates/engine/src/apidoc.rs` | `Enum` and `Constants` from the API documentation |
 | `crates/engine/src/savedvars.rs` | SavedVariables reading and writing |

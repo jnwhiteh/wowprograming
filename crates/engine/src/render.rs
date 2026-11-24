@@ -133,6 +133,20 @@ fn draw_quad(band: &mut Band, p: &Prepared) {
             if !(0.0..=1.0).contains(&tx) {
                 continue;
             }
+            if let Some((elapsed, reverse)) = q.sweep {
+                // Clockwise angle from 12 o'clock, as a fraction of a turn.
+                let a = (tx - 0.5).atan2(0.5 - ty);
+                let turn = a.rem_euclid(std::f32::consts::TAU) / std::f32::consts::TAU;
+                // The swipe still covers the part not yet passed.
+                let covered = if reverse {
+                    turn < elapsed
+                } else {
+                    turn >= elapsed
+                };
+                if !covered {
+                    continue;
+                }
+            }
             let mut c = q.color;
             if let Some(img) = p.image {
                 // Bilinear interpolation of the corner coordinates.

@@ -373,8 +373,21 @@ Implemented in `slider.rs` and `widgets.rs`.
 
 - `SetCooldown(start, duration[, modRate])`: start is a `GetTime()` value,
   0 or a duration of 0 means no cooldown. It shows the widget, and the
-  widget hides itself when the animation ends unless reversed (W
-  SetCooldown). OnCooldownDone presumably fires then; open question.
+  widget hides itself when the animation ends (W SetCooldown). The
+  sandbox (`cooldown.rs`) then fires OnCooldownDone, after hiding, so a
+  handler can start the next cooldown (order inferred). `Clear` and a
+  zero cooldown hide the widget without OnCooldownDone (inferred).
+- The swipe covers the part of the turn not yet passed, clockwise from
+  12 o'clock; reversed, it covers the part passed. It is drawn with the
+  swipe colour (and texture, if set) over the ARTWORK layer of the
+  cooldown's level, under OVERLAY (inferred).
+- Defaults: swipe and bling on, edge off (inferred: Blizzard XML sets
+  `drawSwipe="false"` and `drawBling="false"` but never `"true"`, although
+  UI.xsd says false), swipe colour black at 0.8 alpha (inferred;
+  `CooldownFrameTemplate` sets 0.64).
+- `GetCooldownTimes` returns milliseconds. `Pause`, `Resume` and
+  `SetPaused` freeze the swipe. Not yet: countdown numbers, the edge and
+  bling textures, rotation.
 
 ## Open questions for a probe session
 

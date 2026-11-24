@@ -8,6 +8,7 @@ pub mod apidoc;
 pub mod bindings;
 pub mod clientnames;
 pub mod control;
+pub mod cooldown;
 pub mod coverage;
 pub mod editbox;
 pub mod frames;
@@ -394,6 +395,7 @@ impl Engine {
             st.last_elapsed = elapsed;
         }
         timers::run_due(lua);
+        cooldown::update(lua);
         editbox::fire_pending_text_changes(lua);
         frames::run_on_update(lua, elapsed);
         widgets::fire_size_changes(lua);
