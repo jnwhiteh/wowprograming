@@ -642,6 +642,7 @@ fn apply_attributes(
             "ignoreParentScale" => state(lua).frames[id].ignore_parent_scale = b,
             "useParentLevel" if b => {
                 let mut st = state(lua);
+                st.frames[id].use_parent_level = true;
                 if let Some(p) = st.frames[id].parent {
                     st.frames[id].level = st.frames[p].level;
                 }

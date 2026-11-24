@@ -74,10 +74,21 @@ pub fn install(lua: &Lua) -> Result<()> {
             g.set(name, f.clone())?;
         }
     }
-    let bitfield = lua.create_function(|_, _: MultiValue| Ok(false))?;
+    // Bitfield CVars (closed tutorials and help tips) hold six flags per
+    // character, offset from '@', flag 1 first (as in Config.wtf).
+    let bitfield = lua.create_function(|lua, (name, index): (String, i64)| {
+        let v = cvar_value(lua, &name).unwrap_or_default();
+        Ok(bitfield_get(&v, index))
+    })?;
     c_cvar.set("GetCVarBitfield", bitfield.clone())?;
     g.set("GetCVarBitfield", bitfield)?;
-    let set_bitfield = lua.create_function(|_, _: MultiValue| Ok(true))?;
+    let set_bitfield = lua.create_function(|lua, (name, index, value): (String, i64, Value)| {
+        let on = !matches!(value, Value::Nil | Value::Boolean(false));
+        let v = cvar_value(lua, &name).unwrap_or_default();
+        let new = bitfield_set(&v, index, on);
+        state(lua).cvars.insert(name.to_ascii_lowercase(), new);
+        Ok(true)
+    })?;
     c_cvar.set("SetCVarBitfield", set_bitfield.clone())?;
     g.set("SetCVarBitfield", set_bitfield)?;
 
@@ -283,6 +294,36 @@ pub fn install(lua: &Lua) -> Result<()> {
 }
 
 /// A CVar's value, or its default. Records CVars that have neither.
+/// Flag `index` (from 1) of a bitfield CVar value.
+fn bitfield_get(value: &str, index: i64) -> bool {
+    if index < 1 {
+        return false;
+    }
+    let (c, bit) = (((index - 1) / 6) as usize, (index - 1) % 6);
+    value
+        .as_bytes()
+        .get(c)
+        .is_some_and(|b| (b.wrapping_sub(b'@') >> bit) & 1 == 1)
+}
+
+/// A bitfield CVar value with flag `index` (from 1) set or cleared.
+fn bitfield_set(value: &str, index: i64, on: bool) -> String {
+    if index < 1 {
+        return value.to_string();
+    }
+    let (c, bit) = (((index - 1) / 6) as usize, (index - 1) % 6);
+    let mut bytes: Vec<u8> = value.bytes().map(|b| b.wrapping_sub(b'@') & 0x3f).collect();
+    if bytes.len() <= c {
+        bytes.resize(c + 1, 0);
+    }
+    if on {
+        bytes[c] |= 1 << bit;
+    } else {
+        bytes[c] &= !(1 << bit);
+    }
+    bytes.into_iter().map(|b| (b + b'@') as char).collect()
+}
+
 fn cvar_value(lua: &Lua, name: &str) -> Option<String> {
     let key = name.to_ascii_lowercase();
     let mut st = state(lua);
@@ -627,4 +668,21 @@ fn install_xml_util(lua: &Lua) -> Result<()> {
         lua.create_function(|lua, ()| lua.create_table())?,
     )?;
     Ok(())
+}
+
+#[cfg(test)]
+mod bitfield_tests {
+    use super::{bitfield_get, bitfield_set};
+
+    #[test]
+    fn reads_and_writes_bitfield_cvars() {
+        // A value from Config.wtf: flag 21 is set ('w' = 55 = 0b110111).
+        assert!(bitfield_get("}_ow_A", 21));
+        assert!(!bitfield_get("}_ow_A", 22));
+        assert!(!bitfield_get("", 5));
+        let v = bitfield_set("", 8, true);
+        assert_eq!(v, "@B");
+        assert!(bitfield_get(&v, 8));
+        assert_eq!(bitfield_set(&v, 8, false), "@@");
+    }
 }

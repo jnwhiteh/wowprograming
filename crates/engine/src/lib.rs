@@ -351,6 +351,32 @@ impl Engine {
         if let Err(err) = bindings::load(lua) {
             state(lua).warn(format!("cannot load key bindings: {err}"));
         }
+        self.apply_closed_tutorials();
+    }
+
+    /// Tutorials and help tips the player closed in the game, from the
+    /// config-cache.wtf files the client writes (read only): the account's
+    /// and the character's.
+    fn apply_closed_tutorials(&self) {
+        let Some(account) = self.config.game_account_dir.as_ref() else {
+            return;
+        };
+        let files = [
+            account.join("config-cache.wtf"),
+            account
+                .join(&self.config.realm)
+                .join(&self.config.character)
+                .join("config-cache.wtf"),
+        ];
+        let mut st = state(self.runtime.lua());
+        for file in files {
+            let Ok(text) = std::fs::read_to_string(&file) else {
+                continue;
+            };
+            for (name, value) in closed_tutorial_cvars(&text) {
+                st.cvars.insert(name.to_ascii_lowercase(), value);
+            }
+        }
     }
 
     /// The Blizzard addons to load, dependencies first.
@@ -425,16 +451,7 @@ impl Engine {
         }
         self.fire_event("PLAYER_LOGIN", ());
         self.fire_event("PLAYER_ENTERING_WORLD", (!reloading, reloading));
-        // The loading screen ends: the UI becomes visible.
-        let lua = self.runtime.lua();
-        let ui_parent = lua
-            .globals()
-            .get::<Table>("UIParent")
-            .ok()
-            .and_then(|t| frames::frame_id(&t).ok());
-        if let Some(id) = ui_parent {
-            frames::change_visibility(lua, id, |f| f[id].shown = true);
-        }
+        // The loading screen ends.
         self.fire_event("LOADING_SCREEN_DISABLED", ());
         // AssistedCombatManager and the spellbook read the spell list on
         // this event.
@@ -996,14 +1013,27 @@ fn build_runtime(
                 y: 0.0,
             })
             .collect();
-        // The client hides the UI while the loading screen is up and shows
-        // it after login, so visible frames get OnShow then (see load_all).
-        if name == "UIParent" {
-            st.frames[id].shown = false;
-        }
+        // UIParent stays shown while the UI loads: Blizzard code relies on
+        // it (a cast bar fades itself out at login only when IsVisible).
     }
     debug_assert!(state(lua).addons.iter().all(|a| a.kind == AddonKind::User));
     Ok(runtime)
+}
+
+/// The bitfield CVars of closed tutorials and help tips in a
+/// config-cache.wtf file: `SET closedInfoFrames "..."` lines.
+fn closed_tutorial_cvars(text: &str) -> Vec<(String, String)> {
+    text.lines()
+        .filter_map(|line| {
+            let rest = line.trim().strip_prefix("SET ")?;
+            let (name, value) = rest.split_once(' ')?;
+            let wanted = ["closedInfoFrames", "closedInfoFramesAccountWide"];
+            if !wanted.iter().any(|w| w.eq_ignore_ascii_case(name)) {
+                return None;
+            }
+            Some((name.to_string(), value.trim().trim_matches('"').to_string()))
+        })
+        .collect()
 }
 
 /// Define the localized global strings from the game data, as the client
@@ -1017,10 +1047,56 @@ fn install_global_strings(lua: &Lua) -> mlua::Result<()> {
     let g = lua.globals();
     for (key, value) in gd.global_strings(glue) {
         if g.raw_get::<Value>(key.as_str())?.is_nil() {
-            g.raw_set(key, value)?;
+            g.raw_set(key, lua.create_string(unescape_global_string(&value))?)?;
         }
     }
     Ok(())
+}
+
+/// GlobalStrings.db2 keeps the Lua escapes of the strings' source: `\n`,
+/// `\"`, `\\` and decimal codes such as `\32`. Other backslashes are
+/// part of texture paths (`Interface\Icons\...`) and stay.
+fn unescape_global_string(s: &str) -> Vec<u8> {
+    let b = s.as_bytes();
+    let mut out = Vec::with_capacity(b.len());
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] != b'\\' || i + 1 >= b.len() {
+            out.push(b[i]);
+            i += 1;
+            continue;
+        }
+        match b[i + 1] {
+            b'n' => {
+                out.push(b'\n');
+                i += 2;
+            }
+            b'"' | b'\\' => {
+                out.push(b[i + 1]);
+                i += 2;
+            }
+            b'0'..=b'9' => {
+                let mut j = i + 1;
+                let mut code: u32 = 0;
+                while j < b.len() && j < i + 4 && b[j].is_ascii_digit() {
+                    code = code * 10 + (b[j] - b'0') as u32;
+                    j += 1;
+                }
+                if code <= 255 {
+                    out.push(code as u8);
+                    i = j;
+                } else {
+                    out.push(b'\\');
+                    i += 1;
+                }
+            }
+            _ => {
+                out.push(b'\\');
+                i += 1;
+            }
+        }
+    }
+    out
 }
 
 /// Run a scenario's `scenario.lua`, which sets up game state before any
@@ -1228,5 +1304,38 @@ fn run_slash_command(lua: &Lua, command: &str, rest: &str) -> bool {
             true
         }
         None => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{closed_tutorial_cvars, unescape_global_string};
+
+    #[test]
+    fn unescapes_global_strings() {
+        assert_eq!(
+            unescape_global_string(r"Latency:\n%.0f ms"),
+            b"Latency:\n%.0f ms".to_vec()
+        );
+        assert_eq!(unescape_global_string(r"yells:\32"), b"yells: ".to_vec());
+        assert_eq!(
+            unescape_global_string(r#"|TInterface\Icons\X|t \\A \"q\""#),
+            br#"|TInterface\Icons\X|t \A "q""#.to_vec()
+        );
+    }
+
+    #[test]
+    fn reads_closed_tutorials_from_config_cache() {
+        let text = "SET uiScale \"1\"\nSET closedInfoFrames \"@@rDAB\"\nSET closedInfoFramesAccountWide \"}_ow_A\"\n";
+        assert_eq!(
+            closed_tutorial_cvars(text),
+            vec![
+                ("closedInfoFrames".to_string(), "@@rDAB".to_string()),
+                (
+                    "closedInfoFramesAccountWide".to_string(),
+                    "}_ow_A".to_string()
+                ),
+            ]
+        );
     }
 }

@@ -114,8 +114,12 @@ impl Toc {
         self.get("LoadOnDemand").is_some_and(|v| v.trim() == "1")
     }
 
-    /// Whether the addon may load in the emulated game client, from its
-    /// `AllowLoad` and `AllowLoadGameType` metadata.
+    /// `OnlyBetaAndPTR: 1` addons (the PTR issue reporter) load only on
+    /// test clients. The sandbox emulates the live client.
+    fn live_client_ok(&self) -> bool {
+        self.get("OnlyBetaAndPTR").is_none_or(|v| v.trim() != "1")
+    }
+
     /// Whether the addon may load in the glue environment (login and
     /// character select): `AllowLoad: Glue` or `Both`.
     pub fn loadable_in_glue(&self) -> bool {
@@ -126,7 +130,7 @@ impl Toc {
         let game_type_ok = self
             .get("AllowLoadGameType")
             .is_none_or(|v| words(v).any(|w| GAME_TYPES.iter().any(|g| g.eq_ignore_ascii_case(w))));
-        environment_ok && game_type_ok
+        environment_ok && game_type_ok && self.live_client_ok()
     }
 
     /// Whether the addon may load in the given environment.
@@ -138,6 +142,8 @@ impl Toc {
         }
     }
 
+    /// Whether the addon may load in the emulated game client, from its
+    /// `AllowLoad`, `AllowLoadGameType` and `OnlyBetaAndPTR` metadata.
     pub fn loadable_in_game(&self) -> bool {
         let environment_ok = self
             .get("AllowLoad")
@@ -145,7 +151,7 @@ impl Toc {
         let game_type_ok = self
             .get("AllowLoadGameType")
             .is_none_or(|v| words(v).any(|w| GAME_TYPES.iter().any(|g| g.eq_ignore_ascii_case(w))));
-        environment_ok && game_type_ok
+        environment_ok && game_type_ok && self.live_client_ok()
     }
 
     pub fn saved_variables(&self) -> Vec<String> {
@@ -257,6 +263,14 @@ mod tests {
         assert_eq!(toc.saved_variables(), vec!["MyDB", "MyOtherDB"]);
         assert_eq!(toc.saved_variables_per_character(), vec!["MyCharDB"]);
         assert!(!toc.load_on_demand());
+    }
+
+    #[test]
+    fn skips_beta_and_ptr_addons() {
+        let ptr = Toc::parse("## OnlyBetaAndPTR: 1\n## AllowLoad: Both\n");
+        assert!(!ptr.loadable_in_game());
+        assert!(!ptr.loadable_in_glue());
+        assert!(Toc::parse("## AllowLoad: Both\n").loadable_in_game());
     }
 
     #[test]

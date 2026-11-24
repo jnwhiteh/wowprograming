@@ -6,12 +6,20 @@ work (see "Keeping this file current" below).
 
 For goals, design and the full roadmap, see [scope.md](scope.md).
 
-Last updated: 2026-11-24 (frame runtime done).
+Last updated: 2026-11-24 (fixes from the user's first desktop run).
 
 ## Current state
 
-- **Frame runtime goal: done on 2026-11-24**, on branch `frame-runtime`,
-  waiting for the user's go-ahead to merge into `main`. All done
+- **Desktop feedback (2026-11-24), branch `desktop-feedback`:** the user
+  ran the GUI on the desktop for the first time and listed problems.
+  Fixed on this branch (not merged yet): character select list art
+  (nine-slice atlases) and text shadows (named colors), loading screen
+  progress with a status line, the PTR issue reporter no longer loads,
+  empty cast bars at login, buff tooltips, the game menu tooltip (line
+  breaks, text under the border), closing help tips, leaving Edit Mode
+  without errors, blocky magnified textures. See "Next steps".
+- **Frame runtime goal: done on 2026-11-24**, merged into `main` by the
+  user's request (fast-forward, not pushed). All done
   criteria in [scope.md](scope.md) ("Frame runtime") hold:
   `wowprogramming coverage` shows no gap (it started with 45), and every
   interaction has a test. The full-UI test
@@ -24,7 +32,7 @@ Last updated: 2026-11-24 (frame runtime done).
   in Edit Mode and finds it after `/reload`. Rules, inferred behavior and
   the open questions for a probe session are in
   [client-runtime.md](client-runtime.md).
-- **Next goal (after the merge, user's go-ahead needed): client state**,
+- **Next goal (user's go-ahead needed): client state**,
   a training dummy session, on its own branch.
 - **Direction (proposed 2026-11-24):** client state (a
   training dummy session: drag spells to the bar, instant, cast and
@@ -79,9 +87,23 @@ Last updated: 2026-11-24 (frame runtime done).
 - Login sequence in the client's order, taken from the traces (logins and
   reloads agree): UPDATE_BINDINGS, DISPLAY_SIZE_CHANGED, UI_SCALE_CHANGED,
   VARIABLES_LOADED, EDIT_MODE_LAYOUTS_UPDATED (from
-  `C_EditMode.GetLayouts()`), PLAYER_LOGIN, PLAYER_ENTERING_WORLD, then
-  UIParent is shown (hidden while loading, so visible frames get OnShow),
-  LOADING_SCREEN_DISABLED, SPELLS_CHANGED.
+  `C_EditMode.GetLayouts()`), PLAYER_LOGIN, PLAYER_ENTERING_WORLD,
+  LOADING_SCREEN_DISABLED, SPELLS_CHANGED. UIParent stays shown while the
+  UI loads (Blizzard's cast bar hides itself at login only when visible).
+- Startup runs in steps (`Engine::begin_start`, `start_step`,
+  `start_progress`): setup, the addon list, one Blizzard addon per step
+  (dependencies first), addons, login. The window runs steps for 30 ms
+  per frame behind the loading screen and shows the step and percentage
+  in the bar.
+- Atlases with slice data (UiTextureAtlasElementSliceData.db2) and
+  `SetTextureSliceMargins` draw as nine parts. Named XML colors
+  (`color="BLACK_FONT_COLOR"`) and `C_UIColor.GetColors` come from
+  GlobalColor.db2. Global strings are unescaped (`\n`, `\32`). Textures
+  are sampled bilinearly.
+- CVar bitfields (`GetCVarBitfield`, `SetCVarBitfield`) work; closed
+  tutorials (`closedInfoFrames`, `closedInfoFramesAccountWide`) are read
+  from the account's and the character's `config-cache.wtf`, read only.
+- `OnlyBetaAndPTR` addons (the issue reporter) do not load.
 - Glue environment (`--glue`): loads the Blizzard addons whose TOC says
   `AllowLoad: Glue` or `Both`, applies `[AllowLoad glue]`/`[AllowLoad
   game]` tags on files and dependencies, includes glue-only GlobalStrings,
@@ -241,29 +263,32 @@ Last updated: 2026-11-24 (frame runtime done).
   2:1 wide, 2880x1440 on the user's monitor, like the game; class names
   are class colored.) Back, Shop, Menu and the other
   top buttons are not tried.
-- Entering the world blocks the window for about 20 s; the loading bar
-  does not move. `/logout` is unknown (the chat frame's slash commands do
+- Entering the world takes about 20 s; the bar moves by addon count, so
+  it is slow at first. `/logout` is unknown (the chat frame's slash commands do
   not load); the game menu's Log Out button and `/run Logout()` work.
 - The Talents tab (needs trait data); spec sample abilities are captured
   but not checked yet.
-- Health and power were secret during the capture, so they are not
-  replayed: `UnitHealth` returns the stand-in 100 while `UnitHealthMax`
-  is the captured 898820 (the Monk's health bar looks almost empty).
 - About 55 full-UI startup errors in systems outside the goals (chat
   frames, communities, tutorials, guild UI, pet battles, LFG). The Evoker
   scenario has 59: being in a party creates more model scenes, so the
   model camera error (`OrbitCameraMixin.lua:41`) repeats more often. Some
   repeat every tick (PersonalResourceDisplay).
 - The first action button shows no key label; the chat frame background
-  is white; a stray "Issue Reporter" button shows.
+  is white.
 - Compact raid frames are not tried yet (`scenarios/hud` is a party with
   classic party frames).
 - Taint and secret values.
 
 ## Next steps
 
-Frame runtime goal: done. Ask the user to merge `frame-runtime` into
-`main` (the user pushes and merges). Then, with the user's go-ahead,
+Desktop feedback: ask the user to try `desktop-feedback` on the desktop
+and to merge it. Not reproduced: buff tooltips "adding lines until full"
+(with the fixes, buff tooltips show the aura name, description and time
+left, and the game menu tooltip keeps its size); ask for the exact frame
+if it happens again. The headless `run` has no character name, so it does
+not read closed tutorials; the GUI's Enter World does.
+
+Frame runtime goal: done and merged. With the user's go-ahead,
 start the client state goal on a new branch (see "Client state: a
 training dummy session" in [scope.md](scope.md)). Leftovers of the frame
 runtime are in the backlog in scope.md. When the open questions in
@@ -278,7 +303,7 @@ are in the backlog in scope.md.
 
 On hold (spellbook and HUD goals): check the captured tooltips and sample
 abilities; HUD problems (first action button key label, white chat
-background, stray "Issue Reporter" button, outlined text width); compare
+background, outlined text width); compare
 party frames with the capture; a raid scenario; capture addon support for
 raid units and trait data.
 
@@ -490,6 +515,20 @@ Things that cost time once and should not cost it again.
   `if checks; then git commit ...; fi`, not `checks; git commit`.
 - Never run `git stash` to compare against the old state: all work was
   uncommitted, and stashing hid it (it was restored at once).
+
+- Blizzard code can tell which client behavior is right: CastingBarFrame
+  hides itself at login only if `IsVisible()`, so UIParent must be shown
+  while the UI loads. Read the Blizzard code that misbehaves before
+  hiding a frame by hand.
+- Client-written files encode CVar bitfields six flags per character from
+  '@' (flag 1 is the lowest bit of the first character); a flag the user
+  set in game confirmed the encoding.
+- GlobalStrings.db2 keeps Lua escapes (`\n`, `\"`, `\\`, `\32`) but texture
+  paths use single backslashes; unescape only those sequences.
+- Tables returned by replayed functions must be copies: Blizzard's Edit
+  Mode appends its presets to the table `C_EditMode.GetLayouts` returns.
+- `ctl hover` does not work on a GUI window: the window sends its own
+  pointer position every frame. Test hover with `run --serve`.
 
 ## Keeping this file current
 

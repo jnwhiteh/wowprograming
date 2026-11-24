@@ -397,6 +397,9 @@ pub struct FrameData {
     pub disabled: bool,
     pub clips_children: bool,
     pub ignore_parent_alpha: bool,
+    /// `useParentLevel`: the frame keeps its parent's level instead of one
+    /// above it, so its regions sort with the parent's layers.
+    pub use_parent_level: bool,
     pub ignore_parent_scale: bool,
     pub hit_insets: [f64; 4],
     pub attributes: Option<Table>,
@@ -472,6 +475,7 @@ impl FrameData {
             indented_word_wrap: false,
             clips_children: false,
             ignore_parent_alpha: false,
+            use_parent_level: false,
             ignore_parent_scale: false,
             hit_insets: [0.0; 4],
             attributes: None,

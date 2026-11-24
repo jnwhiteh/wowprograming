@@ -127,10 +127,29 @@ local function structDefault(def, depth)
     return t
 end
 
+-- A value with the documented mixin (ColorMixin, Vector2DMixin, ...), when
+-- Blizzard's Lua has defined it.
+local function withMixin(value, mixinName)
+    local mixin = mixinName and rawget(_G, mixinName)
+    if type(value) ~= "table" or type(mixin) ~= "table" then return value end
+    for k, v in pairs(mixin) do
+        if value[k] == nil then value[k] = v end
+    end
+    return value
+end
+
 function default(arg, depth)
     if arg.Nilable then return nil end
     if arg.Default ~= nil and type(arg.Default) ~= "table" then return arg.Default end
     local ty = arg.Type
+    if ty == "colorRGBA" or ty == "colorRGB" then
+        -- White, so code that reads the colour keeps working.
+        return withMixin({ r = 1, g = 1, b = 1, a = 1 }, arg.Mixin or "ColorMixin")
+    end
+    if arg.Mixin then
+        local t = ty ~= arg.Mixin and structures[ty] and depth < 4 and structDefault(structures[ty], depth) or {}
+        return withMixin(t, arg.Mixin)
+    end
     if ty == "table" then return {} end
     if ty == "bool" then return false end
     if numberTypes[ty] then return 0 end

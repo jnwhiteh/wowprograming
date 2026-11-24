@@ -716,3 +716,47 @@ fn coverage_report_classifies_methods_and_handlers() {
     assert!(on_click.fired);
     assert!(report.handlers.len() > 70);
 }
+
+#[test]
+fn animation_targets_follow_child_keys() {
+    let wtf = tempfile::tempdir().unwrap();
+    let engine = started(&[], wtf.path());
+    let result: String = engine
+        .eval(
+            r#"
+            local f = CreateFrame("Frame", "AnimOwner", UIParent)
+            f.Glow = f:CreateTexture()
+            local g = f:CreateAnimationGroup()
+            local keyed = g:CreateAnimation("Alpha")
+            keyed:SetChildKey("Glow")
+            local missing = g:CreateAnimation("Alpha")
+            missing:SetChildKey("Nothing")
+            local plain = g:CreateAnimation("Alpha")
+            return tostring(keyed:GetTarget() == f.Glow) .. " "
+                .. tostring(missing:GetTarget() == f) .. " "
+                .. tostring(plain:GetTarget() == f)
+            "#,
+        )
+        .unwrap();
+    assert_eq!(result, "true true true");
+}
+
+#[test]
+fn parent_level_children_follow_their_parent() {
+    let wtf = tempfile::tempdir().unwrap();
+    let engine = started(&[], wtf.path());
+    let result: String = engine
+        .eval(
+            r#"
+            local p = CreateFrame("Frame", nil, UIParent)
+            local border = CreateFrame("Frame", nil, p)
+            border:SetUsingParentLevel(true)
+            local child = CreateFrame("Frame", nil, p)
+            p:SetFrameLevel(7)
+            return border:GetFrameLevel() .. " " .. child:GetFrameLevel()
+                .. " " .. tostring(border:IsUsingParentLevel())
+            "#,
+        )
+        .unwrap();
+    assert_eq!(result, "7 8 true");
+}

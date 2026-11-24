@@ -971,7 +971,10 @@ fn raise_levels(frames: &mut [FrameData], id: FrameId, level: i64) {
     frames[id].level = level;
     let children = frames[id].children.clone();
     for c in children {
-        if frames[c].level < level + 1 {
+        // A child using its parent's level follows it exactly.
+        if frames[c].use_parent_level {
+            raise_levels(frames, c, level);
+        } else if frames[c].level < level + 1 {
             raise_levels(frames, c, level + 1);
         }
     }
@@ -2283,10 +2286,26 @@ fn frame_methods(lua: &Lua) -> Result<Table> {
         "EnableGamePadStick",
         "SetDrawLayerEnabled",
         "SetIsFrameBuffer",
-        "SetUsingParentLevel",
     ] {
         m.raw_set(name, empty_fn(lua)?)?;
     }
+    method!(lua, m, "SetUsingParentLevel", |lua,
+                                            (this_, v): (
+        Value,
+        Value
+    )| {
+        let id = this(&this_)?;
+        let mut st = state(lua);
+        st.frames[id].use_parent_level = truthy(&v);
+        if let Some(p) = st.frames[id].parent.filter(|_| truthy(&v)) {
+            let level = st.frames[p].level;
+            raise_levels(&mut st.frames, id, level);
+        }
+        Ok(())
+    });
+    method!(lua, m, "IsUsingParentLevel", |lua, this_: Value| {
+        with(lua, &this_, |f| f.use_parent_level)
+    });
     method!(lua, m, "GetBoundsRect", |lua, this_: Value| {
         let id = this(&this_)?;
         match own_rect(lua, id) {
@@ -3732,15 +3751,15 @@ fn animation_methods(lua: &Lua) -> Result<Table> {
     });
     method!(lua, m, "GetTarget", |lua, this_: Value| {
         let id = this(&this_)?;
-        let (target, group) = {
+        // The explicit target, else the child or target key on the group's
+        // owner. A key that names nothing falls back to the owner, as the
+        // client does (a comment in CastingBarFrame.xml relies on it).
+        let target = {
             let st = state(lua);
-            (
-                st.frames[id].anim.as_deref().and_then(|a| a.target),
-                st.frames[id].parent,
-            )
+            let owner = st.frames[id].parent.and_then(|g| st.frames[g].parent);
+            crate::animfx::target(&st, id).or(owner)
         };
-        let owner = group.and_then(|g| state(lua).frames[g].parent);
-        Ok(table_of(lua, target.or(owner)))
+        Ok(table_of(lua, target))
     });
     method!(lua, m, "GetRegionParent", |lua, this_: Value| {
         let id = this(&this_)?;

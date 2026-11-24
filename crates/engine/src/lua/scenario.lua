@@ -49,13 +49,22 @@ local function argKey(...)
     return table.concat(parts, ",")
 end
 
+-- A fresh copy of a recorded table: Blizzard code often changes the tables
+-- the client returns, which must not change the record.
+local function copyValue(v)
+    if type(v) ~= "table" then return v end
+    local t = {}
+    for k, x in pairs(v) do t[k] = copyValue(x) end
+    return t
+end
+
 local function unpackRecord(rec)
     local n = tonumber(rec.n) or 0
     local out = {}
     for i = 1, n do
         local v = rec[tostring(i)]
         if v == nil then v = rec[i] end
-        out[i] = v
+        out[i] = copyValue(v)
     end
     return unpack(out, 1, n)
 end
@@ -103,7 +112,9 @@ local NO_REPLAY_VERBS = { "Set", "Add", "Remove", "Register", "Unregister", "Ena
 
 -- Functions that return objects the sandbox owns (widget metatables, frames).
 -- A capture stores them as plain tables, which would replace the real ones.
-local NO_REPLAY_NAMES = { GetCurrentKeyBoardFocus = true }
+-- Edit Mode layouts live in the sandbox's own store (seeded from the
+-- capture by S.ApplyCapture), so saving a layout works.
+local NO_REPLAY_NAMES = { GetCurrentKeyBoardFocus = true, ["C_EditMode.GetLayouts"] = true }
 
 local function replayable(path)
     local namespace, name = path:match("^([^.]+)%.(.+)$")
@@ -215,6 +226,42 @@ function S.ApplyCVars(cvars)
     return n
 end
 
+-- Fill the sandbox's Edit Mode store from captured C_EditMode.GetLayouts
+-- answers, unless the sandbox already saved layouts. The capture may hold
+-- the table after Blizzard added its presets to it; presets are skipped.
+function S.SeedEditModeLayouts(records)
+    if type(records) ~= "table" then return end
+    local info
+    for args, rec in pairs(records) do
+        if args ~= "#" and type(rec) == "table" then info = unpackRecord(rec) break end
+    end
+    if type(info) ~= "table" or type(info.layouts) ~= "table" then return end
+    local account = rawget(_G, "WowProgramming_EditModeAccount")
+    local character = rawget(_G, "WowProgramming_EditModeCharacter")
+    local saved = (type(account) == "table" and #(account.layouts or {}) > 0)
+        or (type(character) == "table" and #(character.layouts or {}) > 0)
+    if saved then return end
+    account = type(account) == "table" and account or { settings = {} }
+    character = type(character) == "table" and character or {}
+    account.layouts, character.layouts = {}, {}
+    local accountType = Enum and Enum.EditModeLayoutType and Enum.EditModeLayoutType.Account or 1
+    local characterType = Enum and Enum.EditModeLayoutType and Enum.EditModeLayoutType.Character or 2
+    for _, l in ipairs(info.layouts) do
+        if l.layoutType == accountType then
+            account.layouts[#account.layouts + 1] = l
+        elseif l.layoutType == characterType then
+            character.layouts[#character.layouts + 1] = l
+        end
+    end
+    -- The active index counts Blizzard's presets (Modern and Classic) first.
+    local presets = 2
+    local own = #account.layouts + #character.layouts
+    local active = tonumber(info.activeLayout) or 1
+    character.activeLayout = (active <= presets + own) and active or 1
+    rawset(_G, "WowProgramming_EditModeAccount", account)
+    rawset(_G, "WowProgramming_EditModeCharacter", character)
+end
+
 -- Apply everything a WowProgrammingCapture addon capture holds that does
 -- not depend on the scenario: constants, enums, CVars, atlases and the
 -- recorded API answers. Returns the number of replayed functions.
@@ -227,6 +274,7 @@ function S.ApplyCapture(capture)
     end
     S.ApplyCVars(capture.cvars)
     S.AddAtlases(capture.atlases)
+    S.SeedEditModeLayouts(capture.calls and capture.calls["C_EditMode.GetLayouts"])
     return capture.calls and S.Replay(capture.calls) or 0
 end
 

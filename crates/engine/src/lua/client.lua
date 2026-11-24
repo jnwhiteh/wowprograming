@@ -327,6 +327,59 @@ function C_TooltipInfo.GetSpellByID(spellID)
     return spellTooltip(spellID, info.name, sub)
 end
 
+-- Aura tooltips: the aura's spell name and description, and the time left.
+local function auraTooltip(aura)
+    if type(aura) ~= "table" or not aura.name then return nil end
+    local data = spellTooltip(aura.spellId, aura.name)
+    data.type = Enum and Enum.TooltipDataType and Enum.TooltipDataType.UnitAura or data.type
+    local left = (aura.expirationTime or 0) - GetTime()
+    if (aura.duration or 0) > 0 and left > 0 and SecondsToTime then
+        local gold = CreateColor and CreateColor(1, 0.82, 0, 1)
+        data.lines[#data.lines + 1] = { type = 0, leftText = SecondsToTime(left) .. " remaining",
+                                        leftColor = gold }
+    end
+    return data
+end
+local function auraByIndex(unit, index, filter)
+    return C_UnitAuras and C_UnitAuras.GetAuraDataByIndex
+        and C_UnitAuras.GetAuraDataByIndex(unit, index, filter)
+end
+local function auraByID(unit, id)
+    return C_UnitAuras and C_UnitAuras.GetAuraDataByAuraInstanceID
+        and C_UnitAuras.GetAuraDataByAuraInstanceID(unit, id)
+end
+function C_TooltipInfo.GetUnitAura(unit, index, filter)
+    return auraTooltip(auraByIndex(unit, index, filter))
+end
+function C_TooltipInfo.GetUnitBuff(unit, index, filter)
+    return auraTooltip(auraByIndex(unit, index, filter or "HELPFUL"))
+end
+function C_TooltipInfo.GetUnitDebuff(unit, index, filter)
+    return auraTooltip(auraByIndex(unit, index, filter or "HARMFUL"))
+end
+function C_TooltipInfo.GetUnitAuraByAuraInstanceID(unit, id)
+    return auraTooltip(auraByID(unit, id))
+end
+C_TooltipInfo.GetUnitBuffByAuraInstanceID = C_TooltipInfo.GetUnitAuraByAuraInstanceID
+C_TooltipInfo.GetUnitDebuffByAuraInstanceID = C_TooltipInfo.GetUnitAuraByAuraInstanceID
+
+-- Spell book item type and texture come from the item's info (captures
+-- record GetSpellBookItemInfo; these two often are not recorded).
+C_SpellBook = C_SpellBook or {}
+local function spellBookItem(slot, bank)
+    local info = C_SpellBook.GetSpellBookItemInfo and C_SpellBook.GetSpellBookItemInfo(slot, bank)
+    if type(info) == "table" then return info end
+end
+function C_SpellBook.GetSpellBookItemType(slot, bank)
+    local info = spellBookItem(slot, bank)
+    if not info then return Enum and Enum.SpellBookItemType and Enum.SpellBookItemType.None or 0, 0 end
+    return info.itemType, info.actionID, info.spellID
+end
+function C_SpellBook.GetSpellBookItemTexture(slot, bank)
+    local info = spellBookItem(slot, bank)
+    return info and info.iconID or 0
+end
+
 -- A spell exists when the client has a record for it.
 -- Spell:ContinueWithCancelOnSpellLoad needs this.
 C_Spell = C_Spell or {}

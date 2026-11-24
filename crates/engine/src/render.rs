@@ -71,23 +71,43 @@ impl Band<'_> {
     }
 }
 
+/// Bilinear texture sampling, as the client's GPU does: the four texels
+/// around the point, weighted by distance. Edges clamp, or wrap when the
+/// texture repeats.
 fn sample(img: &Image, u: f32, v: f32, repeat: bool) -> [f32; 4] {
-    let (w, h) = (img.width as f32, img.height as f32);
+    let (w, h) = (img.width as i64, img.height as i64);
     let (mut u, mut v) = (u, v);
     if repeat {
         u = u.rem_euclid(1.0);
         v = v.rem_euclid(1.0);
     }
-    let x = ((u * w).floor() as i64).clamp(0, img.width as i64 - 1) as usize;
-    let y = ((v * h).floor() as i64).clamp(0, img.height as i64 - 1) as usize;
-    let i = (y * img.width as usize + x) * 4;
-    let p = &img.rgba[i..i + 4];
-    [
-        p[0] as f32 / 255.0,
-        p[1] as f32 / 255.0,
-        p[2] as f32 / 255.0,
-        p[3] as f32 / 255.0,
-    ]
+    let fx = u * w as f32 - 0.5;
+    let fy = v * h as f32 - 0.5;
+    let (x0, y0) = (fx.floor(), fy.floor());
+    let (tx, ty) = (fx - x0, fy - y0);
+    let index = |x: i64, y: i64| -> usize {
+        let (x, y) = if repeat {
+            (x.rem_euclid(w), y.rem_euclid(h))
+        } else {
+            (x.clamp(0, w - 1), y.clamp(0, h - 1))
+        };
+        ((y * w + x) * 4) as usize
+    };
+    let (x0, y0) = (x0 as i64, y0 as i64);
+    let corners = [
+        (index(x0, y0), (1.0 - tx) * (1.0 - ty)),
+        (index(x0 + 1, y0), tx * (1.0 - ty)),
+        (index(x0, y0 + 1), (1.0 - tx) * ty),
+        (index(x0 + 1, y0 + 1), tx * ty),
+    ];
+    let mut out = [0.0f32; 4];
+    for (i, wgt) in corners {
+        let p = &img.rgba[i..i + 4];
+        for c in 0..4 {
+            out[c] += p[c] as f32 * wgt;
+        }
+    }
+    out.map(|c| c / 255.0)
 }
 
 /// A quad with its images looked up.
