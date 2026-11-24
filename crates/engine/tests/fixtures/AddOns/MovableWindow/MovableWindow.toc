@@ -1,0 +1,4 @@
+## Interface: 120105
+## Title: MovableWindow
+## Notes: Test fixture: a movable window with the same code as BugSack's.
+MovableWindow.lua

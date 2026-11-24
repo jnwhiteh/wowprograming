@@ -13,6 +13,7 @@ pub mod frames;
 pub mod gamedata;
 pub mod input;
 pub mod layout;
+pub mod layoutcache;
 pub mod loading;
 pub mod movement;
 pub mod natives;
@@ -274,6 +275,8 @@ impl Engine {
             addons::load_addon(lua, &name);
         }
 
+        // Frames the user moved come back from layout-local.txt.
+        layoutcache::restore(self.runtime.lua());
         // The client's order, from traces of logins and reloads (see
         // docs/status.md): bindings and display first, then saved
         // variables, edit mode layouts, PLAYER_LOGIN and
@@ -671,6 +674,7 @@ impl Engine {
     pub fn reload(&mut self) {
         self.fire_event("PLAYER_LEAVING_WORLD", ());
         addons::save_all(self.runtime.lua());
+        layoutcache::save(self.runtime.lua());
         let pending = self.drain_output();
         match build_runtime(&self.config, self.gamedata.clone()) {
             Ok(runtime) => {
@@ -691,6 +695,7 @@ impl Engine {
         self.fire_event("PLAYER_LOGOUT", ());
         self.fire_event("PLAYER_LEAVING_WORLD", ());
         addons::save_all(self.runtime.lua());
+        layoutcache::save(self.runtime.lua());
     }
 
     /// Take all output produced since the last call.

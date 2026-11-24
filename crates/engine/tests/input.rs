@@ -339,3 +339,45 @@ fn clicking_the_lower_toplevel_window_raises_it() {
     assert_eq!(e.mouse_focus_name().as_deref(), Some("Lower"));
     assert!(errors(&e).is_empty());
 }
+
+#[test]
+fn a_moved_window_comes_back_after_reload_from_layout_local() {
+    let wtf = tempfile::tempdir().unwrap();
+    let mut e = Engine::new(EngineConfig {
+        wtf_dir: wtf.path().to_path_buf(),
+        addons_dir: Some(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/AddOns")),
+        blizzard_addons: Vec::new(),
+        only_addons: Some(vec!["MovableWindow".into()]),
+        ..EngineConfig::default()
+    })
+    .unwrap();
+    e.start();
+    // The window is 500x310 in the centre of the 1920x1080 screen.
+    // BugSack's OnDragStart is StartMoving itself, so the button name
+    // arrives as alwaysStartFromMouse: the window follows the mouse from
+    // where the drag started (5 units after the press).
+    e.mouse_move(960.0, 540.0);
+    e.mouse_down("LeftButton");
+    e.mouse_move(955.0, 540.0);
+    e.mouse_move(460.0, 240.0);
+    e.mouse_up("LeftButton");
+    let rect = "local l, b, w, h = MovableWindowFrame:GetRect() return l, b, w, h";
+    let moved: (f64, f64, f64, f64) = e.eval(rect).unwrap();
+    assert_eq!(moved, (215.0, 85.0, 500.0, 310.0));
+    e.reload();
+    let file = wtf
+        .path()
+        .join("Account/SANDBOX/Sandbox/Player/layout-local.txt");
+    let text = std::fs::read_to_string(&file).unwrap();
+    assert_eq!(
+        text,
+        "Version: 1\nFrame: MovableWindowFrame\nFrameLevel: 1\nAnchor: BOTTOMLEFT\n\
+         X: 215\nY: 85\nW: 500\nH: 310\n"
+    );
+    let restored: (f64, f64, f64, f64) = e.eval(rect).unwrap();
+    assert_eq!(restored, moved);
+    assert!(
+        e.eval::<bool>("return MovableWindowFrame:IsUserPlaced()")
+            .unwrap()
+    );
+}

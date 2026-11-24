@@ -20,7 +20,8 @@ Last updated: 2026-11-24.
   [client-runtime.md](client-runtime.md). Done: the
   `wowprogramming coverage` report (45 gaps at the start), the `drag`
   command, mouse capture and click rules, dragging, moving, sizing,
-  clamping, `Raise` and toplevel raising.
+  clamping, `Raise` and toplevel raising, user-placed positions in the
+  sandbox's own `layout-local.txt`.
 - **Direction after that (proposed 2026-11-24):** client state (a
   training dummy session: drag spells to the bar, instant, cast and
   channeled spells, cooldowns, buffs and debuffs, target, tooltips, macros, Clique), then the security model
@@ -183,7 +184,9 @@ Last updated: 2026-11-24.
   OnReceiveDrag, `StartMoving`, `StartSizing` with resize bounds,
   `StopMovingOrSizing` (nearest UIParent point), clamping with insets,
   `Raise`, `Lower`, toplevel frames raised on click and show, frame
-  `LockHighlight`. Several details are inferred (see client-runtime.md).
+  `LockHighlight`. Moved frames are saved in the sandbox's own
+  `layout-local.txt` and restored after `/reload` (`layoutcache.rs`).
+  Several details are inferred (see client-runtime.md).
 - Control bridge: `exec`, `eval`, `dofile`, `key`, `type`, `click`,
   `hover`, `drag`, `down`, `up`, `mouse`, `under`, `tree`, `tick`,
   `screenshot <path> [scale] [frame]`, `stubs`, `quit`. `hover` and
@@ -244,9 +247,8 @@ done criteria; rules and open questions in
 2. Done: `drag` in the control bridge (`drag <expr> <dx> <dy>`) and
    `Engine::drag` for tests.
 3. Done: mouse capture, click rules, dragging, moving, sizing, clamping,
-   raising. Next: user-placed positions in the sandbox's own
-   `layout-local.txt`, then OnEnable and OnDisable (edit box enabled
-   state), keyboard, Edit Mode, edit boxes, sliders and scroll bars,
+   raising, `layout-local.txt` (real BugSack checked with `--addon
+   BugSack`). Next: OnEnable and OnDisable (edit box enabled state), keyboard, Edit Mode, edit boxes, sliders and scroll bars,
    cooldowns (scope.md has the order).
 4. When a behavior is unknown, implement a best guess, mark it
    "inferred" in client-runtime.md and add a question to its "Open
@@ -333,6 +335,7 @@ Decisions already made with the user. Do not reopen them without a reason.
 | `tools/capture/WowProgrammingCapture` | In-game capture addon |
 | `tools/compare/compare_frames.lua` | Compares sandbox rectangles with a capture |
 | `crates/engine/src/input.rs`, `movement.rs` | Mouse input and click rules; moving, sizing, clamping, raising |
+| `crates/engine/src/layoutcache.rs` | User-placed positions in the sandbox's `layout-local.txt` |
 | `crates/engine/src/coverage.rs` | The coverage report (`wowprogramming coverage`) |
 | `crates/engine/src/apidoc.rs` | `Enum` and `Constants` from the API documentation |
 | `crates/engine/src/savedvars.rs` | SavedVariables reading and writing |

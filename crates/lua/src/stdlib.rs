@@ -218,13 +218,10 @@ fn install_debug(lua: &Lua) -> Result<()> {
     globals.set(
         "debugstack",
         lua.create_function(
-            |lua, (start, top, bottom): (Option<usize>, Option<usize>, Option<usize>)| {
-                Ok(debugstack(
-                    lua,
-                    start.unwrap_or(1),
-                    top.unwrap_or(12),
-                    bottom.unwrap_or(10),
-                ))
+            |lua, (start, top, bottom): (Option<i64>, Option<i64>, Option<i64>)| {
+                // Levels below 0 count as 0 (BugGrabber can compute -1).
+                let n = |v: Option<i64>, d: i64| v.unwrap_or(d).max(0) as usize;
+                Ok(debugstack(lua, n(start, 1), n(top, 12), n(bottom, 10)))
             },
         )?,
     )?;

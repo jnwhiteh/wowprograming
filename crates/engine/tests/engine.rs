@@ -141,7 +141,7 @@ fn addon_metadata_api() {
         ("1.0", "Hello World", true)
     );
     let count: usize = engine.eval("return C_AddOns.GetNumAddOns()").unwrap();
-    assert_eq!(count, 6);
+    assert_eq!(count, 7);
 }
 
 #[test]

@@ -219,8 +219,20 @@ Sources: W = warcraft.wiki.gg page named after the function or handler
   H: 590
   ```
 
-  The sandbox should keep its own copy of this file in the scenario's
-  saved data, never in the game install.
+  The sandbox keeps its own copy in its WTF folder
+  (`<wtf>/Account/<account>/<realm>/<character>/layout-local.txt`,
+  `layoutcache.rs`), never in the game install. It restores named,
+  movable frames after the addons load and before the login events, and
+  saves at `/reload` and logout, keeping entries of frames that do not
+  exist in the session (timing and keeping inferred). The size comes
+  back only for resizable frames (inferred). `FrameLevel` is 1 in every
+  file seen; the sandbox writes 1 and ignores it. Values are whole
+  numbers (L).
+- Real BugSack creates `BugSackFrame` when the sack first opens, after
+  PLAYER_LOGIN. By the rule above its position is saved but not
+  restored, and the sandbox behaves so (checked with `--addon BugSack`).
+  The test fixture `MovableWindow` creates the same window at load time,
+  and its position comes back.
 
 ### Clamping
 
@@ -299,6 +311,13 @@ justify one session. Each question names what the probe measures.
     frame: which scripts fire?
 13. Raise: the frame level after `Raise()` for a frame below two others
     in the same strata, and its child's level.
+14. layout-local.txt: is a named, movable frame created after
+    PLAYER_LOGIN (`BugSackFrame`) restored when it is created? When does
+    the client restore (before VARIABLES_LOADED or PLAYER_LOGIN) and
+    write the file? What does `FrameLevel` mean?
+15. `StartMoving` used directly as an OnDragStart handler (BugSack) gets
+    the button name as `alwaysStartFromMouse`: does the window jump to
+    keep the press offset, or follow from where the drag started?
 
 ## Later layers (not part of the current goal)
 
