@@ -1,5 +1,6 @@
 //! Finding, ordering and loading addons, and the `C_AddOns` API.
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use mlua::{IntoLuaMulti, Lua, MultiValue, Result, Value};
@@ -123,6 +124,43 @@ pub fn startup_blizzard_addons(lua: &Lua) -> Vec<String> {
         .collect();
     addons.sort();
     addons.into_iter().map(|(_, _, _, name)| name).collect()
+}
+
+/// `names` with their dependencies placed before them, each once, in the
+/// order [`load_addon`] would load them. Loading the result one name at a
+/// time does the same work as loading `names`, in smaller steps.
+pub fn load_order(lua: &Lua, names: &[String]) -> Vec<String> {
+    fn visit(lua: &Lua, name: &str, seen: &mut HashSet<String>, out: &mut Vec<String>) {
+        if !seen.insert(name.to_ascii_lowercase()) {
+            return;
+        }
+        let Some(i) = lookup(lua, name) else {
+            out.push(name.to_string());
+            return;
+        };
+        let (deps, optional) = {
+            let st = state(lua);
+            let a = &st.addons[i];
+            (a.toc.dependencies(), a.toc.optional_dependencies())
+        };
+        for dep in &deps {
+            visit(lua, dep, seen, out);
+        }
+        for dep in &optional {
+            let available =
+                lookup(lua, dep).is_some_and(|i| !state(lua).addons[i].toc.load_on_demand());
+            if available {
+                visit(lua, dep, seen, out);
+            }
+        }
+        out.push(name.to_string());
+    }
+    let mut seen = HashSet::new();
+    let mut out = Vec::new();
+    for n in names {
+        visit(lua, n, &mut seen, &mut out);
+    }
+    out
 }
 
 /// Load an addon and its dependencies. Returns the final load state.

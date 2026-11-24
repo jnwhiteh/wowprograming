@@ -184,6 +184,42 @@ pub struct Engine {
     config: EngineConfig,
     runtime: Runtime,
     gamedata: Option<Rc<gamedata::GameData>>,
+    /// Startup work not done yet (see [`Engine::start_step`]).
+    pending: std::collections::VecDeque<StartStep>,
+    /// Steps done and planned in the current startup, for progress.
+    start_done: usize,
+    start_total: usize,
+}
+
+/// One unit of startup work. The window runs one step per frame so the
+/// loading screen can show progress.
+#[derive(Clone, Debug)]
+enum StartStep {
+    /// Saved data, the scenario and key bindings.
+    Prepare {
+        reloading: bool,
+    },
+    /// Reads the addon tables of contents and plans the addon steps.
+    Plan {
+        reloading: bool,
+    },
+    Blizzard(String),
+    /// Bootstrap files, third-party addons and saved frame positions.
+    AddOns,
+    /// The login events, then the UI becomes visible.
+    Login {
+        reloading: bool,
+    },
+    Glue,
+}
+
+/// Progress of a startup: what the next step does, and how far it is.
+#[derive(Clone, Debug)]
+pub struct StartProgress {
+    pub done: usize,
+    pub total: usize,
+    /// What the next step does, for the loading screen.
+    pub next: String,
 }
 
 impl Engine {
@@ -203,6 +239,9 @@ impl Engine {
             config,
             runtime,
             gamedata,
+            pending: Default::default(),
+            start_done: 0,
+            start_total: 0,
         })
     }
 
@@ -220,14 +259,85 @@ impl Engine {
 
     /// Load Blizzard and third-party addons, then fire the login events.
     pub fn start(&mut self) {
-        self.load_all(false);
+        self.begin_start();
+        while self.start_step().is_some() {}
+    }
+
+    /// Plan a startup without doing any work; [`Engine::start_step`] then
+    /// does it one step at a time.
+    pub fn begin_start(&mut self) {
+        self.plan(false);
+    }
+
+    fn plan(&mut self, reloading: bool) {
+        self.pending.clear();
+        self.pending.push_back(if self.config.glue {
+            StartStep::Glue
+        } else {
+            StartStep::Prepare { reloading }
+        });
+        self.start_done = 0;
+        self.start_total = 1;
+    }
+
+    /// Progress of the startup, or `None` when nothing is left to do.
+    pub fn start_progress(&self) -> Option<StartProgress> {
+        let next = self.pending.front()?;
+        let next = match next {
+            StartStep::Prepare { .. } => "Setting up the character".to_string(),
+            StartStep::Plan { .. } => "Reading the addon list".to_string(),
+            StartStep::Blizzard(name) => format!("Loading {name}"),
+            StartStep::AddOns => "Loading addons".to_string(),
+            StartStep::Login { .. } => "Logging in".to_string(),
+            StartStep::Glue => "Loading the login screens".to_string(),
+        };
+        Some(StartProgress {
+            done: self.start_done,
+            total: self.start_total.max(1),
+            next,
+        })
+    }
+
+    /// Do the next startup step. Returns the progress after it, or `None`
+    /// when the startup is complete.
+    pub fn start_step(&mut self) -> Option<StartProgress> {
+        let step = self.pending.pop_front()?;
+        match step {
+            StartStep::Prepare { reloading } => {
+                self.prepare();
+                self.start_total = 2;
+                self.pending.push_back(StartStep::Plan { reloading });
+            }
+            StartStep::Plan { reloading } => {
+                let names = self.plan_addons();
+                self.start_total = 2 + names.len() + 2;
+                self.pending
+                    .extend(names.into_iter().map(StartStep::Blizzard));
+                self.pending.push_back(StartStep::AddOns);
+                self.pending.push_back(StartStep::Login { reloading });
+            }
+            StartStep::Blizzard(name) => {
+                let lua = self.runtime.lua();
+                let result = addons::load_addon(lua, &name);
+                if result != LoadState::Loaded {
+                    state(lua).warn(format!("Blizzard addon {name} not loaded: {result:?}"));
+                }
+            }
+            StartStep::AddOns => self.load_user_addons(),
+            StartStep::Login { reloading } => self.login(reloading),
+            StartStep::Glue => self.load_glue(),
+        }
+        self.start_done += 1;
+        self.start_progress()
     }
 
     fn load_all(&mut self, reloading: bool) {
-        if self.config.glue {
-            self.load_glue();
-            return;
-        }
+        self.plan(reloading);
+        while self.start_step().is_some() {}
+    }
+
+    /// Saved data, the scenario and key bindings.
+    fn prepare(&mut self) {
         let lua = self.runtime.lua();
         // Data the client keeps for the UI (Edit Mode layouts), from the
         // sandbox's own files.
@@ -241,6 +351,11 @@ impl Engine {
         if let Err(err) = bindings::load(lua) {
             state(lua).warn(format!("cannot load key bindings: {err}"));
         }
+    }
+
+    /// The Blizzard addons to load, dependencies first.
+    fn plan_addons(&mut self) -> Vec<String> {
+        let lua = self.runtime.lua();
         let mut blizzard = Vec::new();
         for name in &self.config.blizzard_addons {
             if name == "*" {
@@ -249,12 +364,11 @@ impl Engine {
                 blizzard.push(name.clone());
             }
         }
-        for name in &blizzard {
-            let result = addons::load_addon(lua, name);
-            if result != LoadState::Loaded {
-                state(lua).warn(format!("Blizzard addon {name} not loaded: {result:?}"));
-            }
-        }
+        addons::load_order(lua, &blizzard)
+    }
+
+    fn load_user_addons(&mut self) {
+        let lua = self.runtime.lua();
         for name in &self.config.bootstrap_addons {
             addons::run_bootstrap(lua, name);
         }
@@ -285,6 +399,9 @@ impl Engine {
 
         // Frames the user moved come back from layout-local.txt.
         layoutcache::restore(self.runtime.lua());
+    }
+
+    fn login(&mut self, reloading: bool) {
         // The client's order, from traces of logins and reloads (see
         // docs/status.md): bindings and display first, then saved
         // variables, edit mode layouts, PLAYER_LOGIN and

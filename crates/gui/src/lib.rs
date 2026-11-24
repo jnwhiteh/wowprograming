@@ -15,9 +15,10 @@ use wowprogramming_engine::control::{Action, ControlServer};
 use wowprogramming_engine::scene::Scene;
 use wowprogramming_engine::{Engine, Output, WorldEntry, loading, render, world};
 
-/// Starts a new session (builds and starts a new engine): the game for a
+/// Builds a new session's engine without starting it: the game for a
 /// character chosen on the character select screen, or character select
-/// again (`None`) after Logout().
+/// again (`None`) after Logout(). The window starts it, a step per frame
+/// for the game, so the loading screen shows progress.
 pub type WorldFactory = Box<dyn FnMut(Option<&WorldEntry>) -> Result<Engine, String>>;
 
 /// The loading screen between character select and the world.
@@ -27,7 +28,18 @@ struct Loading {
     /// screen has been shown.
     frames: u32,
     texture: Option<TextureHandle>,
+    /// The screen without the bar, and where the bar goes.
+    background: Option<(loading::Rgba, loading::BarRect)>,
+    bar_texture: Option<(TextureHandle, Rect)>,
+    /// The new session while it starts.
+    engine: Option<Engine>,
+    progress: f64,
+    /// What is being done, shown in the bar.
+    status: String,
 }
+
+/// Time to spend on startup steps per frame while the loading screen shows.
+const LOADING_BUDGET: std::time::Duration = std::time::Duration::from_millis(30);
 
 const MAX_LOG_LINES: usize = 2000;
 
@@ -154,13 +166,13 @@ impl App {
         }
     }
 
-    /// Show the loading screen; once it is on screen, build the game
-    /// session (this blocks while the UI loads, as the client's loading
-    /// screen does).
+    /// Show the loading screen and start the game session a few steps per
+    /// frame, with the progress and the current step in the bar.
     fn show_loading(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
         let rect = ctx.content_rect();
         let ppp = ctx.pixels_per_point();
+        let gd = self.engine.gamedata().cloned();
         let Some(state) = self.loading.as_mut() else {
             return;
         };
@@ -169,20 +181,67 @@ impl App {
                 (rect.width() * ppp).round().max(1.0) as usize,
                 (rect.height() * ppp).round().max(1.0) as usize,
             );
-            let gd = self.engine.gamedata().cloned();
-            let image = gd.and_then(|gd| {
+            state.background = gd.as_ref().and_then(|gd| {
                 let map = state.entry.map_id.unwrap_or(0);
-                let screen = loading::for_map(&gd, map).or_else(|| loading::for_map(&gd, 0))?;
-                Some(loading::render(&gd, &screen, w, h, 0.15))
+                let screen = loading::for_map(gd, map).or_else(|| loading::for_map(gd, 0))?;
+                Some(loading::render_background(gd, &screen, w, h))
             });
-            let image = match image {
-                Some(img) => {
+            let image = match &state.background {
+                Some((img, _)) => {
                     egui::ColorImage::from_rgba_unmultiplied([img.width, img.height], &img.data)
                 }
                 None => egui::ColorImage::new([w, h], vec![Color32::BLACK; w * h]),
             };
             state.texture = Some(ctx.load_texture("loading", image, TextureOptions::LINEAR));
+            state.status = "Starting the sandbox".into();
         }
+
+        // Work: build the engine on the first frame after the screen shows,
+        // then run startup steps for a short time each frame.
+        state.frames += 1;
+        let mut finished = None;
+        if state.frames >= 2 {
+            match state.engine.as_mut() {
+                None => {
+                    let entry = state.entry.clone();
+                    let result = match self.factory.as_mut() {
+                        Some(f) => f(Some(&entry)),
+                        None => Err("no game session factory".into()),
+                    };
+                    match result {
+                        Ok(mut engine) => {
+                            engine.begin_start();
+                            if let Some(p) = engine.start_progress() {
+                                state.status = p.next;
+                            }
+                            state.engine = Some(engine);
+                        }
+                        Err(err) => finished = Some(Err(err)),
+                    }
+                }
+                Some(engine) => {
+                    let started = Instant::now();
+                    loop {
+                        match engine.start_step() {
+                            Some(p) => {
+                                state.progress = p.done as f64 / p.total as f64;
+                                state.status = p.next;
+                            }
+                            None => {
+                                state.progress = 1.0;
+                                finished = state.engine.take().map(Ok);
+                                break;
+                            }
+                        }
+                        if started.elapsed() >= LOADING_BUDGET {
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Draw: the background, the bar at its progress, the status text.
         if let Some(t) = &state.texture {
             ui.painter().image(
                 t.id(),
@@ -191,14 +250,55 @@ impl App {
                 Color32::WHITE,
             );
         }
-        state.frames += 1;
-        if state.frames < 3 {
-            return;
+        if let (Some(gd), Some((bg, bar))) = (gd.as_ref(), state.background.as_ref()) {
+            let (strip, x0, y0) = loading::bar_strip(gd, bg, bar, state.progress);
+            let image =
+                egui::ColorImage::from_rgba_unmultiplied([strip.width, strip.height], &strip.data);
+            let at = Rect::from_min_size(
+                rect.min + Vec2::new(x0 as f32, y0 as f32) / ppp,
+                Vec2::new(strip.width as f32, strip.height as f32) / ppp,
+            );
+            match state.bar_texture.as_mut() {
+                Some((t, r)) => {
+                    t.set(image, TextureOptions::LINEAR);
+                    *r = at;
+                }
+                None => {
+                    let t = ctx.load_texture("loading-bar", image, TextureOptions::LINEAR);
+                    state.bar_texture = Some((t, at));
+                }
+            }
+            if let Some((t, r)) = &state.bar_texture {
+                ui.painter().image(
+                    t.id(),
+                    *r,
+                    Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)),
+                    Color32::WHITE,
+                );
+            }
+            let centre = rect.min
+                + Vec2::new((bar.x + bar.w / 2.0) as f32, (bar.y + bar.h / 2.0) as f32) / ppp;
+            let font = FontId::proportional((bar.h as f32 / ppp * 0.6).max(10.0));
+            let text = format!("{} ({:.0}%)", state.status, state.progress * 100.0);
+            let painter = ui.painter();
+            painter.text(
+                centre + Vec2::new(1.0, 1.0),
+                egui::Align2::CENTER_CENTER,
+                &text,
+                font.clone(),
+                Color32::BLACK,
+            );
+            painter.text(
+                centre,
+                egui::Align2::CENTER_CENTER,
+                &text,
+                font,
+                Color32::WHITE,
+            );
         }
-        let entry = state.entry.clone();
-        let result = match self.factory.as_mut() {
-            Some(f) => f(Some(&entry)),
-            None => Err("no game session factory".into()),
+
+        let Some(result) = finished else {
+            return;
         };
         self.loading = None;
         match result {
@@ -442,7 +542,8 @@ impl eframe::App for App {
                 None => Err("no session factory".into()),
             };
             match result {
-                Ok(engine) => {
+                Ok(mut engine) => {
+                    engine.start();
                     self.engine = engine;
                     self.display = None;
                     self.frame_texture = None;
@@ -465,6 +566,11 @@ impl eframe::App for App {
                 entry,
                 frames: 0,
                 texture: None,
+                background: None,
+                bar_texture: None,
+                engine: None,
+                progress: 0.0,
+                status: String::new(),
             });
             ctx.request_repaint();
             return;

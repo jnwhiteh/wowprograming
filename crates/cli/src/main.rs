@@ -783,10 +783,7 @@ fn run_gui(config: EngineConfig, game_dir: Option<PathBuf>, args: &RunArgs) -> E
             let Some(entry) = entry else {
                 // Back to character select.
                 let (config, _) = build_config(&a)?;
-                let mut engine =
-                    Engine::with_gamedata(config, gamedata.clone()).map_err(|e| e.to_string())?;
-                engine.start();
-                return Ok(engine);
+                return Engine::with_gamedata(config, gamedata.clone()).map_err(|e| e.to_string());
             };
             a.glue = false;
             a.full_ui = true;
@@ -802,10 +799,8 @@ fn run_gui(config: EngineConfig, game_dir: Option<PathBuf>, args: &RunArgs) -> E
             config.world_entry = Some(entry.clone());
             config.character = entry.name.clone();
             config.realm = entry.realm.clone();
-            let mut engine =
-                Engine::with_gamedata(config, gamedata.clone()).map_err(|e| e.to_string())?;
-            engine.start();
-            Ok(engine)
+            // The window starts it step by step behind the loading screen.
+            Engine::with_gamedata(config, gamedata.clone()).map_err(|e| e.to_string())
         }))
     } else {
         None

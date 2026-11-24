@@ -163,6 +163,28 @@ pub fn for_map(gd: &GameData, map_id: u32) -> Option<LoadingScreen> {
     Some(out)
 }
 
+/// Where the loading bar goes on the screen, in pixels.
+#[derive(Clone, Copy, Debug)]
+pub struct BarRect {
+    pub x: f64,
+    pub y: f64,
+    pub w: f64,
+    pub h: f64,
+    /// Extra width of the border on each side.
+    border: f64,
+}
+
+impl BarRect {
+    /// The pixels that the bar and its border cover: x0, y0, x1, y1.
+    pub fn area(&self, width: usize, height: usize) -> (usize, usize, usize, usize) {
+        let x0 = (self.x - self.border).floor().max(0.0) as usize;
+        let y0 = (self.y - 0.3 * self.h).floor().max(0.0) as usize;
+        let x1 = ((self.x + self.w + self.border).ceil() as usize).min(width);
+        let y1 = ((self.y + 1.3 * self.h).ceil() as usize).min(height);
+        (x0, y0, x1, y1)
+    }
+}
+
 /// Draw a loading screen at `width` x `height` pixels, with the loading
 /// bar at `progress` (0..1).
 pub fn render(
@@ -172,6 +194,43 @@ pub fn render(
     height: usize,
     progress: f64,
 ) -> Rgba {
+    let (mut out, bar) = render_background(gd, screen, width, height);
+    draw_bar(gd, &mut out, &bar, progress);
+    out
+}
+
+/// The loading bar alone, drawn over its part of `background`: the image
+/// and the position of its top-left corner in the background.
+pub fn bar_strip(
+    gd: &GameData,
+    background: &Rgba,
+    bar: &BarRect,
+    progress: f64,
+) -> (Rgba, usize, usize) {
+    let (x0, y0, x1, y1) = bar.area(background.width, background.height);
+    let (w, h) = (x1.saturating_sub(x0), y1.saturating_sub(y0));
+    let mut out = Rgba::new(w, h, [0, 0, 0]);
+    for row in 0..h {
+        let src = ((y0 + row) * background.width + x0) * 4;
+        out.data[row * w * 4..(row + 1) * w * 4]
+            .copy_from_slice(&background.data[src..src + w * 4]);
+    }
+    let local = BarRect {
+        x: bar.x - x0 as f64,
+        y: bar.y - y0 as f64,
+        ..*bar
+    };
+    draw_bar(gd, &mut out, &local, progress);
+    (out, x0, y0)
+}
+
+/// Draw the loading screen without the bar. Returns where the bar goes.
+pub fn render_background(
+    gd: &GameData,
+    screen: &LoadingScreen,
+    width: usize,
+    height: usize,
+) -> (Rgba, BarRect) {
     let mut out = Rgba::new(width, height, [0, 0, 0]);
     let image = |id: u32| gd.image(&ImageKey::Id(id));
     let (w, h) = (width as f64, height as f64);
@@ -264,10 +323,22 @@ pub fn render(
         }
         bar_y = 0.92 * h;
     }
-    // Loading bar.
     // Centred, about 0.79 of the height wide.
     let (bw, bh) = (0.79 * h, 0.028 * h);
-    let bx = (w - bw) / 2.0;
+    let bar = BarRect {
+        x: (w - bw) / 2.0,
+        y: bar_y,
+        w: bw,
+        h: bh,
+        border: 0.01 * w,
+    };
+    (out, bar)
+}
+
+/// Draw the loading bar at `progress` (0..1).
+pub fn draw_bar(gd: &GameData, out: &mut Rgba, bar: &BarRect, progress: f64) {
+    let image = |id: u32| gd.image(&ImageKey::Id(id));
+    let (bx, bar_y, bw, bh) = (bar.x, bar.y, bar.w, bar.h);
     if let Some(bg) = image(BAR_BACKGROUND) {
         out.draw(&bg, bx, bar_y, bw, bh, FULL);
     } else {
@@ -280,12 +351,11 @@ pub fn render(
     if let Some(border) = image(BAR_BORDER) {
         out.draw(
             &border,
-            bx - 0.01 * w,
+            bx - bar.border,
             bar_y - 0.3 * bh,
-            bw + 0.02 * w,
+            bw + 2.0 * bar.border,
             bh * 1.6,
             FULL,
         );
     }
-    out
 }
