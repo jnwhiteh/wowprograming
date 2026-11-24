@@ -86,6 +86,8 @@ pub struct TexState {
     /// Flipbook frame left showing when a flipbook animation finished, as
     /// fractions of the texture coordinates: left, top, right, bottom.
     pub flipbook_frame: Option<[f32; 4]>,
+    /// Nine-slice drawing, from the atlas or `SetTextureSliceMargins`.
+    pub slice: Option<crate::gamedata::Slice>,
 }
 
 impl Default for TexState {
@@ -103,6 +105,7 @@ impl Default for TexState {
             rotation: 0.0,
             gradient: None,
             flipbook_frame: None,
+            slice: None,
         }
     }
 }

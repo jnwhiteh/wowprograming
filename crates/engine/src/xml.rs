@@ -816,11 +816,18 @@ fn dimension(e: &Elem) -> (Option<f64>, Option<f64>) {
     (src.attr_f64("x"), src.attr_f64("y"))
 }
 
-fn color(e: &Elem) -> [f32; 4] {
-    if let Some(c) = e.attr("color") {
-        // A named colour; colour tables need DB2 data, use white.
-        let _ = c;
-        return [1.0; 4];
+fn color(lua: &Lua, e: &Elem) -> [f32; 4] {
+    if let Some(name) = e.attr("color") {
+        // A named colour from the GlobalColor table, resolved by the client
+        // itself (font files load before Color.lua makes the globals).
+        let gd = state(lua).gamedata.clone();
+        let found = gd.and_then(|g| {
+            g.global_colors()
+                .into_iter()
+                .find(|(tag, _)| tag == name)
+                .map(|(_, c)| c)
+        });
+        return found.unwrap_or([1.0; 4]);
     }
     let g = |k: &str, d: f64| e.attr_f64(k).unwrap_or(d) as f32;
     [g("r", 0.0), g("g", 0.0), g("b", 0.0), g("a", 1.0)]
@@ -955,7 +962,7 @@ fn apply_child(
             }
         }
         "Color" => {
-            let c = color(child);
+            let c = color(lua, child);
             let kind = state(lua).frames[id].object_type;
             match kind {
                 "Texture" | "MaskTexture" | "Line" => {
@@ -971,11 +978,11 @@ fn apply_child(
             let orientation = child.attr("orientation").unwrap_or("HORIZONTAL");
             let min = child
                 .child("MinColor")
-                .map(|c| color(c))
+                .map(|c| color(lua, c))
                 .unwrap_or([1.0; 4]);
             let max = child
                 .child("MaxColor")
-                .map(|c| color(c))
+                .map(|c| color(lua, c))
                 .unwrap_or([1.0; 4]);
             let mut st = state(lua);
             crate::frames::ensure_tex(&mut st.frames[id]).gradient =
@@ -988,7 +995,7 @@ fn apply_child(
                 .unwrap_or((child.attr_f64("x"), child.attr_f64("y")));
             let c = child
                 .child("Color")
-                .map(|c| color(c))
+                .map(|c| color(lua, c))
                 .unwrap_or([0.0, 0.0, 0.0, 1.0]);
             let mut st = state(lua);
             let font = st.frames[id].font.get_or_insert_with(Box::default);
@@ -1063,7 +1070,7 @@ fn apply_child(
             native(lua, table, method, tex)?;
         }
         "BarColor" => {
-            let c = color(child);
+            let c = color(lua, child);
             native(lua, table, "SetStatusBarColor", (c[0], c[1], c[2], c[3]))?;
         }
         "ScrollChild" => {
@@ -1100,7 +1107,7 @@ fn apply_child(
         }
         "SwipeTexture" if state(lua).frames[id].cooldown.is_some() => {
             let file = child.attr("file").map(|f| TexFile::Path(f.to_string()));
-            let c = child.child("Color").map(|c| color(c.as_ref()));
+            let c = child.child("Color").map(|c| color(lua, c.as_ref()));
             let mut st = state(lua);
             let cd = st.frames[id].cooldown.as_deref_mut().expect("cooldown");
             if let Some(f) = file {

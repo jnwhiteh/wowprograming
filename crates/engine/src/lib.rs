@@ -1042,6 +1042,7 @@ fn scenario_helpers(lua: &Lua, dir: &std::path::Path) -> mlua::Result<Table> {
             bottom: n("bottomTexCoord") as f32,
             tiles_horizontally: b("tilesHorizontally"),
             tiles_vertically: b("tilesVertically"),
+            slice: None,
         });
         Ok(true)
     })?;

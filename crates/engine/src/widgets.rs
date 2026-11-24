@@ -1034,6 +1034,7 @@ fn set_texture_file(lua: &Lua, id: FrameId, file: TexFile) {
     let tex = crate::frames::ensure_tex(&mut st.frames[id]);
     tex.atlas = None;
     tex.atlas_rect = None;
+    tex.slice = None;
     tex.file = file;
 }
 
@@ -1070,6 +1071,7 @@ pub fn set_atlas(lua: &Lua, id: FrameId, atlas: &str, use_size: bool) -> bool {
             tex.atlas_rect = Some([a.left, a.top, a.right, a.bottom]);
             tex.horiz_tile = a.tiles_horizontally;
             tex.vert_tile = a.tiles_vertically;
+            tex.slice = a.slice;
             if use_size {
                 f.width = a.width;
                 f.height = a.height;
@@ -1081,6 +1083,7 @@ pub fn set_atlas(lua: &Lua, id: FrameId, atlas: &str, use_size: bool) -> bool {
             // Keep the name so GetAtlas works without game data.
             tex.atlas = Some(atlas.to_string());
             tex.atlas_rect = None;
+            tex.slice = None;
             tex.file = TexFile::None;
             false
         }
@@ -1233,6 +1236,51 @@ fn texture_methods(lua: &Lua) -> Result<Table> {
                 .map(|t| t.blend_mode.clone())
                 .unwrap_or_default()
         })
+    });
+    method!(lua, m, "SetTextureSliceMargins", |lua,
+                                               (this_, l, t, r, b): (
+        Value,
+        f32,
+        f32,
+        f32,
+        f32
+    )| {
+        with(lua, &this_, |f| {
+            let tex = crate::frames::ensure_tex(f);
+            let mode = tex.slice.map(|s| s.mode).unwrap_or(0);
+            tex.slice = Some(crate::gamedata::Slice {
+                margins: [l, t, r, b],
+                mode,
+            });
+        })
+    });
+    method!(lua, m, "GetTextureSliceMargins", |lua, this_: Value| {
+        let m = with(lua, &this_, |f| {
+            f.tex.as_deref().and_then(|t| t.slice).map(|s| s.margins)
+        })?;
+        Ok(match m {
+            Some([l, t, r, b]) => (Some(l), Some(t), Some(r), Some(b)),
+            None => (None, None, None, None),
+        })
+    });
+    method!(lua, m, "SetTextureSliceMode", |lua,
+                                            (this_, mode): (
+        Value,
+        u8
+    )| {
+        with(lua, &this_, |f| {
+            let tex = crate::frames::ensure_tex(f);
+            let margins = tex.slice.map(|s| s.margins).unwrap_or([0.0; 4]);
+            tex.slice = Some(crate::gamedata::Slice { margins, mode });
+        })
+    });
+    method!(lua, m, "GetTextureSliceMode", |lua, this_: Value| {
+        with(lua, &this_, |f| {
+            f.tex.as_deref().and_then(|t| t.slice).map_or(0, |s| s.mode)
+        })
+    });
+    method!(lua, m, "ClearTextureSlice", |lua, this_: Value| {
+        with(lua, &this_, |f| crate::frames::ensure_tex(f).slice = None)
     });
     method!(lua, m, "SetHorizTile", |lua, (this_, v): (Value, Value)| {
         with(lua, &this_, |f| {

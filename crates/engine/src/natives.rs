@@ -125,12 +125,26 @@ pub fn install(lua: &Lua) -> Result<()> {
         lua.create_function(|_, _: Value| Ok(()))?,
     )?;
 
-    // Colors come from the game's GlobalColor table, which needs DB2
-    // reading. Until then there are none.
+    // Named colours come from the game's GlobalColor table.
     let c_ui_color = lua.create_table()?;
     c_ui_color.set(
         "GetColors",
-        lua.create_function(|lua, ()| lua.create_table())?,
+        lua.create_function(|lua, ()| {
+            let gd = state(lua).gamedata.clone();
+            let out = lua.create_table()?;
+            for (tag, [r, g, b, a]) in gd.map(|g| g.global_colors()).unwrap_or_default() {
+                let color = lua.create_table()?;
+                color.set("r", r)?;
+                color.set("g", g)?;
+                color.set("b", b)?;
+                color.set("a", a)?;
+                let row = lua.create_table()?;
+                row.set("baseTag", tag)?;
+                row.set("color", color)?;
+                out.push(row)?;
+            }
+            Ok(out)
+        })?,
     )?;
     g.set("C_UIColor", c_ui_color)?;
 

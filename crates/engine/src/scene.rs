@@ -332,7 +332,7 @@ fn texture_quad(
         base[3] * vc[3] * alpha as f32,
     ];
     let masks = masks_of(st, id);
-    scene.items.push(Item::Quad(Quad {
+    let quad = Quad {
         rect,
         uv,
         color,
@@ -344,7 +344,68 @@ fn texture_quad(
         masks,
         sweep: None,
         id,
-    }));
+    };
+    match tex.slice.filter(|_| rotation == 0.0) {
+        Some(slice) => nine_slice(st, quad, slice, scene),
+        None => scene.items.push(Item::Quad(quad)),
+    }
+}
+
+/// Draw a texture as nine parts: the corners keep their size in pixels
+/// (shrunk together when the texture is smaller than its margins), the
+/// edges and the centre stretch.
+fn nine_slice(st: &State, quad: Quad, slice: crate::gamedata::Slice, scene: &mut Scene) {
+    let uv = quad.uv;
+    // Size of the texture region in pixels, to turn margins into fractions.
+    let image = quad
+        .image
+        .as_ref()
+        .and_then(|k| st.gamedata.as_ref().and_then(|g| g.image(k)));
+    let (iw, ih) = match &image {
+        Some(img) => (img.width as f32, img.height as f32),
+        None => {
+            scene.items.push(Item::Quad(quad));
+            return;
+        }
+    };
+    let src_w = ((uv[4] - uv[0]).abs() * iw).max(1.0);
+    let src_h = ((uv[3] - uv[1]).abs() * ih).max(1.0);
+    let [ml, mt, mr, mb] = slice.margins;
+    let r = quad.rect;
+    let fit = |a: f32, b: f32, size: f64| -> (f64, f64) {
+        let total = (a + b) as f64;
+        if total > size && total > 0.0 {
+            (a as f64 * size / total, b as f64 * size / total)
+        } else {
+            (a as f64, b as f64)
+        }
+    };
+    let (dl, dr) = fit(ml, mr, r.width);
+    let (dt, db) = fit(mt, mb, r.height);
+    // Screen edges left to right and top to bottom, with texture fractions.
+    let xs = [r.left, r.left + dl, r.right() - dr, r.right()];
+    let fx = [0.0, ml / src_w, 1.0 - mr / src_w, 1.0];
+    let top = r.bottom + r.height;
+    let ys = [top, top - dt, r.bottom + db, r.bottom];
+    let fy = [0.0, mt / src_h, 1.0 - mb / src_h, 1.0];
+    for row in 0..3 {
+        for col in 0..3 {
+            let w = xs[col + 1] - xs[col];
+            let h = ys[row] - ys[row + 1];
+            if w <= 0.0 || h <= 0.0 {
+                continue;
+            }
+            let mut q = quad.clone();
+            q.rect = Rect {
+                left: xs[col],
+                bottom: ys[row + 1],
+                width: w,
+                height: h,
+            };
+            q.uv = sub_uv(&uv, [fx[col], fy[row], fx[col + 1], fy[row + 1]]);
+            scene.items.push(Item::Quad(q));
+        }
+    }
 }
 
 /// The swipe of a running cooldown, drawn over the frame.

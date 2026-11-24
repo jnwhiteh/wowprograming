@@ -13,6 +13,11 @@ pub use blp::Image;
 /// FileDataIDs of the atlas tables. Their paths are not hashed in the root.
 const UI_TEXTURE_ATLAS: u32 = 897470;
 const UI_TEXTURE_ATLAS_MEMBER: u32 = 897532;
+/// UiTextureAtlasElementSliceData: ID, UiTextureAtlasElementID, Left, Top,
+/// Right, Bottom, SliceMode.
+const UI_TEXTURE_ATLAS_ELEMENT_SLICE_DATA: u32 = 5319042;
+/// FileDataID of GlobalColor.db2: BaseTag, Color (ARGB).
+const GLOBAL_COLOR: u32 = 4328468;
 /// FileDataID of GlobalStrings.db2: BaseTag, TagText, Flags.
 const GLOBAL_STRINGS: u32 = 1394440;
 /// GlobalStrings flag for strings used in the game (not only the login screen).
@@ -31,6 +36,19 @@ pub struct AtlasInfo {
     pub bottom: f32,
     pub tiles_horizontally: bool,
     pub tiles_vertically: bool,
+    /// Nine-slice margins in pixels (left, top, right, bottom), if the
+    /// atlas element has slice data.
+    pub slice: Option<Slice>,
+}
+
+/// Nine-slice drawing of a texture: corners keep their size, edges and the
+/// centre stretch (or tile).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Slice {
+    /// Margins in texture pixels: left, top, right, bottom.
+    pub margins: [f32; 4],
+    /// `Enum.UITextureSliceMode`: 0 stretched, 1 tiled.
+    pub mode: u8,
 }
 
 pub struct GameData {
@@ -40,6 +58,7 @@ pub struct GameData {
     atlases: HashMap<String, AtlasInfo>,
     images: RefCell<HashMap<ImageKey, Option<Rc<Image>>>>,
     extra_atlases: RefCell<HashMap<String, AtlasInfo>>,
+    colors: std::cell::OnceCell<Vec<(String, [f32; 4])>>,
 }
 
 /// Cache key for a decoded image.
@@ -77,6 +96,7 @@ impl GameData {
             atlases,
             images: RefCell::new(HashMap::new()),
             extra_atlases: RefCell::new(HashMap::new()),
+            colors: std::cell::OnceCell::new(),
         })
     }
 
@@ -134,6 +154,31 @@ impl GameData {
     /// The localized global strings of the game UI, such as `SPELLBOOK`.
     /// With `glue`, also the strings of the login and character select
     /// screens (all strings: the glue screens use game strings too).
+    /// Named UI colours (`C_UIColor.GetColors`): tag and RGBA.
+    pub fn global_colors(&self) -> Vec<(String, [f32; 4])> {
+        self.colors
+            .get_or_init(|| self.read_global_colors())
+            .clone()
+    }
+
+    fn read_global_colors(&self) -> Vec<(String, [f32; 4])> {
+        let Ok(data) = self.storage.read_file(GLOBAL_COLOR) else {
+            return Vec::new();
+        };
+        let Ok(t) = db2::Table::parse(&data) else {
+            return Vec::new();
+        };
+        t.records
+            .iter()
+            .filter_map(|r| {
+                let tag = t.string(r, 0);
+                let argb = r.values.get(1).and_then(|v| v.first()).copied()?;
+                let c = |shift: u32| ((argb >> shift) & 0xff) as f32 / 255.0;
+                (!tag.is_empty()).then(|| (tag, [c(16), c(8), c(0), c(24)]))
+            })
+            .collect()
+    }
+
     pub fn global_strings(&self, glue: bool) -> Vec<(String, String)> {
         let Ok(data) = self.storage.read_file(GLOBAL_STRINGS) else {
             return Vec::new();
@@ -204,6 +249,29 @@ fn read_atlases(storage: &Storage) -> Result<HashMap<String, AtlasInfo>, String>
     // UiTextureAtlasMember: Name, ID, UiTextureAtlasID, Width, Height, Left,
     // Right, Top, Bottom, UiTextureAtlasElementID, OverrideWidth,
     // OverrideHeight, Flags, UiCanvasID.
+    // Slice data is keyed by the atlas element. A missing table only loses
+    // nine-slice drawing.
+    let mut slices: HashMap<u32, Slice> = HashMap::new();
+    let slice_table = storage
+        .read_file(UI_TEXTURE_ATLAS_ELEMENT_SLICE_DATA)
+        .ok()
+        .and_then(|d| db2::Table::parse(&d).ok());
+    for r in slice_table.iter().flat_map(|t| t.records.iter()) {
+        let v = |i: usize| {
+            r.values
+                .get(i)
+                .and_then(|v| v.first())
+                .copied()
+                .unwrap_or(0)
+        };
+        slices.insert(
+            v(1),
+            Slice {
+                margins: [v(2) as f32, v(3) as f32, v(4) as f32, v(5) as f32],
+                mode: v(6) as u8,
+            },
+        );
+    }
     let mut out = HashMap::new();
     for r in &members.records {
         let v = |i: usize| {
@@ -237,6 +305,7 @@ fn read_atlases(storage: &Storage) -> Result<HashMap<String, AtlasInfo>, String>
                 bottom: v(8) as f32 / ah,
                 tiles_horizontally: flags & 0x4 != 0,
                 tiles_vertically: flags & 0x2 != 0,
+                slice: slices.get(&v(9)).copied(),
                 file,
                 name,
             },
