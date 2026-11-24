@@ -200,13 +200,7 @@ pub fn mouse_down(lua: &Lua, button: &str) {
         st.frames[id].object_type == "EditBox" && !st.frames[id].disabled
     };
     if is_edit {
-        let old = state(lua).focus.replace(id);
-        if let Some(o) = old.filter(|&o| o != id) {
-            fire_script(lua, o, "OnEditFocusLost", ());
-        }
-        if old != Some(id) {
-            fire_script(lua, id, "OnEditFocusGained", ());
-        }
+        crate::editbox::set_focus(lua, id);
     }
     crate::movement::raise_toplevel(lua, id);
     {
@@ -311,26 +305,6 @@ pub fn mouse_wheel(lua: &Lua, delta: f64) {
     }
 }
 
-/// Typed text: goes to the focused edit box, one character at a time, as
-/// OnChar and OnTextChanged(userInput = true). Returns false without a
-/// focused edit box.
-pub fn text_input(lua: &Lua, text: &str) -> bool {
-    let Some(id) = state(lua).focus else {
-        return false;
-    };
-    for c in text.chars() {
-        let current = state(lua).frames[id]
-            .text
-            .as_deref()
-            .map(|t| t.text.clone())
-            .unwrap_or_default();
-        crate::widgets::set_text(lua, id, format!("{current}{c}"));
-        fire_script(lua, id, "OnChar", c.to_string());
-        fire_script(lua, id, "OnTextChanged", true);
-    }
-    true
-}
-
 /// The key without modifiers: `SHIFT-P` is `P`, `CTRL--` is `-`.
 pub fn base_key(key: &str) -> &str {
     let mut rest = key;
@@ -390,27 +364,22 @@ pub fn key_up(lua: &Lua, key: &str) {
     }
 }
 
+/// Typed text: goes to the focused edit box, one character at a time, as
+/// OnChar and OnTextChanged(userInput = true). Returns false without a
+/// focused edit box.
+pub fn text_input(lua: &Lua, text: &str) -> bool {
+    let Some(id) = state(lua).focus else {
+        return false;
+    };
+    crate::editbox::type_text(lua, id, text);
+    true
+}
+
 /// Keys that a focused edit box handles itself. Returns true if the key
 /// went to the edit box.
 pub fn edit_box_key(lua: &Lua, key: &str) -> bool {
     let Some(id) = state(lua).focus else {
         return false;
     };
-    match key.to_ascii_uppercase().as_str() {
-        "BACKSPACE" => {
-            let mut text = state(lua).frames[id]
-                .text
-                .as_deref()
-                .map(|t| t.text.clone())
-                .unwrap_or_default();
-            text.pop();
-            crate::widgets::set_text(lua, id, text);
-            fire_script(lua, id, "OnTextChanged", true);
-        }
-        "ENTER" => fire_script(lua, id, "OnEnterPressed", ()),
-        "ESCAPE" => fire_script(lua, id, "OnEscapePressed", ()),
-        "TAB" => fire_script(lua, id, "OnTabPressed", ()),
-        _ => return false,
-    }
-    true
+    crate::editbox::key(lua, id, key)
 }

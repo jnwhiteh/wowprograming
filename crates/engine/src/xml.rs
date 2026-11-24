@@ -581,6 +581,29 @@ fn apply_attributes(
             "enableMouseClicks" => state(lua).frames[id].mouse_enabled = b,
             "enableMouseMotion" => state(lua).frames[id].mouse_motion = b,
             "movable" => state(lua).frames[id].movable = b,
+            "resizable" => state(lua).frames[id].resizable = b,
+            "clampedToScreen" => state(lua).frames[id].clamped = b,
+            "dontSavePosition" => state(lua).frames[id].dont_save_position = b,
+            "enableKeyboard" => state(lua).frames[id].keyboard_enabled = b,
+            "propagateKeyboardInput" => state(lua).frames[id].propagate_keyboard = b,
+            "autoFocus" | "multiLine" | "numeric" | "letters" | "bytes" | "historyLines"
+                if state(lua).frames[id].edit.is_some() =>
+            {
+                let mut st = state(lua);
+                let e = st.frames[id].edit.as_deref_mut().expect("edit state");
+                match key.as_str() {
+                    "autoFocus" => e.auto_focus = b,
+                    "multiLine" => e.multi_line = b,
+                    "numeric" => e.numeric = b,
+                    "letters" => e.max_letters = f.max(0.0) as usize,
+                    "bytes" => e.max_bytes = f.max(0.0) as usize,
+                    _ => e.history_lines = f.max(0.0) as usize,
+                }
+            }
+            "registerForDrag" => {
+                state(lua).frames[id].drag_buttons =
+                    value.split(',').map(|s| s.trim().to_string()).collect();
+            }
             "clipChildren" => state(lua).frames[id].clips_children = b,
             "ignoreParentAlpha" => state(lua).frames[id].ignore_parent_alpha = b,
             "ignoreParentScale" => state(lua).frames[id].ignore_parent_scale = b,

@@ -644,6 +644,21 @@ pub fn font_string_lines_in(
     (font, lines)
 }
 
+/// Width of `prefix` in the font of a widget, and its line height, in the
+/// widget's units. Edit boxes use it to place the cursor.
+pub fn prefix_width(st: &mut State, id: FrameId, prefix: &str) -> (f64, f64) {
+    let mut font = resolve_font(st, id);
+    let ppu = crate::layout::effective_scale(st, id) * st.pixel_scale;
+    font.line_height = snap_height(font.height, ppu);
+    font.pixels_per_unit = ppu;
+    let m = Measurer::new(st, &font);
+    let line = prefix.rsplit('\n').next().unwrap_or("");
+    let chars: Vec<char> = line.chars().collect();
+    // The cursor stands at the pen position after the prefix.
+    let width: f64 = pen_advances(&m, &chars).iter().sum();
+    (width, font.line_height)
+}
+
 /// Size of a font string's text: widest line and total height.
 pub fn string_size(st: &mut State, id: FrameId, wrap_width: Option<f64>) -> (f64, f64) {
     let (font, lines) = font_string_lines(st, id, wrap_width);

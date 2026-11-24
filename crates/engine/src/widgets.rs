@@ -1431,7 +1431,7 @@ fn font_instance_methods(lua: &Lua) -> Result<Table> {
     Ok(m)
 }
 
-fn lua_tostring(lua: &Lua, v: &Value) -> Result<String> {
+pub fn lua_tostring(lua: &Lua, v: &Value) -> Result<String> {
     match v {
         Value::Nil => Ok(String::new()),
         Value::String(s) => Ok(s.to_string_lossy()),
@@ -2738,21 +2738,6 @@ fn check_button_methods(lua: &Lua) -> Result<Table> {
 
 fn edit_box_methods(lua: &Lua) -> Result<Table> {
     let m = lua.create_table()?;
-    method!(lua, m, "SetText", |lua, (this_, t): (Value, Value)| {
-        let id = this(&this_)?;
-        let s = lua_tostring(lua, &t)?;
-        // Setting the same text again does not count as a change (handlers
-        // that set the text from OnTextChanged would loop otherwise).
-        let unchanged = state(lua).frames[id]
-            .text
-            .as_deref()
-            .is_some_and(|t| t.text == s);
-        set_text(lua, id, s);
-        if !unchanged {
-            fire_script(lua, id, "OnTextChanged", false);
-        }
-        Ok(())
-    });
     method!(lua, m, "GetText", |lua, this_: Value| {
         with(lua, &this_, |f| {
             f.text
@@ -2769,17 +2754,6 @@ fn edit_box_methods(lua: &Lua) -> Result<Table> {
                 .unwrap_or_default()
         })
     });
-    method!(lua, m, "Insert", |lua, (this_, t): (Value, String)| {
-        let id = this(&this_)?;
-        let current = state(lua).frames[id]
-            .text
-            .as_deref()
-            .map(|t| t.text.clone())
-            .unwrap_or_default();
-        set_text(lua, id, current + &t);
-        fire_script(lua, id, "OnTextChanged", true);
-        Ok(())
-    });
     method!(lua, m, "GetNumLetters", |lua, this_: Value| {
         with(lua, &this_, |f| {
             f.text
@@ -2787,17 +2761,6 @@ fn edit_box_methods(lua: &Lua) -> Result<Table> {
                 .map(|t| t.text.chars().count())
                 .unwrap_or(0)
         })
-    });
-    method!(lua, m, "SetFocus", |lua, this_: Value| {
-        let id = this(&this_)?;
-        let old = state(lua).focus.replace(id);
-        if let Some(old) = old.filter(|&o| o != id) {
-            fire_script(lua, old, "OnEditFocusLost", ());
-        }
-        if old != Some(id) {
-            fire_script(lua, id, "OnEditFocusGained", ());
-        }
-        Ok(())
     });
     method!(lua, m, "ClearFocus", |lua, this_: Value| {
         let id = this(&this_)?;
@@ -2820,30 +2783,14 @@ fn edit_box_methods(lua: &Lua) -> Result<Table> {
     });
     enable_methods(lua, &m)?;
     for name in [
-        "SetAutoFocus",
-        "SetMaxLetters",
-        "SetMaxBytes",
-        "SetMultiLine",
-        "SetNumeric",
-        "SetCursorPosition",
-        "HighlightText",
-        "SetCountInvisibleLetters",
-        "SetHistoryLines",
-        "AddHistoryLine",
         "SetBlinkSpeed",
         "SetVisibleTextByteLimit",
-        "SetAltArrowKeyMode",
         "SetSecureText",
         "SetSecurityDisablePaste",
         "SetSecurityDisableSetText",
     ] {
         m.raw_set(name, empty_fn(lua)?)?;
     }
-    empty!(lua, m, "IsAutoFocus", |_, _this: Value| Ok(false));
-    empty!(lua, m, "IsMultiLine", |_, _this: Value| Ok(false));
-    empty!(lua, m, "IsNumeric", |_, _this: Value| Ok(false));
-    empty!(lua, m, "GetMaxLetters", |_, _this: Value| Ok(0));
-    empty!(lua, m, "GetCursorPosition", |_, _this: Value| Ok(0));
     method!(lua, m, "SetTextInsets", |lua, args: Variadic<Value>| {
         let id = this(args.first().unwrap_or(&Value::Nil))?;
         let v: Vec<f64> = (1..5).map(|i| num(args.get(i))).collect();
@@ -2867,6 +2814,7 @@ fn edit_box_methods(lua: &Lua) -> Result<Table> {
                 .unwrap_or(0.0)
         })
     });
+    crate::editbox::methods(lua, &m)?;
     Ok(m)
 }
 

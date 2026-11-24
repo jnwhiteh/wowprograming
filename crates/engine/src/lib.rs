@@ -9,6 +9,7 @@ pub mod bindings;
 pub mod clientnames;
 pub mod control;
 pub mod coverage;
+pub mod editbox;
 pub mod frames;
 pub mod gamedata;
 pub mod input;
@@ -224,6 +225,9 @@ impl Engine {
             return;
         }
         let lua = self.runtime.lua();
+        // Data the client keeps for the UI (Edit Mode layouts), from the
+        // sandbox's own files.
+        savedvars::load(lua, EDIT_MODE_FILE);
         if let Some(dir) = &self.config.scenario {
             let full_ui = self.config.blizzard_addons.iter().any(|n| n == "*");
             load_scenario(lua, dir, full_ui);
@@ -676,7 +680,7 @@ impl Engine {
     pub fn reload(&mut self) {
         self.fire_event("PLAYER_LEAVING_WORLD", ());
         addons::save_all(self.runtime.lua());
-        layoutcache::save(self.runtime.lua());
+        save_client_files(self.runtime.lua());
         let pending = self.drain_output();
         match build_runtime(&self.config, self.gamedata.clone()) {
             Ok(runtime) => {
@@ -697,7 +701,7 @@ impl Engine {
         self.fire_event("PLAYER_LOGOUT", ());
         self.fire_event("PLAYER_LEAVING_WORLD", ());
         addons::save_all(self.runtime.lua());
-        layoutcache::save(self.runtime.lua());
+        save_client_files(self.runtime.lua());
     }
 
     /// Take all output produced since the last call.
@@ -720,6 +724,32 @@ impl Engine {
             .filter(|a| a.load_state == LoadState::Loaded)
             .map(|a| a.name.clone())
             .collect()
+    }
+}
+
+/// SavedVariables file name of the Edit Mode layouts the client keeps
+/// (`C_EditMode` in `lua/client.lua`).
+const EDIT_MODE_FILE: &str = "WowProgramming_EditMode";
+
+/// Write the data the client keeps for the UI: moved frames and Edit
+/// Mode layouts.
+fn save_client_files(lua: &Lua) {
+    layoutcache::save(lua);
+    if state(lua).glue {
+        return;
+    }
+    let has = |name: &str| {
+        lua.globals()
+            .raw_get::<Value>(name)
+            .is_ok_and(|v| !v.is_nil())
+    };
+    if has("WowProgramming_EditModeAccount") || has("WowProgramming_EditModeCharacter") {
+        savedvars::save(
+            lua,
+            EDIT_MODE_FILE,
+            &["WowProgramming_EditModeAccount".to_string()],
+            &["WowProgramming_EditModeCharacter".to_string()],
+        );
     }
 }
 

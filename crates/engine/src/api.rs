@@ -224,9 +224,19 @@ pub fn install(lua: &Lua) -> Result<()> {
             lua.create_function(move |_, ()| Ok(mt.clone()))?,
         )?;
     }
+    // client.lua receives a function that fires client events.
+    let fire = lua.create_function(|lua, args: MultiValue| {
+        let mut args = args.into_iter();
+        let Some(Value::String(event)) = args.next() else {
+            return Ok(());
+        };
+        let event = event.to_string_lossy();
+        crate::frames::dispatch_event(lua, &event, args.collect());
+        Ok(())
+    })?;
     lua.load(include_str!("lua/client.lua"))
         .set_name("=[C]")
-        .exec()?;
+        .call::<()>(fire)?;
     // Undocumented client functions the UI calls at load time.
     g.set(
         "RegisterStaticConstants",

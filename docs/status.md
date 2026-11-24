@@ -176,6 +176,11 @@ Last updated: 2026-11-24.
   `S.ApplyCVars`, `S.SpellbookStandIns` (for reduced UIs).
 - Capture addon (`tools/capture/WowProgrammingCapture`) and
   `wowprogramming import-capture`; see [capture.md](capture.md).
+- Edit boxes (`editbox.rs`): cursor, highlight, letter and byte limits,
+  numeric input, autoFocus, editing keys, OnCursorChanged, OnTextSet.
+- Edit Mode: enter, drag a HUD frame, save a new layout, leave; layouts
+  are kept by `C_EditMode` in `lua/client.lua` and saved in the
+  sandbox's `WowProgramming_EditMode.lua`.
 - Keyboard: the focused edit box, then keyboard-enabled frames (top
   first, OnKeyDown, propagation, OnKeyUp to the frame that took the
   press), then key bindings.
@@ -253,7 +258,10 @@ done criteria; rules and open questions in
    raising, `layout-local.txt` (real BugSack checked with `--addon
    BugSack`), the enabled state of edit boxes and sliders, keyboard
    input (`crates/engine/tests/full_ui.rs` checks raising, Escape and
-   key blocking in the full UI; it takes about 20 s). Next: Edit Mode, edit boxes, sliders and scroll bars,
+   key blocking in the full UI), Edit Mode end to end (the same test:
+   drag the player frame, save a new layout, leave, `/reload`; the test
+   needs the game data from `config.local.toml` and takes about 50 s in
+   release), edit box editing. Next: sliders and scroll bars,
    cooldowns (scope.md has the order).
 4. When a behavior is unknown, implement a best guess, mark it
    "inferred" in client-runtime.md and add a question to its "Open
@@ -341,6 +349,7 @@ Decisions already made with the user. Do not reopen them without a reason.
 | `tools/compare/compare_frames.lua` | Compares sandbox rectangles with a capture |
 | `crates/engine/src/input.rs`, `movement.rs` | Mouse input and click rules; moving, sizing, clamping, raising |
 | `crates/engine/src/layoutcache.rs` | User-placed positions in the sandbox's `layout-local.txt` |
+| `crates/engine/src/editbox.rs` | Edit box editing: cursor, highlight, limits, keys, autoFocus |
 | `crates/engine/src/coverage.rs` | The coverage report (`wowprogramming coverage`) |
 | `crates/engine/src/apidoc.rs` | `Enum` and `Constants` from the API documentation |
 | `crates/engine/src/savedvars.rs` | SavedVariables reading and writing |

@@ -265,6 +265,59 @@ Sources: W = warcraft.wiki.gg page named after the function or handler
   of 189 edit boxes in Blizzard's XML set it). A disabled edit box does
   not take the focus from a click and loses it when disabled (inferred).
 
+### Edit boxes
+
+Implemented in `editbox.rs`.
+
+- Positions are byte offsets (`GetCursorPosition`;
+  `GetUTF8CursorPosition` counts characters) (W, the documentation names
+  both).
+- `autoFocus` defaults to true (UI.xsd). An edit box with autoFocus
+  takes the keyboard focus when it becomes visible, after its OnShow
+  (order inferred). The new layout dialog of Edit Mode relies on it.
+- Typing inserts at the cursor and replaces highlighted text; OnChar
+  then fires for each inserted character. `SetMaxLetters` and
+  `SetMaxBytes` limit typing, `SetText` and `Insert`; a lower limit cuts
+  the current text (inferred). Numeric edit boxes drop non-digits.
+- `SetText` puts the cursor at the end and clears the highlight, then
+  fires OnTextSet, then OnTextChanged(false) if the text changed (order
+  inferred). `HighlightText()` selects all; `(start, end)` selects a
+  range; a negative end means the end; equal positions clear it.
+  `SetCursorPosition` clears the highlight (inferred).
+- Keys: BACKSPACE, DELETE, LEFT, RIGHT, HOME, END (to the line ends in
+  multi-line boxes), SHIFT with arrows and HOME/END grows the highlight,
+  ENTER (OnEnterPressed; a multi-line box without that handler inserts a
+  new line, inferred), ESCAPE, TAB, SPACE (OnSpacePressed).
+- OnCursorChanged gets `(x, y, width, height)` of the cursor: x is the
+  pen position after the text before the cursor, y is minus the line
+  height times the line number, width 1 (width inferred).
+- Not yet: clicking places the cursor at the click (the cursor stays
+  where it was), history keys, IME.
+
+### Edit Mode
+
+- The client keeps the saved layouts. `C_EditMode` is in
+  `lua/client.lua`: `GetLayouts` returns the account layouts, then the
+  character layouts, and the active layout index (counting Blizzard's
+  presets first); `SaveLayouts` drops the presets that Blizzard's Lua
+  passes in; `GetAccountSettings` returns every
+  `Enum.EditModeAccountSetting` (0, grid spacing 100 from
+  `Constants.EditModeConsts`). The sandbox stores them in its own
+  SavedVariables file `WowProgramming_EditMode.lua` (account and
+  character scope), written at `/reload` and logout. The real client
+  keeps them on the server and in `edit-mode-cache-*.txt`; reading the
+  account's real layouts belongs to the client state goal.
+- `SetActiveLayout` and `OnLayoutAdded(index, activate)` make the client
+  send EDIT_MODE_LAYOUTS_UPDATED with the layouts on the next frame;
+  Blizzard's Edit Mode applies the active layout then (inferred:
+  `SelectLayout` does nothing else). After `OnLayoutDeleted` the sandbox
+  activates the first preset if the deleted layout was active
+  (inferred).
+- Selection frames come from XML with `registerForDrag`, `toplevel` and
+  `dontSavePosition`; the XML loader now applies those and the other
+  frame attributes of UI.xsd (`resizable`, `clampedToScreen`,
+  `enableKeyboard`, `propagateKeyboardInput`).
+
 ### Keyboard
 
 - `EnableKeyboard(true)` lets a shown frame get OnKeyDown and OnKeyUp
@@ -336,6 +389,12 @@ justify one session. Each question names what the probe measures.
     the button name as `alwaysStartFromMouse`: does the window jump to
     keep the press offset, or follow from where the drag started?
 16. Can `SetFocus()` focus a disabled edit box?
+17. Edit Mode: after `C_EditMode.SetActiveLayout`, does
+    EDIT_MODE_LAYOUTS_UPDATED arrive, and with `reconcileLayouts`
+    true or false? Which layout is active after deleting the active one?
+18. Edit box: the order of OnTextSet and OnTextChanged after `SetText`;
+    does `SetCursorPosition` clear the highlight; does a multi-line
+    edit box with an OnEnterPressed handler also insert the new line?
 
 ## Later layers (not part of the current goal)
 

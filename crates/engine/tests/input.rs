@@ -481,3 +481,75 @@ fn a_focused_edit_box_gets_on_key_down_first() {
     e.key_down("ESCAPE");
     assert_eq!(log(&e), "frame");
 }
+
+#[test]
+fn edit_boxes_edit_at_the_cursor() {
+    let wtf = tempfile::tempdir().unwrap();
+    let mut e = started(wtf.path());
+    e.exec(
+        r#"
+        Log = {}
+        E = CreateFrame("EditBox", nil, UIParent)
+        E:SetAutoFocus(false)
+        E:SetScript("OnCursorChanged", function(_, x, y, w, h) table.insert(Log, "cursor") end)
+        E:SetMaxLetters(8)
+        E:SetText("hello")
+        E:SetFocus()
+        "#,
+    );
+    let text = |e: &Engine| -> (String, i64) {
+        e.eval("return E:GetText(), E:GetCursorPosition()").unwrap()
+    };
+    // SetText puts the cursor at the end.
+    assert_eq!(text(&e), ("hello".into(), 5));
+    e.key_down("LEFT");
+    e.key_down("LEFT");
+    e.text_input("XY");
+    assert_eq!(text(&e), ("helXYlo".into(), 5));
+    e.key_down("BACKSPACE");
+    e.key_down("DELETE");
+    assert_eq!(text(&e), ("helXo".into(), 4));
+    // The letter limit holds for typing.
+    e.text_input("123456");
+    assert_eq!(text(&e), ("helX123o".into(), 7));
+    // Typing replaces highlighted text.
+    e.exec("E:HighlightText()");
+    e.text_input("new");
+    assert_eq!(text(&e), ("new".into(), 3));
+    e.exec("E:HighlightText(0, 1)");
+    e.key_down("BACKSPACE");
+    assert_eq!(text(&e), ("ew".into(), 0));
+    // Shift with arrows highlights; HOME and END jump.
+    e.key_down("END");
+    e.key_down("SHIFT-LEFT");
+    e.key_down("SHIFT-LEFT");
+    let selected: String = e.eval("return E:GetHighlightText()").unwrap();
+    assert_eq!(selected, "ew");
+    e.exec("E:SetCursorPosition(1) E:SetNumeric(true)");
+    e.text_input("a1b2");
+    assert_eq!(text(&e), ("e12w".into(), 3));
+    assert!(log(&e).contains("cursor"));
+    // SetMaxLetters cuts longer text.
+    e.exec("E:SetMaxLetters(2)");
+    assert_eq!(text(&e), ("e1".into(), 2));
+}
+
+#[test]
+fn edit_boxes_take_the_focus_when_shown() {
+    let wtf = tempfile::tempdir().unwrap();
+    let e = started(wtf.path());
+    e.exec(
+        r#"
+        A = CreateFrame("EditBox", nil, UIParent)
+        A:Hide()
+        B = CreateFrame("EditBox", nil, UIParent)
+        B:SetAutoFocus(false)
+        B:Hide()
+        "#,
+    );
+    assert!(!e.has_text_focus());
+    e.exec("B:Show()");
+    assert!(!e.has_text_focus());
+    e.exec("A:Show()");
+    assert!(e.eval::<bool>("return A:HasFocus()").unwrap());
+}

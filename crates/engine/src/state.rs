@@ -149,6 +149,44 @@ impl Default for TextState {
     }
 }
 
+/// Edit box state. Positions are byte offsets into the text.
+#[derive(Clone, Debug)]
+pub struct EditState {
+    pub cursor: usize,
+    /// Highlighted text: anchor and end (either order).
+    pub highlight: Option<(usize, usize)>,
+    /// 0 means no limit.
+    pub max_letters: usize,
+    pub max_bytes: usize,
+    pub numeric: bool,
+    pub multi_line: bool,
+    pub auto_focus: bool,
+    pub alt_arrow_key_mode: bool,
+    pub count_invisible_letters: bool,
+    pub history: Vec<String>,
+    pub history_lines: usize,
+}
+
+impl Default for EditState {
+    fn default() -> Self {
+        Self {
+            cursor: 0,
+            highlight: None,
+            max_letters: 0,
+            max_bytes: 0,
+            numeric: false,
+            multi_line: false,
+            // Edit boxes take the focus when shown unless told otherwise
+            // (UI.xsd: autoFocus defaults to true).
+            auto_focus: true,
+            alt_arrow_key_mode: false,
+            count_invisible_letters: false,
+            history: Vec::new(),
+            history_lines: 0,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct ButtonState {
     pub enabled: bool,
@@ -265,6 +303,7 @@ pub struct FrameData {
     pub font: Option<Box<FontAttrs>>,
     pub text: Option<Box<TextState>>,
     pub button: Option<Box<ButtonState>>,
+    pub edit: Option<Box<EditState>>,
     pub anim: Option<Box<AnimState>>,
     /// Slider and status bar values: min, max, value.
     pub value: (f64, f64, f64),
@@ -330,6 +369,7 @@ impl FrameData {
             font: None,
             text: None,
             button: None,
+            edit: None,
             anim: None,
             value: (0.0, 0.0, 0.0),
             status_texture: None,

@@ -1,6 +1,13 @@
 -- Client functions written in Lua because they build on data that other
 -- client functions return (named colors, for example).
 local ipairs, pairs, type, rawget, rawset, setmetatable, _G = ipairs, pairs, type, rawget, rawset, setmetatable, _G
+local fireNow = ...
+
+-- Events that answer a request arrive on a later frame, as in the client.
+local function fireLater(event, ...)
+    local args, n = { ... }, select("#", ...)
+    C_Timer.After(0, function() fireNow(event, unpack(args, 1, n)) end)
+end
 
 C_ColorOverrides = C_ColorOverrides or {}
 
@@ -120,11 +127,91 @@ function UnitExists(unit)
     return unit == "player"
 end
 
--- Edit mode layouts: without a capture, no saved layouts and the first
--- preset (Modern) active, as for a new character.
+-- Edit mode: the client keeps the saved layouts and account settings.
+-- The sandbox stores them in two SavedVariables of its own (see
+-- docs/client-runtime.md, "Edit Mode"): account layouts and settings in
+-- WowProgramming_EditModeAccount, character layouts and the active
+-- layout in WowProgramming_EditModeCharacter. A new character has no
+-- saved layouts and the first preset (Modern) active.
 C_EditMode = C_EditMode or {}
+local function editModeStore()
+    local account = rawget(_G, "WowProgramming_EditModeAccount")
+    if type(account) ~= "table" then
+        account = { layouts = {}, settings = {} }
+        rawset(_G, "WowProgramming_EditModeAccount", account)
+    end
+    local character = rawget(_G, "WowProgramming_EditModeCharacter")
+    if type(character) ~= "table" then
+        character = { layouts = {}, activeLayout = 1 }
+        rawset(_G, "WowProgramming_EditModeCharacter", character)
+    end
+    return account, character
+end
+local LAYOUT_PRESET, LAYOUT_ACCOUNT = 0, 1
 function C_EditMode.GetLayouts()
-    return { layouts = {}, activeLayout = 1 }
+    local account, character = editModeStore()
+    local layouts = {}
+    for _, l in ipairs(account.layouts) do layouts[#layouts + 1] = deepcopy(l) end
+    for _, l in ipairs(character.layouts) do layouts[#layouts + 1] = deepcopy(l) end
+    return { layouts = layouts, activeLayout = character.activeLayout }
+end
+function C_EditMode.SaveLayouts(saveInfo)
+    local account, character = editModeStore()
+    account.layouts, character.layouts = {}, {}
+    for _, l in ipairs(saveInfo.layouts or {}) do
+        -- Presets come from Blizzard's Lua; only the player's own layouts
+        -- are stored.
+        if l.layoutType == LAYOUT_ACCOUNT then
+            account.layouts[#account.layouts + 1] = deepcopy(l)
+        elseif l.layoutType ~= LAYOUT_PRESET then
+            character.layouts[#character.layouts + 1] = deepcopy(l)
+        end
+    end
+    character.activeLayout = saveInfo.activeLayout or character.activeLayout
+end
+-- Changing the active layout sends the layouts again; Blizzard's Edit
+-- Mode applies the active one when EDIT_MODE_LAYOUTS_UPDATED arrives
+-- (inferred from SelectLayout, which does nothing else).
+function C_EditMode.SetActiveLayout(index)
+    local _, character = editModeStore()
+    character.activeLayout = index
+    fireLater("EDIT_MODE_LAYOUTS_UPDATED", C_EditMode.GetLayouts(), false)
+end
+function C_EditMode.GetAccountSettings()
+    local account = editModeStore()
+    local out = {}
+    for _, setting in pairs(Enum.EditModeAccountSetting or {}) do
+        local default = 0
+        if setting == (Enum.EditModeAccountSetting.GridSpacing) then
+            local c = Constants.EditModeConsts
+            default = c and c.EditModeDefaultGridSpacing or 100
+        end
+        out[#out + 1] = { setting = setting, value = account.settings[setting] or default }
+    end
+    table.sort(out, function(a, b) return a.setting < b.setting end)
+    return out
+end
+function C_EditMode.SetAccountSetting(setting, value)
+    local account = editModeStore()
+    account.settings[setting] = value
+end
+function C_EditMode.IsValidLayoutName(name)
+    return type(name) == "string" and name:match("%S") ~= nil
+end
+function C_EditMode.OnEditModeExit() end
+function C_EditMode.OnLayoutAdded(index, activate)
+    if activate then
+        C_EditMode.SetActiveLayout(index)
+    end
+end
+-- After a deletion the client activates a preset (inferred: the first).
+function C_EditMode.OnLayoutDeleted(index)
+    local _, character = editModeStore()
+    if character.activeLayout == index then
+        C_EditMode.SetActiveLayout(1)
+    elseif character.activeLayout > index then
+        C_EditMode.SetActiveLayout(character.activeLayout - 1)
+    end
 end
 
 -- Units without an assigned group role report "NONE".

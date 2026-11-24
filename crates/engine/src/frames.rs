@@ -309,6 +309,7 @@ pub fn create_object(
         }));
     }
     if object_type == "EditBox" {
+        data.edit = Some(Box::default());
         // Edit boxes take clicks without enableMouse: almost no Blizzard
         // edit box sets it (inferred).
         data.mouse_enabled = true;
@@ -474,6 +475,9 @@ pub fn change_visibility(lua: &Lua, id: FrameId, change: impl FnOnce(&mut Vec<Fr
                 crate::movement::raise(lua, f);
             }
             fire_script(lua, f, "OnShow", ());
+            if state(lua).frames[f].object_type == "EditBox" && is_visible(&state(lua).frames, f) {
+                crate::editbox::shown(lua, f);
+            }
         }
     }
 }
@@ -566,6 +570,7 @@ pub const FIRED_SCRIPTS: &[&str] = &[
     "OnAttributeChanged",
     "OnChar",
     "OnClick",
+    "OnCursorChanged",
     "OnDisable",
     "OnDoubleClick",
     "OnDragStart",
@@ -588,8 +593,10 @@ pub const FIRED_SCRIPTS: &[&str] = &[
     "OnMouseWheel",
     "OnShow",
     "OnSizeChanged",
+    "OnSpacePressed",
     "OnTabPressed",
     "OnTextChanged",
+    "OnTextSet",
     "OnUpdate",
     "OnValueChanged",
     "OnVerticalScroll",
@@ -731,6 +738,7 @@ mod tests {
             include_str!("input.rs"),
             include_str!("widgets.rs"),
             include_str!("xml.rs"),
+            include_str!("editbox.rs"),
         ];
         let mut found = std::collections::BTreeSet::new();
         for src in sources {
