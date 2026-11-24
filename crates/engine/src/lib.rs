@@ -22,6 +22,7 @@ pub mod text;
 pub mod timers;
 pub mod toc;
 pub mod widgets;
+pub mod world;
 pub mod xml;
 
 use std::collections::HashMap;
@@ -46,6 +47,8 @@ pub struct WorldEntry {
     pub class: String,
     /// Race file name, such as "Dwarf".
     pub race: String,
+    /// ChrRaces ID.
+    pub race_id: u32,
     /// 0 male, 1 female (genderEnum).
     pub sex: i64,
     pub level: i64,
@@ -70,6 +73,7 @@ impl WorldEntry {
             realm: s("realmName"),
             class: s("classFilename"),
             race: s("raceFilename"),
+            race_id: n("raceID").unwrap_or(0) as u32,
             sex: n("genderEnum").unwrap_or(0),
             level: n("experienceLevel").unwrap_or(1),
             faction: s("faction"),
@@ -85,6 +89,7 @@ impl WorldEntry {
         t.set("realm", self.realm.as_str())?;
         t.set("class", self.class.as_str())?;
         t.set("race", self.race.as_str())?;
+        t.set("raceID", self.race_id)?;
         t.set("sex", self.sex)?;
         t.set("level", self.level)?;
         t.set("faction", self.faction.as_str())?;
@@ -420,6 +425,40 @@ impl Engine {
                 .copy_from_slice(&rgba[src..src + (x1 - x0) * 4]);
         }
         render::write_png(path, w, h, &out)
+    }
+
+    /// Whose model the 3D view shows, as (ChrRaces ID, sex 0/1), and
+    /// whether it is the character select view. On character select it is
+    /// the selected character; in the game, the player.
+    pub fn world_subject(&self) -> Option<(u32, u32, bool)> {
+        let lua = self.runtime.lua();
+        if self.config.glue {
+            let (race, sex): (Option<u32>, Option<u32>) = lua
+                .load(
+                    "local c = GlueCharacters and GetCharacterSelection \
+                     and GlueCharacters[GetCharacterSelection()] \
+                     return c and c.raceID, c and c.genderEnum",
+                )
+                .eval()
+                .unwrap_or((None, None));
+            return race.map(|r| (r, sex.unwrap_or(0), true));
+        }
+        if let Some(e) = &state(lua).world_entry
+            && e.race_id != 0
+        {
+            return Some((e.race_id, e.sex.max(0) as u32, false));
+        }
+        let (race, sex): (Option<u32>, Option<u32>) = lua
+            .load("return select(3, UnitRace(\"player\")), UnitSex(\"player\")")
+            .eval()
+            .unwrap_or((None, None));
+        race.filter(|&r| r != 0).map(|r| {
+            (
+                r,
+                sex.map(|s| if s == 3 { 1 } else { 0 }).unwrap_or(0),
+                false,
+            )
+        })
     }
 
     /// The character that EnterWorld() asked to play, once.

@@ -311,9 +311,40 @@ pub fn render_with(
     scale: f64,
     fonts: &mut FontStore,
 ) -> Canvas {
+    render_over(scene, gd, scale, fonts, None)
+}
+
+/// Like [`render_with`], drawing the UI over `background` (such as the 3D
+/// world), stretched to the canvas size.
+pub fn render_over(
+    scene: &Scene,
+    gd: Option<&GameData>,
+    scale: f64,
+    fonts: &mut FontStore,
+    background: Option<&crate::loading::Rgba>,
+) -> Canvas {
     let width = (scene.width * scale).round() as usize;
     let height = (scene.height * scale).round() as usize;
     let mut pixels = vec![BACKGROUND; width * height];
+    if let Some(bg) = background
+        && bg.width > 0
+        && bg.height > 0
+    {
+        for y in 0..height {
+            let sy = (y * bg.height / height.max(1)).min(bg.height - 1);
+            for x in 0..width {
+                let sx = (x * bg.width / width.max(1)).min(bg.width - 1);
+                let i = (sy * bg.width + sx) * 4;
+                let p = &bg.data[i..i + 4];
+                pixels[y * width + x] = [
+                    p[0] as f32 / 255.0,
+                    p[1] as f32 / 255.0,
+                    p[2] as f32 / 255.0,
+                    1.0,
+                ];
+            }
+        }
+    }
 
     // Look up images and fonts on this thread; the bands only read them.
     let mut images: HashMap<crate::gamedata::ImageKey, Option<std::rc::Rc<Image>>> = HashMap::new();

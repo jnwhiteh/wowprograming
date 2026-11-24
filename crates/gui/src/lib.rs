@@ -13,7 +13,7 @@ use std::time::Instant;
 use eframe::egui::{self, Color32, FontId, Key, Pos2, Rect, TextureHandle, TextureOptions, Vec2};
 use wowprogramming_engine::control::{Action, ControlServer};
 use wowprogramming_engine::scene::Scene;
-use wowprogramming_engine::{Engine, Output, WorldEntry, loading, render};
+use wowprogramming_engine::{Engine, Output, WorldEntry, loading, render, world};
 
 /// Starts a game session for a character chosen on the character select
 /// screen (builds and starts a new engine).
@@ -53,6 +53,8 @@ pub struct App {
     resized_to_monitor: bool,
     factory: Option<WorldFactory>,
     loading: Option<Loading>,
+    /// The 3D view behind the UI and whose model it shows.
+    world: Option<((u32, u32, bool), world::World)>,
 }
 
 /// How to open the window.
@@ -115,6 +117,7 @@ impl App {
             resized_to_monitor: false,
             factory: None,
             loading: None,
+            world: None,
         };
         app.push_log(
             "F12 shows or hides this console. Type /dump <expr>, /run <code> or Lua here.".into(),
@@ -255,11 +258,32 @@ impl App {
         let area = Rect::from_min_size(origin, size);
         let pixels_per_point = ui.ctx().pixels_per_point();
         let scale = (k * pixels_per_point) as f64;
-        let canvas = render::render_with(
+        // The 3D world, at half the resolution, behind the UI.
+        let gd = self.engine.gamedata().cloned();
+        let subject = self.engine.world_subject();
+        let background = match (&gd, subject) {
+            (Some(gd), Some(subject)) => {
+                if self.world.as_ref().map(|(s, _)| *s) != Some(subject) {
+                    let (race, sex, charselect) = subject;
+                    let view = if charselect {
+                        world::View::CharacterSelect
+                    } else {
+                        world::View::Behind
+                    };
+                    self.world = Some((subject, world::demo_scene(gd, race, sex, view)));
+                }
+                let w = ((scene.width * scale) / 2.0).round().max(1.0) as usize;
+                let h = ((scene.height * scale) / 2.0).round().max(1.0) as usize;
+                self.world.as_ref().map(|(_, world)| world.render(gd, w, h))
+            }
+            _ => None,
+        };
+        let canvas = render::render_over(
             scene,
-            self.engine.gamedata().map(|g| g.as_ref()),
+            gd.as_deref(),
             scale,
             &mut self.fonts,
+            background.as_ref(),
         );
         let image = egui::ColorImage::from_rgba_unmultiplied(
             [canvas.width, canvas.height],

@@ -62,6 +62,37 @@ enum Command {
         file: String,
         out: PathBuf,
     },
+    /// Save a file from the game data (by FileDataID) for inspection.
+    Extract {
+        #[arg(long)]
+        game_dir: Option<PathBuf>,
+        file: u32,
+        out: PathBuf,
+    },
+    /// Print a model's textures, materials and geosets (M2, by FileDataID).
+    Model {
+        #[arg(long)]
+        game_dir: Option<PathBuf>,
+        file: u32,
+    },
+    /// Render the test world scene (see `world::demo_scene`) to a PNG file.
+    World {
+        #[arg(long)]
+        game_dir: Option<PathBuf>,
+        out: PathBuf,
+        /// ChrRaces ID of the player model.
+        #[arg(long, default_value_t = 3)]
+        race: u32,
+        #[arg(long, default_value_t = 0)]
+        sex: u32,
+        #[arg(long, default_value_t = 1720)]
+        width: usize,
+        #[arg(long, default_value_t = 720)]
+        height: usize,
+        /// Camera for character select instead of behind the player.
+        #[arg(long)]
+        charselect: bool,
+    },
     /// Render the loading screen of a map (Map.db2 ID) to a PNG file.
     LoadingScreen {
         #[arg(long)]
@@ -235,6 +266,128 @@ fn main() -> ExitCode {
                 img.height as usize,
                 &img.rgba,
             ) {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(e) => {
+                    eprintln!("cannot write {}: {e}", out.display());
+                    ExitCode::FAILURE
+                }
+            }
+        }
+        Command::Extract {
+            game_dir,
+            file,
+            out,
+        } => {
+            let dir = game_dir.or_else(|| {
+                let text = std::fs::read_to_string("config.local.toml").ok()?;
+                toml::from_str::<FileConfig>(&text).ok()?.game_dir
+            });
+            let Some(gd) = open_game_data(dir.as_deref()) else {
+                eprintln!("no game data; pass --game-dir");
+                return ExitCode::FAILURE;
+            };
+            match gd.read_file(file).map(|d| std::fs::write(&out, d)) {
+                Some(Ok(())) => ExitCode::SUCCESS,
+                Some(Err(e)) => {
+                    eprintln!("cannot write {}: {e}", out.display());
+                    ExitCode::FAILURE
+                }
+                None => {
+                    eprintln!("{file}: not found");
+                    ExitCode::FAILURE
+                }
+            }
+        }
+        Command::Model { game_dir, file } => {
+            let dir = game_dir.or_else(|| {
+                let text = std::fs::read_to_string("config.local.toml").ok()?;
+                toml::from_str::<FileConfig>(&text).ok()?.game_dir
+            });
+            let Some(gd) = open_game_data(dir.as_deref()) else {
+                eprintln!("no game data; pass --game-dir");
+                return ExitCode::FAILURE;
+            };
+            use wowprogramming_formats::m2;
+            let model = match gd.read_file(file).map(|d| m2::parse(&d)) {
+                Some(Ok(m)) => m,
+                Some(Err(e)) => {
+                    eprintln!("{file}: {e}");
+                    return ExitCode::FAILURE;
+                }
+                None => {
+                    eprintln!("{file}: not found");
+                    return ExitCode::FAILURE;
+                }
+            };
+            println!(
+                "{}: {} vertices, bounds {:?}..{:?}, skins {:?}",
+                model.name,
+                model.vertices.len(),
+                model.bounds_min,
+                model.bounds_max,
+                model.skin_files
+            );
+            for (i, t) in model.textures.iter().enumerate() {
+                println!("  texture {i}: kind {} file {}", t.kind, t.file);
+            }
+            let mut lo = [f32::MAX; 3];
+            let mut hi = [f32::MIN; 3];
+            for v in &model.vertices {
+                for k in 0..3 {
+                    lo[k] = lo[k].min(v.pos[k]);
+                    hi[k] = hi[k].max(v.pos[k]);
+                }
+            }
+            println!("  vertex positions {lo:?}..{hi:?}");
+            if let Some(skin) = model
+                .skin_files
+                .first()
+                .and_then(|f| gd.read_file(*f))
+                .map(|d| m2::parse_skin(&d))
+            {
+                match skin {
+                    Ok(skin) => {
+                        let ids: Vec<u16> = skin.sections.iter().map(|s| s.id).collect();
+                        println!("  {} batches, geosets {ids:?}", skin.batches.len());
+                    }
+                    Err(e) => println!("  skin: {e}"),
+                }
+            }
+            ExitCode::SUCCESS
+        }
+        Command::World {
+            game_dir,
+            out,
+            race,
+            sex,
+            width,
+            height,
+            charselect,
+        } => {
+            let dir = game_dir.or_else(|| {
+                let text = std::fs::read_to_string("config.local.toml").ok()?;
+                toml::from_str::<FileConfig>(&text).ok()?.game_dir
+            });
+            let Some(gd) = open_game_data(dir.as_deref()) else {
+                eprintln!("no game data; pass --game-dir");
+                return ExitCode::FAILURE;
+            };
+            let started = std::time::Instant::now();
+            let view = if charselect {
+                wowprogramming_engine::world::View::CharacterSelect
+            } else {
+                wowprogramming_engine::world::View::Behind
+            };
+            let world = wowprogramming_engine::world::demo_scene(&gd, race, sex, view);
+            println!(
+                "{} models in {} ms",
+                world.instances.len(),
+                started.elapsed().as_millis()
+            );
+            let started = std::time::Instant::now();
+            let img = world.render(&gd, width, height);
+            println!("rendered in {} ms", started.elapsed().as_millis());
+            match wowprogramming_engine::render::write_png(&out, img.width, img.height, &img.data) {
                 Ok(()) => ExitCode::SUCCESS,
                 Err(e) => {
                     eprintln!("cannot write {}: {e}", out.display());
