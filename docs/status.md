@@ -176,6 +176,9 @@ Last updated: 2026-11-24.
   `S.ApplyCVars`, `S.SpellbookStandIns` (for reduced UIs).
 - Capture addon (`tools/capture/WowProgrammingCapture`) and
   `wowprogramming import-capture`; see [capture.md](capture.md).
+- Keyboard: the focused edit box, then keyboard-enabled frames (top
+  first, OnKeyDown, propagation, OnKeyUp to the frame that took the
+  press), then key bindings.
 - Mouse input (`input.rs`, `movement.rs`, tests in
   `crates/engine/tests/input.rs`): the pressed frame captures the release
   (OnMouseUp with `upInside`), click registrations (Up and Down), double
@@ -248,7 +251,9 @@ done criteria; rules and open questions in
    `Engine::drag` for tests.
 3. Done: mouse capture, click rules, dragging, moving, sizing, clamping,
    raising, `layout-local.txt` (real BugSack checked with `--addon
-   BugSack`), the enabled state of edit boxes and sliders. Next: keyboard, Edit Mode, edit boxes, sliders and scroll bars,
+   BugSack`), the enabled state of edit boxes and sliders, keyboard
+   input (`crates/engine/tests/full_ui.rs` checks raising, Escape and
+   key blocking in the full UI; it takes about 20 s). Next: Edit Mode, edit boxes, sliders and scroll bars,
    cooldowns (scope.md has the order).
 4. When a behavior is unknown, implement a best guess, mark it
    "inferred" in client-runtime.md and add a question to its "Open

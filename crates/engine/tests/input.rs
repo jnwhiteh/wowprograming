@@ -415,3 +415,69 @@ fn edit_boxes_and_sliders_enable_and_disable() {
     e.mouse_up("LeftButton");
     assert!(e.has_text_focus());
 }
+
+#[test]
+fn keyboard_frames_take_keys_before_bindings() {
+    let wtf = tempfile::tempdir().unwrap();
+    let mut e = started(wtf.path());
+    e.exec(
+        r#"
+        Log = {}
+        Bound = 0
+        -- A stand-in for the client's binding of 1.
+        K1 = CreateFrame("Frame", "Low", UIParent)
+        K2 = CreateFrame("Frame", "High", UIParent)
+        K2:SetFrameLevel(K1:GetFrameLevel() + 5)
+        for _, f in ipairs({K1, K2}) do
+            f:EnableKeyboard(true)
+            f:SetScript("OnKeyDown", function(self, key)
+                table.insert(Log, self:GetName() .. ":down:" .. key)
+            end)
+            f:SetScript("OnKeyUp", function(self, key)
+                table.insert(Log, self:GetName() .. ":up:" .. key)
+            end)
+        end
+        -- High passes on everything except ESCAPE.
+        K2:SetScript("OnKeyDown", function(self, key)
+            table.insert(Log, "High:down:" .. key)
+            self:SetPropagateKeyboardInput(key ~= "ESCAPE")
+        end)
+        "#,
+    );
+    // P goes through High (propagates) to Low, which keeps it; only Low
+    // gets the release.
+    assert!(e.key_down("SHIFT-P"));
+    e.key_up("SHIFT-P");
+    assert_eq!(log(&e), "High:down:P Low:down:P Low:up:P");
+    e.key_down("ESCAPE");
+    e.key_up("ESCAPE");
+    assert_eq!(log(&e), "High:down:ESCAPE High:up:ESCAPE");
+    // Without keyboard frames, the key reaches the bindings (no binding
+    // action is loaded here, so nothing takes it).
+    e.exec("K1:EnableKeyboard(false) K2:Hide()");
+    e.key_down("P");
+    assert_eq!(log(&e), "");
+    assert!(!e.eval::<bool>("return K1:IsKeyboardEnabled()").unwrap());
+}
+
+#[test]
+fn a_focused_edit_box_gets_on_key_down_first() {
+    let wtf = tempfile::tempdir().unwrap();
+    let mut e = started(wtf.path());
+    e.exec(
+        r#"
+        Log = {}
+        E = CreateFrame("EditBox", nil, UIParent)
+        E:SetScript("OnKeyDown", function(_, key) table.insert(Log, "down:" .. key) end)
+        E:SetScript("OnEscapePressed", function(self) table.insert(Log, "escape") self:ClearFocus() end)
+        K = CreateFrame("Frame", nil, UIParent)
+        K:EnableKeyboard(true)
+        K:SetScript("OnKeyDown", function() table.insert(Log, "frame") end)
+        E:SetFocus()
+        "#,
+    );
+    e.key_down("ESCAPE");
+    assert_eq!(log(&e), "down:ESCAPE escape");
+    e.key_down("ESCAPE");
+    assert_eq!(log(&e), "frame");
+}

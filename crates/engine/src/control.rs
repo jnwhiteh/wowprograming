@@ -11,7 +11,8 @@
 //! - `exec <line>`: run a console line (`/dump ...`, `/run ...` or Lua).
 //! - `eval <expr>`: evaluate a Lua expression and print the results.
 //! - `dofile <path>`: run a Lua file from disk.
-//! - `key <KEY>`: press a key, such as `P`, `SHIFT-P` or `ESCAPE`.
+//! - `key <KEY>`: press and release a key, such as `P`, `SHIFT-P` or
+//!   `ESCAPE`.
 //! - `type <text>`: type text into the focused edit box.
 //! - `click <expr> [button]`: click the frame the Lua expression returns.
 //! - `hover <expr>`: move the mouse over that frame.
@@ -165,6 +166,7 @@ fn handle(engine: &mut Engine, line: &str) -> (String, Action) {
         ),
         "key" => {
             let ok = engine.key_down(rest);
+            engine.key_up(rest);
             (
                 if ok {
                     String::new()

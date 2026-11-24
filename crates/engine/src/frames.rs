@@ -579,6 +579,8 @@ pub const FIRED_SCRIPTS: &[&str] = &[
     "OnEvent",
     "OnHide",
     "OnHorizontalScroll",
+    "OnKeyDown",
+    "OnKeyUp",
     "OnLeave",
     "OnLoad",
     "OnMouseDown",

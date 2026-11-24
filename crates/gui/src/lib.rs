@@ -359,8 +359,10 @@ impl App {
                     ..
                 } if !input_has_focus => {
                     if let Some(name) = key_name(key) {
-                        // Letters typed into an edit box are text, not bindings.
+                        // Letters typed into an edit box are text, not
+                        // bindings; the edit box still gets OnKeyDown.
                         if self.engine.has_text_focus() && name.len() == 1 {
+                            self.engine.key_down(name);
                             continue;
                         }
                         let full = if modifiers.shift {
@@ -371,6 +373,15 @@ impl App {
                         if !self.engine.key_down(&full) && full != name {
                             self.engine.key_down(name);
                         }
+                    }
+                }
+                egui::Event::Key {
+                    key,
+                    pressed: false,
+                    ..
+                } if !input_has_focus => {
+                    if let Some(name) = key_name(key) {
+                        self.engine.key_up(name);
                     }
                 }
                 _ => {}

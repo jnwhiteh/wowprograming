@@ -331,6 +331,65 @@ pub fn text_input(lua: &Lua, text: &str) -> bool {
     true
 }
 
+/// The key without modifiers: `SHIFT-P` is `P`, `CTRL--` is `-`.
+pub fn base_key(key: &str) -> &str {
+    let mut rest = key;
+    for m in ["SHIFT-", "CTRL-", "ALT-", "META-"] {
+        loop {
+            match rest.get(..m.len()) {
+                Some(p) if p.eq_ignore_ascii_case(m) && rest.len() > m.len() => {
+                    rest = &rest[m.len()..]
+                }
+                _ => break,
+            }
+        }
+    }
+    rest
+}
+
+/// A key press. The focused edit box takes every key; otherwise
+/// keyboard-enabled frames get OnKeyDown from the top down until one
+/// does not propagate it; otherwise the key binding runs.
+pub fn key_down(lua: &Lua, key: &str) -> bool {
+    let base = base_key(key).to_string();
+    let focus = state(lua).focus;
+    if let Some(id) = focus {
+        state(lua).key_targets.insert(base.clone(), id);
+        fire_script(lua, id, "OnKeyDown", base);
+        edit_box_key(lua, key);
+        return true;
+    }
+    let frames: Vec<FrameId> = {
+        let st = state(lua);
+        let order = frame_order(&st);
+        order
+            .into_iter()
+            .rev()
+            .filter(|&i| st.frames[i].keyboard_enabled)
+            .collect()
+    };
+    for id in frames {
+        if !is_visible(&state(lua).frames, id) {
+            continue;
+        }
+        fire_script(lua, id, "OnKeyDown", base.clone());
+        // The handler may call SetPropagateKeyboardInput for this key.
+        if !state(lua).frames[id].propagate_keyboard {
+            state(lua).key_targets.insert(base, id);
+            return true;
+        }
+    }
+    crate::bindings::key_down(lua, key)
+}
+
+/// A key release: OnKeyUp for the frame that took the press.
+pub fn key_up(lua: &Lua, key: &str) {
+    let target = state(lua).key_targets.remove(base_key(key));
+    if let Some(id) = target {
+        fire_script(lua, id, "OnKeyUp", base_key(key).to_string());
+    }
+}
+
 /// Keys that a focused edit box handles itself. Returns true if the key
 /// went to the edit box.
 pub fn edit_box_key(lua: &Lua, key: &str) -> bool {

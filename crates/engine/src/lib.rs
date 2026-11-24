@@ -555,14 +555,16 @@ impl Engine {
         state(self.runtime.lua()).focus.is_some()
     }
 
-    /// A key was pressed, such as `P`, `SHIFT-P` or `ESCAPE`. Runs the
-    /// bound action. Returns false if the key has no binding.
+    /// A key was pressed, such as `P`, `SHIFT-P` or `ESCAPE`. It goes to
+    /// the focused edit box, then to keyboard-enabled frames, then to the
+    /// key bindings. Returns false if nothing took it.
     pub fn key_down(&mut self, key: &str) -> bool {
-        // A focused edit box takes Backspace, Enter, Escape and Tab.
-        if input::edit_box_key(self.runtime.lua(), key) {
-            return true;
-        }
-        bindings::key_down(self.runtime.lua(), key)
+        input::key_down(self.runtime.lua(), key)
+    }
+
+    /// A key was released. The frame that took the press gets OnKeyUp.
+    pub fn key_up(&mut self, key: &str) {
+        input::key_up(self.runtime.lua(), key);
     }
 
     /// Debug name of the frame under the mouse, if any.
@@ -781,6 +783,7 @@ fn build_runtime(
         last_click: None,
         moving: None,
         hover_generation: 0,
+        key_targets: HashMap::new(),
         anim_fx: HashMap::new(),
         last_sizes: HashMap::new(),
     });

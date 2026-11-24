@@ -504,6 +504,8 @@ pub struct State {
     pub last_click: Option<LastClick>,
     /// The frame being moved or sized with the mouse.
     pub moving: Option<Moving>,
+    /// Keys held down, and the frame that took each one (it gets OnKeyUp).
+    pub key_targets: HashMap<String, FrameId>,
     /// Layout generation when the mouse focus was last checked.
     pub hover_generation: u64,
     /// Order in which frames were last raised, for frames at the same level.

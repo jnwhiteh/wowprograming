@@ -279,6 +279,14 @@ Sources: W = warcraft.wiki.gg page named after the function or handler
   to consume only some keys (W SetPropagateKeyboardInput).
 - For an edit box, OnKeyDown fires before OnChar, OnEscapePressed and
   OnTextChanged (W OnKeyDown).
+- Implemented in `input::key_down` and `key_up`. The focused edit box
+  takes every key (inferred); keyboard frames are tried in drawing order,
+  top first; OnKeyDown and OnKeyUp get the key without modifiers (`P`
+  for `SHIFT-P`, inferred). The sandbox has no OnKeyDown for the
+  modifier keys themselves yet.
+- Escape runs Blizzard's `CloseAllWindows`, which closes every open
+  panel at once. The sandbox does not open the game menu on a second
+  Escape (the game menu is not loaded).
 
 ### Cooldown frames
 
@@ -324,10 +332,10 @@ justify one session. Each question names what the probe measures.
     PLAYER_LOGIN (`BugSackFrame`) restored when it is created? When does
     the client restore (before VARIABLES_LOADED or PLAYER_LOGIN) and
     write the file? What does `FrameLevel` mean?
-16. Can `SetFocus()` focus a disabled edit box?
 15. `StartMoving` used directly as an OnDragStart handler (BugSack) gets
     the button name as `alwaysStartFromMouse`: does the window jump to
     keep the press offset, or follow from where the drag started?
+16. Can `SetFocus()` focus a disabled edit box?
 
 ## Later layers (not part of the current goal)
 
