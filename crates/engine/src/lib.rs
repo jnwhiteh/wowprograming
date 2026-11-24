@@ -483,7 +483,14 @@ impl Engine {
         {
             let mut st = state(self.runtime.lua());
             let ui_height = st.screen.1;
-            let ui_width = ui_height * width / height;
+            // The glue screens are at most twice as wide as high (2880x1440
+            // on a 3440x1440 monitor, with black bars at the sides).
+            let aspect = if st.glue {
+                (width / height).min(2.0)
+            } else {
+                width / height
+            };
+            let ui_width = ui_height * aspect;
             let pixel_scale = height / ui_height;
             if (st.screen.0 - ui_width).abs() < 0.01 && (st.pixel_scale - pixel_scale).abs() < 1e-6
             {

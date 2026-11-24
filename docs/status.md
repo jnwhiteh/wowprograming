@@ -173,10 +173,10 @@ Last updated: 2026-11-24.
   textures have no mipmaps (distant grass shimmers); the scene is the same
   for every map. Only the selected character stands on character select
   (the game shows the warband group in a camp scene).
-- Character select: class names are not class colored; the list shows a
-  frame above the first card that the game does not show; the 3D scene
-  fills the whole screen (the game's fills a 2880x1440 area in the
-  middle); warband groups are not shown. Back, Shop, Menu and the other
+- Character select: the list shows a frame above the first card that the
+  game does not show; warband groups are not shown. (The screen is at most
+  2:1 wide, 2880x1440 on the user's monitor, like the game; class names
+  are class colored.) Back, Shop, Menu and the other
   top buttons are not tried.
 - Entering the world blocks the window for about 20 s; the loading bar
   does not move. There is no way back to character select (logout).
@@ -209,9 +209,8 @@ Character select and world goal (branch `character-select`):
 3. Character skin textures: compose from `ChrCustomizationMaterial` and
    related tables (FileDataIDs in the listfile, layouts in WoWDBDefs), or
    pick one baked texture per race as a stand-in.
-4. Character select: class colors in the list, the 2880x1440 area, the
-   frame above the first card, then several characters (the warband
-   group) in the scene.
+4. Character select: the frame above the first card, then several
+   characters (the warband group) in the scene.
 5. Logout (`Logout()`/`/logout` in the game returns to character select);
    loading in the background so the loading bar moves.
 6. Use the character's map: terrain from the map's ADT files is a large

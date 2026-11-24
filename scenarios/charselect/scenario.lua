@@ -26,6 +26,16 @@ if capture then
 end
 local meta = capture and capture.meta or {}
 
+-- Class colors for the class names in the list.
+if meta.classColors then
+    local colors = meta.classColors
+    S.Set("C_ClassColor.GetClassColor", function(class)
+        local c = colors[class]
+        if c and CreateColor then return CreateColor(c.r, c.g, c.b, c.a) end
+        return c
+    end)
+end
+
 -- Race file names to race IDs (ChrRaces).
 local raceIDs = {
     Human = 1, Orc = 2, Dwarf = 3, NightElf = 4, Scourge = 5, Tauren = 6,
