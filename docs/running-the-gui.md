@@ -39,7 +39,8 @@ cargo run --release -- gui --glue --scenario scenarios/charselect --no-addons
   the game UI for that character (about 20 seconds; the window does not
   respond meanwhile). The Monk, Evoker and Paladin use their captures;
   other characters use `scenarios/world`.
-- There is no logout yet: close the window and start again.
+- To return to character select, press Escape and click **Log Out**, or
+  type `/run Logout()` in the console (F12).
 
 ## Start in the world
 

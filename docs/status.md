@@ -82,7 +82,9 @@ Last updated: 2026-11-24.
   new engine with the character's scenario: the one whose
   `scenario.toml` has `character = "Name-Realm"`, else `scenarios/world`
   (described player from `S.character`). The build blocks for about 20 s
-  while the loading screen shows.
+  while the loading screen shows. `Logout()` in the game returns to
+  character select (a new glue session; tested: enter, log out, pick
+  another character, enter again).
 - Window: borderless and covers the monitor (`--windowed` for a normal
   window). The engine keeps the UI height in UI units and takes the
   monitor's aspect ratio and pixel size (`Engine::set_display_size`, fires
@@ -185,7 +187,8 @@ Last updated: 2026-11-24.
   are class colored.) Back, Shop, Menu and the other
   top buttons are not tried.
 - Entering the world blocks the window for about 20 s; the loading bar
-  does not move. There is no way back to character select (logout).
+  does not move. `/logout` is unknown (the chat frame's slash commands do
+  not load); the game menu's Log Out button and `/run Logout()` work.
 - The Talents tab (needs trait data); spec sample abilities are captured
   but not checked yet.
 - Health and power were secret during the capture, so they are not
@@ -220,8 +223,8 @@ Character select and world goal (branch `character-select`):
    the relationship section handling in `formats/db2.rs` first.
 4. Character select: the frame above the first card, then several
    characters (the warband group) in the scene.
-5. Logout (`Logout()`/`/logout` in the game returns to character select);
-   loading in the background so the loading bar moves.
+5. Load the game session in the background so the loading bar moves;
+   make `/logout` work (Blizzard_ChatFrameBase slash commands).
 6. Use the character's map: terrain from the map's ADT files is a large
    step; until then pick a scene per zone type.
 

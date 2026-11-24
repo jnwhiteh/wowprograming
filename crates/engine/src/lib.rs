@@ -461,6 +461,11 @@ impl Engine {
         })
     }
 
+    /// Whether Logout() asked to return to character select, once.
+    pub fn take_logout(&mut self) -> bool {
+        std::mem::take(&mut state(self.runtime.lua()).logout)
+    }
+
     /// The character that EnterWorld() asked to play, once.
     pub fn take_enter_world(&mut self) -> Option<WorldEntry> {
         state(self.runtime.lua()).enter_world.take()
@@ -737,6 +742,7 @@ fn build_runtime(
         glue: config.glue,
         game_account_dir: config.game_account_dir.clone(),
         enter_world: None,
+        logout: false,
         world_entry: config.world_entry.clone(),
         pixel_scale: config.pixel_scale,
         xml: Default::default(),
@@ -755,6 +761,17 @@ fn build_runtime(
     });
     let lua = runtime.lua();
     natives::install(lua)?;
+    // Logout() returns to character select. The client waits 20 seconds
+    // unless the player is resting; the sandbox logs out at once.
+    for name in ["Logout", "ForceLogout"] {
+        lua.globals().set(
+            name,
+            lua.create_function(|lua, _: mlua::MultiValue| {
+                state(lua).logout = true;
+                Ok(())
+            })?,
+        )?;
+    }
     let widget_stubs = apidoc::install(lua, config.ui_source_dir.as_deref())?;
     frames::install(lua, &widget_stubs)?;
     timers::install(lua)?;

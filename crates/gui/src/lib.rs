@@ -15,9 +15,10 @@ use wowprogramming_engine::control::{Action, ControlServer};
 use wowprogramming_engine::scene::Scene;
 use wowprogramming_engine::{Engine, Output, WorldEntry, loading, render, world};
 
-/// Starts a game session for a character chosen on the character select
-/// screen (builds and starts a new engine).
-pub type WorldFactory = Box<dyn FnMut(&WorldEntry) -> Result<Engine, String>>;
+/// Starts a new session (builds and starts a new engine): the game for a
+/// character chosen on the character select screen, or character select
+/// again (`None`) after Logout().
+pub type WorldFactory = Box<dyn FnMut(Option<&WorldEntry>) -> Result<Engine, String>>;
 
 /// The loading screen between character select and the world.
 struct Loading {
@@ -196,7 +197,7 @@ impl App {
         }
         let entry = state.entry.clone();
         let result = match self.factory.as_mut() {
-            Some(f) => f(&entry),
+            Some(f) => f(Some(&entry)),
             None => Err("no game session factory".into()),
         };
         self.loading = None;
@@ -420,6 +421,25 @@ impl eframe::App for App {
         let ctx = ui.ctx().clone();
         if self.loading.is_some() {
             self.show_loading(ui);
+            ctx.request_repaint();
+            return;
+        }
+        if self.factory.is_some() && self.engine.take_logout() {
+            self.push_log("Logging out".into(), Color32::LIGHT_BLUE);
+            let result = match self.factory.as_mut() {
+                Some(factory) => factory(None),
+                None => Err("no session factory".into()),
+            };
+            match result {
+                Ok(engine) => {
+                    self.engine = engine;
+                    self.display = None;
+                    self.frame_texture = None;
+                    self.last_tick = Instant::now();
+                    self.drain_output();
+                }
+                Err(err) => self.push_log(format!("cannot log out: {err}"), Color32::RED),
+            }
             ctx.request_repaint();
             return;
         }

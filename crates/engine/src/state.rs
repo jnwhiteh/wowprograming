@@ -408,6 +408,8 @@ pub struct State {
     pub glue: bool,
     /// The game's account folder, for scenarios (read only).
     pub game_account_dir: Option<PathBuf>,
+    /// Set by Logout() in the game: return to character select.
+    pub logout: bool,
     /// Set by EnterWorld() on the character select screen.
     pub enter_world: Option<crate::WorldEntry>,
     /// The character this game session plays (from character select).

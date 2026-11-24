@@ -707,6 +707,14 @@ fn run_gui(config: EngineConfig, game_dir: Option<PathBuf>, args: &RunArgs) -> E
             .unwrap_or_else(|| PathBuf::from("scenarios"));
         Some(Box::new(move |entry| {
             let mut a = base.clone();
+            let Some(entry) = entry else {
+                // Back to character select.
+                let (config, _) = build_config(&a)?;
+                let mut engine =
+                    Engine::with_gamedata(config, gamedata.clone()).map_err(|e| e.to_string())?;
+                engine.start();
+                return Ok(engine);
+            };
             a.glue = false;
             a.full_ui = true;
             a.exec.clear();
