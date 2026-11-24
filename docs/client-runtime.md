@@ -256,6 +256,15 @@ Sources: W = warcraft.wiki.gg page named after the function or handler
   opposite (inferred). A click raises the nearest toplevel frame at or
   above the clicked one.
 
+### Enabled state
+
+- Buttons, edit boxes and sliders have `Enable`, `Disable`, `SetEnabled`
+  and `IsEnabled`; OnEnable and OnDisable fire only on a change (B: the
+  documentation lists the methods for all three).
+- Edit boxes take mouse clicks without `enableMouse` (inferred: only 5
+  of 189 edit boxes in Blizzard's XML set it). A disabled edit box does
+  not take the focus from a click and loses it when disabled (inferred).
+
 ### Keyboard
 
 - `EnableKeyboard(true)` lets a shown frame get OnKeyDown and OnKeyUp
@@ -315,6 +324,7 @@ justify one session. Each question names what the probe measures.
     PLAYER_LOGIN (`BugSackFrame`) restored when it is created? When does
     the client restore (before VARIABLES_LOADED or PLAYER_LOGIN) and
     write the file? What does `FrameLevel` mean?
+16. Can `SetFocus()` focus a disabled edit box?
 15. `StartMoving` used directly as an OnDragStart handler (BugSack) gets
     the button name as `alwaysStartFromMouse`: does the window jump to
     keep the press offset, or follow from where the drag started?

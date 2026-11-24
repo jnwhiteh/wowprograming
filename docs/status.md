@@ -248,7 +248,7 @@ done criteria; rules and open questions in
    `Engine::drag` for tests.
 3. Done: mouse capture, click rules, dragging, moving, sizing, clamping,
    raising, `layout-local.txt` (real BugSack checked with `--addon
-   BugSack`). Next: OnEnable and OnDisable (edit box enabled state), keyboard, Edit Mode, edit boxes, sliders and scroll bars,
+   BugSack`), the enabled state of edit boxes and sliders. Next: keyboard, Edit Mode, edit boxes, sliders and scroll bars,
    cooldowns (scope.md has the order).
 4. When a behavior is unknown, implement a best guess, mark it
    "inferred" in client-runtime.md and add a question to its "Open

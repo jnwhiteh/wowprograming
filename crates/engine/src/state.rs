@@ -251,6 +251,8 @@ pub struct FrameData {
     pub propagate_keyboard: bool,
     /// `LockHighlight` on a frame: the HIGHLIGHT layer stays shown.
     pub highlight_locked: bool,
+    /// Disabled edit box or slider (buttons keep this in `button`).
+    pub disabled: bool,
     pub clips_children: bool,
     pub ignore_parent_alpha: bool,
     pub ignore_parent_scale: bool,
@@ -315,6 +317,7 @@ impl FrameData {
             keyboard_enabled: false,
             propagate_keyboard: false,
             highlight_locked: false,
+            disabled: false,
             clips_children: false,
             ignore_parent_alpha: false,
             ignore_parent_scale: false,
@@ -336,6 +339,13 @@ impl FrameData {
             focus: false,
             masks: Vec::new(),
             from_xml: false,
+        }
+    }
+
+    pub fn is_enabled(&self) -> bool {
+        match self.button.as_deref() {
+            Some(b) => b.enabled,
+            None => !self.disabled,
         }
     }
 

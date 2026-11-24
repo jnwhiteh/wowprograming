@@ -308,6 +308,11 @@ pub fn create_object(
             ..Default::default()
         }));
     }
+    if object_type == "EditBox" {
+        // Edit boxes take clicks without enableMouse: almost no Blizzard
+        // edit box sets it (inferred).
+        data.mouse_enabled = true;
+    }
     if matches!(object_type, "Slider" | "StatusBar") {
         data.value = (0.0, 0.0, 0.0);
     }

@@ -381,3 +381,37 @@ fn a_moved_window_comes_back_after_reload_from_layout_local() {
             .unwrap()
     );
 }
+
+#[test]
+fn edit_boxes_and_sliders_enable_and_disable() {
+    let wtf = tempfile::tempdir().unwrap();
+    let mut e = started(wtf.path());
+    e.exec(
+        r#"
+        Log = {}
+        E = CreateFrame("EditBox", nil, UIParent)
+        E:SetSize(200, 30)
+        E:SetPoint("BOTTOMLEFT", 100, 100)
+        S = CreateFrame("Slider", nil, UIParent)
+        for _, f in ipairs({E, S}) do
+            f:SetScript("OnEnable", function() table.insert(Log, "enable") end)
+            f:SetScript("OnDisable", function() table.insert(Log, "disable") end)
+        end
+        E:Disable()
+        E:Disable()
+        S:SetEnabled(false)
+        S:Enable()
+        "#,
+    );
+    assert_eq!(log(&e), "disable disable enable");
+    assert!(!e.eval::<bool>("return E:IsEnabled()").unwrap());
+    // A disabled edit box does not take the focus from a click.
+    e.mouse_move(150.0, 115.0);
+    e.mouse_down("LeftButton");
+    e.mouse_up("LeftButton");
+    assert!(!e.has_text_focus());
+    e.exec("E:Enable()");
+    e.mouse_down("LeftButton");
+    e.mouse_up("LeftButton");
+    assert!(e.has_text_focus());
+}

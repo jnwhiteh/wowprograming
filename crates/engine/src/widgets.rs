@@ -2528,26 +2528,7 @@ fn button_methods(lua: &Lua) -> Result<Table> {
             })?,
         )?;
     }
-    method!(lua, m, "Enable", |lua, this_: Value| {
-        let id = this(&this_)?;
-        set_enabled(lua, id, true);
-        Ok(())
-    });
-    method!(lua, m, "Disable", |lua, this_: Value| {
-        let id = this(&this_)?;
-        set_enabled(lua, id, false);
-        Ok(())
-    });
-    method!(lua, m, "SetEnabled", |lua, (this_, v): (Value, Value)| {
-        let id = this(&this_)?;
-        set_enabled(lua, id, truthy(&v));
-        Ok(())
-    });
-    method!(lua, m, "IsEnabled", |lua, this_: Value| {
-        with(lua, &this_, |f| {
-            f.button.as_deref().is_none_or(|b| b.enabled)
-        })
-    });
+    enable_methods(lua, &m)?;
     method!(lua, m, "Click", |lua,
                               (this_, button, down): (
         Value,
@@ -2667,17 +2648,51 @@ fn button_methods(lua: &Lua) -> Result<Table> {
     Ok(m)
 }
 
+/// `Enable`, `Disable`, `SetEnabled` and `IsEnabled` for buttons, edit
+/// boxes and sliders.
+fn enable_methods(lua: &Lua, m: &Table) -> Result<()> {
+    method!(lua, m, "Enable", |lua, this_: Value| {
+        let id = this(&this_)?;
+        set_enabled(lua, id, true);
+        Ok(())
+    });
+    method!(lua, m, "Disable", |lua, this_: Value| {
+        let id = this(&this_)?;
+        set_enabled(lua, id, false);
+        Ok(())
+    });
+    method!(lua, m, "SetEnabled", |lua, (this_, v): (Value, Value)| {
+        let id = this(&this_)?;
+        set_enabled(lua, id, truthy(&v));
+        Ok(())
+    });
+    method!(lua, m, "IsEnabled", |lua, this_: Value| with(
+        lua,
+        &this_,
+        |f| f.is_enabled()
+    ));
+    Ok(())
+}
+
 fn set_enabled(lua: &Lua, id: FrameId, enabled: bool) {
     let changed = {
         let mut st = state(lua);
-        match st.frames[id].button.as_deref_mut() {
-            Some(b) if b.enabled != enabled => {
-                b.enabled = enabled;
-                true
+        let f = &mut st.frames[id];
+        if f.is_enabled() == enabled {
+            false
+        } else {
+            match f.button.as_deref_mut() {
+                Some(b) => b.enabled = enabled,
+                None => f.disabled = !enabled,
             }
-            _ => false,
+            true
         }
     };
+    // A disabled edit box loses the keyboard focus (inferred).
+    if !enabled && state(lua).focus == Some(id) {
+        state(lua).focus = None;
+        fire_script(lua, id, "OnEditFocusLost", ());
+    }
     update_button_font(lua, id);
     if changed {
         fire_script(lua, id, if enabled { "OnEnable" } else { "OnDisable" }, ());
@@ -2803,10 +2818,7 @@ fn edit_box_methods(lua: &Lua) -> Result<Table> {
         let id = this(&this_)?;
         Ok(state(lua).focus == Some(id))
     });
-    empty!(lua, m, "Enable", |_, _this: Value| Ok(()));
-    empty!(lua, m, "Disable", |_, _this: Value| Ok(()));
-    empty!(lua, m, "SetEnabled", |_, _args: Variadic<Value>| Ok(()));
-    empty!(lua, m, "IsEnabled", |_, _this: Value| Ok(true));
+    enable_methods(lua, &m)?;
     for name in [
         "SetAutoFocus",
         "SetMaxLetters",
@@ -2860,6 +2872,9 @@ fn edit_box_methods(lua: &Lua) -> Result<Table> {
 
 fn value_methods(lua: &Lua, slider: bool) -> Result<Table> {
     let m = lua.create_table()?;
+    if slider {
+        enable_methods(lua, &m)?;
+    }
     method!(lua, m, "SetMinMaxValues", |lua,
                                         (this_, min, max): (
         Value,

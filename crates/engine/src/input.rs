@@ -195,7 +195,10 @@ pub fn mouse_down(lua: &Lua, button: &str) {
         }
         return;
     };
-    let is_edit = state(lua).frames[id].object_type == "EditBox";
+    let is_edit = {
+        let st = state(lua);
+        st.frames[id].object_type == "EditBox" && !st.frames[id].disabled
+    };
     if is_edit {
         let old = state(lua).focus.replace(id);
         if let Some(o) = old.filter(|&o| o != id) {
