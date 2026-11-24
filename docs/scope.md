@@ -241,6 +241,138 @@ loader to pick `<Name>_Mainline.toc` for Blizzard addons that have no plain
   rasterizer, behind character select and the game UI.
 - Test: a fresh login matches the traced event order; character select
   and the loading screen match the screenshots.
+- Paused on 2026-11-24 with all four parts working. The remaining 3D
+  work is in the backlog. The UI matters more than the scene behind it.
+
+**Frame runtime (goal chosen 2026-11-24).** Make the generic widget
+behavior of the C++ client work, so that windows, buttons, edit boxes,
+sliders and scroll bars behave as in the game. Facts, sources and open
+questions are in [client-runtime.md](client-runtime.md). This goal needs
+no game data and no recordings, so an agent can work on it without the
+user: every step is checked by a headless test.
+
+Done when all of these hold:
+
+- A runtime coverage report (`wowprogramming coverage`) lists every
+  script handler in `UI.xsd` and every documented widget method, with
+  its state in the engine (implemented, empty, documented stub, missing)
+  and its number of uses in Blizzard's code. In the areas of this goal,
+  no empty method and no unfired handler with 5 or more uses remains.
+  Models, game pads, movies and the `OnTooltipSet*` handlers are out of
+  scope.
+- These interactions work in the full UI and have tests:
+  1. Drag a movable window (BugSack's window; a fixture addon with the
+     same code for CI). It follows the mouse, stays on screen when
+     clamped, and its position comes back after `/reload` from the
+     sandbox's own `layout-local.txt`.
+  2. Edit Mode: enter it, drag a HUD frame (the player frame), leave it.
+     The new position is saved through `C_EditMode` and comes back after
+     `/reload`.
+  3. Clicking the lower of two open toplevel windows raises it.
+  4. Keyboard: a keyboard-enabled frame gets OnKeyDown and blocks key
+     bindings unless it propagates; Escape closes the open window.
+  5. Settings panel: drag a slider thumb and a scroll bar thumb; the
+     value and the list change.
+  6. Edit box: cursor movement, text selection (`HighlightText`),
+     `SetMaxLetters`.
+  7. Action buttons show a cooldown swipe after `SetCooldown`, and
+     OnCooldownDone fires at the end.
+  8. Unit tests for click rules: mouse capture, no click after a drag,
+     double click, `RegisterForClicks`, OnEnter with `motion` false.
+
+Steps, in order:
+
+0. Load only the addons that the character has enabled in the game
+   (`AddOns.txt` in the character's WTF folder), like the client. Today
+   the sandbox loads every addon in the AddOns folder, including the 19
+   that the Monk has disabled.
+1. The coverage report, so that progress can be measured.
+2. A `drag` command for the control bridge (press, move in steps,
+   release) and an engine test helper that does the same.
+3. Mouse capture and click rules (OnMouseUp to the pressed frame with
+   `upInside`, click registrations, double click).
+4. Dragging (`RegisterForDrag`, OnDragStart, OnDragStop, OnReceiveDrag).
+5. Moving and sizing (`StartMoving`, `StartSizing`,
+   `StopMovingOrSizing`, re-anchoring to the nearest UIParent point,
+   clamping), then user-placed positions in `layout-local.txt`.
+6. Toplevel raising, OnEnable and OnDisable, `LockHighlight`.
+7. Keyboard input (`EnableKeyboard`, OnKeyDown, OnKeyUp, propagation
+   before bindings).
+8. Edit Mode end to end.
+9. Edit box editing, sliders and scroll bar thumbs.
+10. Cooldown frames, MessageFrame (`UIErrorsFrame`), hyperlinks.
+
+Working rules for this goal: when a behavior is not known, implement the
+best guess, mark it "inferred" in `client-runtime.md`, and add a precise
+question to its "Open questions" list. Do not ask the user to record
+sessions for single questions; one probe session answers the list later.
+
+**Direction after the frame runtime (proposed 2026-11-24).** Four goals,
+each building on the one before:
+
+1. Frame runtime: the widgets behave like the game's (above).
+2. Client state: the UI reacts to a simulated player (below).
+3. Security model: taint, protected functions, combat lockdown and
+   secret values, so addon authors see "action blocked" errors in the
+   sandbox before they ship.
+4. Tools for addon authors: scripted interaction tests that run headless
+   in CI, reload on file change, and showing a UI in the browser.
+
+**Client state: a training dummy session (next goal after the frame
+runtime).** The user's character stands in front of a training dummy,
+and the interface works as in the game. The C++ client holds the state
+that Blizzard's Lua asks about and changes it when the UI acts. This
+goal builds that state as one model in the engine:
+
+- **The model.** Player, units (the player, a training dummy, the
+  captured party), spells known, action slots, cooldowns, auras, power,
+  the cursor, the target. Filled from the capture and DB2 tables. Every
+  client function reads it, and every change fires the events that the
+  API documentation lists, with their documented payloads.
+- **The character's own setup, read only from the WTF folder:** enabled
+  addons (`AddOns.txt`), macros, key bindings and Edit Mode layouts (see
+  "Sources of truth" in [client-runtime.md](client-runtime.md)).
+- **Simple rules, from data.** Cast times, cooldowns, costs and auras
+  come from DB2 (SpellMisc, SpellCastTimes, SpellCooldowns, SpellPower,
+  SpellAuraOptions, SpellDuration). Every spell succeeds. The dummy never
+  dies. No per-spell code: a spell that needs special handling goes to
+  the backlog.
+- **Out of scope:** damage formulas, movement, range from positions,
+  threat, loot, quests, other players.
+
+Done when these work in the full UI, each with a headless test:
+
+1. Drag a spell from the spellbook to an action bar; it is still there
+   after `/reload`.
+2. Target the dummy (Tab or a click on its frame); the target frame
+   shows it. Clear the target with Escape.
+3. Press an action key. The cast bar fills for the spell's cast time,
+   the global cooldown swipe shows on all buttons, the spell's own
+   cooldown shows on its button, power goes down and comes back.
+   Instant, cast and channeled spells all work. Escape and
+   `/stopcasting` cancel a cast (Blizzard's Escape handler calls
+   `SpellStopCasting()` before it closes windows, in
+   `Blizzard_Game/Shared/Game.lua`).
+4. Buffs and debuffs. A spell that buffs the player shows the buff in
+   the buff frame with its timer and stacks; right-click removes it. A
+   spell that applies a debuff to the dummy shows it on the target frame
+   with its timer, and it ends when the time runs out. A scenario can put
+   a debuff on the player (for example a dispellable magic debuff), and
+   the debuff frame shows it with its type color.
+5. Tooltips from data for spells, action buttons, auras and units,
+   drawn by Blizzard's `TooltipDataProcessor`.
+6. Slash commands and macros: `/cast`, `/target`, `/reload`, `/logout`,
+   and a macro on an action bar.
+7. Clique works: a click on a party frame casts the bound spell on that
+   party member.
+
+Unknown behavior is handled as in the frame runtime goal: a best guess
+marked "inferred", and a question for the probe list. Some questions
+here (event order for one cast) may justify a short probe session; ask
+the user first.
+
+Later, in this goal or after it: bags and items (item tooltips, using a
+consumable, items on action bars), the combat log for damage meters.
 
 **M6 and later.** Fake units and combat log scenarios. `PlayerModel` and
 `ModelScene` with M2 rendering in a native `wgpu` window. Taint and secure
@@ -266,7 +398,12 @@ Not needed yet. Each item is added when a concrete goal requires it.
   character skin textures (`ChrCustomization*` tables), equipment models,
   real terrain from the map's ADT files, mipmaps for distant textures.
 - Character select: warband groups and their scenes (`WarbandScene*`
-  tables), the camp scene, several characters at once.
+  tables), the camp scene, several characters at once; the frame above
+  the first card.
+- Character textures from the customization tables. Blocker: the DB2
+  reader returns no relation value for ChrCustomizationOption (check the
+  relationship section in `formats/db2.rs`).
+- Load the game session in the background so the loading bar moves.
 
 ## Risks
 

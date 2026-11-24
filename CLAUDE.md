@@ -6,6 +6,9 @@ Read these first:
 
 1. `docs/status.md`: current state, branches, decisions, next steps.
 2. `docs/scope.md`: goals, design, roadmap and backlog.
+3. `docs/client-runtime.md`: what the C++ client provides to the UI,
+   where the facts come from, coverage and open questions. Read it before
+   working on input, frames, the cursor, casting or tooltips.
 
 Keep `docs/status.md` current. Update it in the same commit as the work it
 describes, following the rules at the end of that file.
