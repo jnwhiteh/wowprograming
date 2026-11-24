@@ -736,7 +736,7 @@ fn run(config: EngineConfig, game_dir: Option<PathBuf>, args: &RunArgs) -> ExitC
 
     let mut control = start_control(args.control_port, args.seconds.is_none());
     match args.seconds {
-        Some(seconds) => run_headless(&mut engine, seconds),
+        Some(seconds) => run_headless(&mut engine, seconds, args),
         None => run_console(&mut engine, control.as_mut(), args.serve),
     }
     if let Some(path) = &args.screenshot {
@@ -772,35 +772,8 @@ fn run_gui(config: EngineConfig, game_dir: Option<PathBuf>, args: &RunArgs) -> E
     let factory: Option<wowprogramming_gui::WorldFactory> = if args.glue {
         let base = args.clone();
         let gamedata = engine.gamedata().cloned();
-        let root = args
-            .scenario
-            .as_deref()
-            .and_then(Path::parent)
-            .map(Path::to_path_buf)
-            .unwrap_or_else(|| PathBuf::from("scenarios"));
         Some(Box::new(move |entry| {
-            let mut a = base.clone();
-            let Some(entry) = entry else {
-                // Back to character select.
-                let (config, _) = build_config(&a)?;
-                return Engine::with_gamedata(config, gamedata.clone()).map_err(|e| e.to_string());
-            };
-            a.glue = false;
-            a.full_ui = true;
-            a.exec.clear();
-            a.scenario = Some(scenario_for(&root, entry));
-            eprintln!(
-                "Entering the world as {}-{} with {}",
-                entry.name,
-                entry.realm,
-                a.scenario.as_deref().unwrap_or(Path::new("")).display()
-            );
-            let (mut config, _) = build_config(&a)?;
-            config.world_entry = Some(entry.clone());
-            config.character = entry.name.clone();
-            config.realm = entry.realm.clone();
-            // The window starts it step by step behind the loading screen.
-            Engine::with_gamedata(config, gamedata.clone()).map_err(|e| e.to_string())
+            session_engine(&base, gamedata.clone(), entry)
         }))
     } else {
         None
@@ -814,12 +787,61 @@ fn run_gui(config: EngineConfig, game_dir: Option<PathBuf>, args: &RunArgs) -> E
     }
 }
 
-/// Advance game time as fast as possible, in fixed frames.
-fn run_headless(engine: &mut Engine, seconds: f64) {
+/// The engine for the session that Enter World starts from character
+/// select (`--glue`): the chosen character's scenario, not yet started.
+/// Without an entry, the engine for character select again (log out).
+fn session_engine(
+    base: &RunArgs,
+    gamedata: Option<std::rc::Rc<wowprogramming_engine::gamedata::GameData>>,
+    entry: Option<&wowprogramming_engine::WorldEntry>,
+) -> Result<Engine, String> {
+    let mut a = base.clone();
+    let Some(entry) = entry else {
+        let (config, _) = build_config(&a)?;
+        return Engine::with_gamedata(config, gamedata).map_err(|e| e.to_string());
+    };
+    let root = base
+        .scenario
+        .as_deref()
+        .and_then(Path::parent)
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| PathBuf::from("scenarios"));
+    a.glue = false;
+    a.full_ui = true;
+    a.exec.clear();
+    a.scenario = Some(scenario_for(&root, entry));
+    eprintln!(
+        "Entering the world as {}-{} with {}",
+        entry.name,
+        entry.realm,
+        a.scenario.as_deref().unwrap_or(Path::new("")).display()
+    );
+    let (mut config, _) = build_config(&a)?;
+    config.world_entry = Some(entry.clone());
+    config.character = entry.name.clone();
+    config.realm = entry.realm.clone();
+    Engine::with_gamedata(config, gamedata).map_err(|e| e.to_string())
+}
+
+/// Advance game time as fast as possible, in fixed frames. With `--glue`,
+/// Enter World switches to the character's session, as in the window.
+fn run_headless(engine: &mut Engine, seconds: f64, args: &RunArgs) {
     let frames = (seconds / FRAME_TIME).round().max(0.0) as u64;
     for _ in 0..frames {
         engine.tick(FRAME_TIME);
         print_output(engine);
+        if args.glue
+            && let Some(entry) = engine.take_enter_world()
+        {
+            match session_engine(args, engine.gamedata().cloned(), Some(&entry)) {
+                Ok(mut world) => {
+                    world.start();
+                    print_output(&world);
+                    *engine = world;
+                }
+                Err(err) => eprintln!("cannot enter the world: {err}"),
+            }
+        }
     }
 }
 

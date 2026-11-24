@@ -83,21 +83,27 @@ local function locate(path)
     return container, key
 end
 
--- Give recorded tables back the methods of their documented mixins.
-local function withMixins(mixins, ...)
-    local out = { ... }
-    local n = select("#", ...)
-    for i, name in pairs(mixins) do
-        local mixin = rawget(_G, name)
-        if type(out[i]) == "table" and type(mixin) == "table" then
-            local copy = {}
-            for k, v in pairs(out[i]) do copy[k] = v end
-            for k, v in pairs(mixin) do
-                if copy[k] == nil then copy[k] = v end
-            end
-            out[i] = copy
+-- Give a recorded value (a fresh copy) back the methods of its documented
+-- mixins, also on structure fields and list elements (see returnMixins in
+-- lua/apidoc.lua).
+local function applyShape(value, shape)
+    if type(value) ~= "table" then return end
+    local mixin = shape.mixin and rawget(_G, shape.mixin)
+    if type(mixin) == "table" then
+        for k, v in pairs(mixin) do
+            if value[k] == nil then value[k] = v end
         end
     end
+    for name, sh in pairs(shape.fields or {}) do applyShape(value[name], sh) end
+    if shape.each then
+        for _, v in pairs(value) do applyShape(v, shape.each) end
+    end
+end
+
+local function withMixins(shapes, ...)
+    local out = { ... }
+    local n = select("#", ...)
+    for i, shape in pairs(shapes) do applyShape(out[i], shape) end
     return unpack(out, 1, n)
 end
 
@@ -184,6 +190,10 @@ function S.Set(path, value)
     container[key] = value
 end
 
+-- Globals in a capture that addon code sets as it loads, to skip its
+-- second load. Set early, they stop the addon from loading at all.
+local ADDON_LOAD_GUARDS = { g_middleClassLoaded = true }
+
 -- Merge client constants: colors, Enum, Constants and number globals.
 function S.ApplyClientConstants(data)
     if data.colors then
@@ -208,7 +218,7 @@ function S.ApplyClientConstants(data)
     if data.constants then merge(Constants, data.constants) end
     if data.numbers then
         for k, v in pairs(data.numbers) do
-            if rawget(_G, k) == nil then _G[k] = v end
+            if rawget(_G, k) == nil and not ADDON_LOAD_GUARDS[k] then _G[k] = v end
         end
     end
 end
@@ -406,8 +416,19 @@ local function wrapUnitFunctions()
     unitFunction("UnitSex", function(u) return u.sex or 2 end)
     unitFunction("UnitHealth", function(u) return u.health or u.healthMax or 100 end)
     unitFunction("UnitHealthMax", function(u) return u.healthMax or 100 end)
-    unitFunction("UnitPower", function(u) return u.power or u.powerMax or 100 end)
-    unitFunction("UnitPowerMax", function(u) return u.powerMax or 100 end)
+    -- Power of the unit's main type; other types (class resources such as
+    -- combo points) come from the earlier answers.
+    local function mainPowerFunction(name, answer)
+        local container, key = locate(name)
+        local previous = container[key]
+        container[key] = function(unit, powerType, ...)
+            local u = unitData(unit)
+            if u and (powerType == nil or powerType == (u.powerType or 0)) then return answer(u) end
+            if previous then return previous(unit, powerType, ...) end
+        end
+    end
+    mainPowerFunction("UnitPower", function(u) return u.power or u.powerMax or 100 end)
+    mainPowerFunction("UnitPowerMax", function(u) return u.powerMax or 100 end)
     unitFunction("UnitPowerType", function(u)
         return u.powerType or 0, u.powerToken or "MANA", 0, 0, 0
     end)

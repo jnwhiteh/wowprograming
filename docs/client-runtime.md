@@ -426,6 +426,27 @@ data on each run.
   `SetPaused` freeze the swipe. Not yet: countdown numbers, the edge and
   bling textures, rotation.
 
+### Loading XML and client answers
+
+- A frame from an XML file that is visible after its OnLoad gets OnShow
+  right after, children before parents (inferred: Blizzard's personal
+  resource display is created visible, sets itself up only in OnShow, and
+  Edit Mode uses that setup at every login). Frames from `CreateFrame`,
+  with or without a template, do not get it.
+- XML problems such as an anchor to a missing `relativeKey` (Blizzard's
+  `DressUpFrames.xml` uses `$parentKey.BlackBackground`) are warnings,
+  not Lua errors: the client writes them to its FrameXML log. The anchor
+  is skipped (inferred).
+- The client runs the `[Bootstrap]` files of every load-on-demand
+  Blizzard addon at startup. They define the `*_LoadUI` functions.
+- `string.format` takes positional arguments (`%2$s`); localized combat
+  log strings use them.
+- Undocumented client functions without an implementation return no
+  values at all, not one nil: Blizzard code counts some results (the
+  chat options pass `GetChannelList()` to a vararg loop).
+- `GetDefaultScale()` is 768 divided by the physical screen height
+  (inferred; the client may clamp it).
+
 ## Open questions for a probe session
 
 Collect questions here. Do not record anything until there are enough to
@@ -476,6 +497,11 @@ justify one session. Each question names what the probe measures.
     edit box with an OnEnterPressed handler also insert the new line?
 19. Slider: does a press beside the thumb jump to the mouse, or page by
     `stepsPerPage`? Does `SetValue` round to the value step?
+20. OnShow at load: does a frame defined in XML that is visible after its
+    OnLoad get OnShow at once? Does a frame from `CreateFrame` with a
+    template that has an OnShow handler get it? (Probe: an addon XML
+    frame and a template that log OnLoad and OnShow.)
+21. `GetDefaultScale()` at 1080 and 1440 physical pixels.
 
 ## Later layers (not part of the current goal)
 

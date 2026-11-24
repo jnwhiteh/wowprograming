@@ -127,6 +127,19 @@ function UnitExists(unit)
     return unit == "player"
 end
 
+-- Class and race of a unit that does not exist: nothing, as in the
+-- client (the generated stubs return "", which Blizzard code takes for a
+-- class name). Existing units without other data keep the stub answers.
+function UnitClass(unit)
+    if UnitExists(unit) then return "", "", 0 end
+end
+function UnitClassBase(unit)
+    if UnitExists(unit) then return "", 0 end
+end
+function UnitRace(unit)
+    if UnitExists(unit) then return "", "", 0 end
+end
+
 -- Edit mode: the client keeps the saved layouts and account settings.
 -- The sandbox stores them in two SavedVariables of its own (see
 -- docs/client-runtime.md, "Edit Mode"): account layouts and settings in
@@ -235,15 +248,33 @@ local function playerValue(value)
     end
 end
 UnitHealthMax = playerValue(100)
-UnitPowerMax = playerValue(100)
+
+-- Class resources asked for by power type (Enum.PowerType), when they are
+-- not the unit's main power: the usual maximum (inferred; talents can
+-- raise some). Combo points, holy power, chi and arcane charges start
+-- empty; runes and essence start full; soul shards rest at 3.
+local RESOURCE_MAX = { [4] = 5, [5] = 6, [7] = 5, [9] = 5, [12] = 5, [16] = 4, [19] = 5 }
+local RESOURCE_AT_REST = { [5] = 6, [7] = 3, [19] = 5 }
+local function isOtherPower(unit, powerType)
+    return powerType ~= nil and powerType ~= (UnitPowerType(unit))
+end
+function UnitPowerMax(unit, powerType)
+    if unit ~= "player" then return 0 end
+    if isOtherPower(unit, powerType) then return RESOURCE_MAX[powerType] or 0 end
+    return 100
+end
 -- Current health and power follow the maximum, looked up at call time: a
 -- capture replays the maximum, but not the current value, which is secret
 -- in the game. (A low value shows the flashing low-health warning.)
 function UnitHealth(unit, ...)
     return UnitHealthMax(unit, ...)
 end
-function UnitPower(unit, ...)
-    return UnitPowerMax(unit, ...)
+function UnitPower(unit, powerType, ...)
+    if isOtherPower(unit, powerType) then
+        if not UnitExists(unit) then return 0 end
+        return RESOURCE_AT_REST[powerType] or 0
+    end
+    return UnitPowerMax(unit, powerType, ...)
 end
 
 -- Power type without a capture: mana.
@@ -398,6 +429,12 @@ function canaccesssecrets() return true end
 function issecretvalue() return false end
 function issecrettable() return false end
 function hasanysecretvalues() return false end
+-- Wrapping, unwrapping and scrubbing return the values unchanged. (The
+-- generated stubs return nothing, which loses the values: the target
+-- frame's aura row count, for example.)
+function secretwrap(...) return ... end
+function secretunwrap(...) return ... end
+function scrubsecretvalues(...) return ... end
 C_RestrictedActions = C_RestrictedActions or {}
 function C_RestrictedActions.CheckAllowProtectedFunctions() return true end
 
@@ -437,3 +474,95 @@ do
         end
     end
 end
+
+-- A character without a capture has no Battle.net friends, no guild, no
+-- group finder listings or applications and no pending spell prompts.
+-- The generated stubs return nothing, where Blizzard code expects counts
+-- and lists.
+function BNGetNumFriends() return 0, 0, 0, 0 end
+function GuildControlGetNumRanks() return 0 end
+function GetSpellConfirmationPromptsInfo() return {} end
+C_LFGList = C_LFGList or {}
+function C_LFGList.GetNumApplications() return 0, 0 end
+function C_LFGList.GetApplications() return {} end
+function C_LFGList.GetAvailableCategories() return {} end
+C_UnitAurasPrivate = C_UnitAurasPrivate or {}
+function C_UnitAurasPrivate.GetPrivateAuraAnchors() return {} end
+function C_UnitAurasPrivate.GetAllPrivateAuraInstanceIDs() return {} end
+
+-- The client's text locale is the only one available. The locale ID is
+-- inferred (0 for enUS).
+function GetAvailableLocaleInfo()
+    return { { localeId = 0, localeName = GetCVar("textLocale") or "enUS" } }
+end
+
+-- GetFontInfo(font): a font object's (or font object name's) settings.
+function GetFontInfo(font)
+    if type(font) == "string" then font = _G[font] end
+    if type(font) ~= "table" or not font.GetFont then return nil end
+    local _, height, outline = font:GetFont()
+    local r, g, b, a = font:GetTextColor()
+    local info = {
+        fontObject = font,
+        height = height or 0,
+        outline = outline or "",
+        color = CreateColor and CreateColor(r or 1, g or 1, b or 1, a or 1)
+            or { r = r, g = g, b = b, a = a },
+        canBeUserScaled = false,
+    }
+    if font.GetShadowOffset then
+        local x, y = font:GetShadowOffset()
+        local sr, sg, sb, sa = font:GetShadowColor()
+        if (x and x ~= 0) or (y and y ~= 0) then
+            info.shadow = { x = x, y = y,
+                color = CreateColor and CreateColor(sr, sg, sb, sa) or { r = sr, g = sg, b = sb, a = sa } }
+        end
+    end
+    return info
+end
+
+-- Not on a class trial, not in a scenario, no loot to roll for and no pet
+-- battle. The service display data has no texture kit (the real one is
+-- not known; Blizzard's texture kit helper skips a missing kit).
+C_CharacterServices = C_CharacterServices or {}
+function C_CharacterServices.GetCharacterServiceDisplayData()
+    return { flowTitle = "", popupInfo = {} }
+end
+C_ClassTrial = C_ClassTrial or {}
+function C_ClassTrial.GetClassTrialLogoutTimeSeconds() return 0 end
+C_Scenario = C_Scenario or {}
+function C_Scenario.GetInfo() return "", 0, 0, 0, false, false, false, 0, 0, 0 end
+function GetActiveLootRollIDs() return {} end
+C_PetBattles = C_PetBattles or {}
+function C_PetBattles.GetHealth() return 0 end
+function C_PetBattles.GetMaxHealth() return 0 end
+-- No bonus objectives or world quest tasks are active.
+function GetTasksTable() return {} end
+
+-- The player has no alternate power bar timers. (The generated stub
+-- returns bar ID 0, which Blizzard's loop takes for a timer.)
+function UnitPowerBarTimerInfo() return nil end
+
+-- Global strings that Blizzard code needs at load but that the game data
+-- does not give the sandbox (probably in an encrypted section of
+-- GlobalStrings.db2). The string's own name stands in; the game data
+-- replaces it when present.
+for _, name in ipairs({ "SOCIAL_ENABLE_DISCORD_FUNCTIONALITY" }) do
+    if rawget(_G, name) == nil then rawset(_G, name, name) end
+end
+
+
+-- The client's default UI scale: 768 UI units over the physical screen
+-- height (inferred from the classic "pixel perfect" scale; the client may
+-- clamp it). The generated stub returns 0, which SetScale refuses.
+function GetDefaultScale()
+    local _, height = GetPhysicalScreenSize()
+    if not height or height <= 0 then return 1 end
+    return 768 / height
+end
+
+-- No addon performance warnings. The documentation says the result is
+-- never nil, but Blizzard's code expects nil when there is no message
+-- (the stub's empty message has an invalid type).
+C_AddOnProfiler = C_AddOnProfiler or {}
+function C_AddOnProfiler.CheckForPerformanceMessage() return nil end

@@ -395,9 +395,7 @@ impl Engine {
 
     fn load_user_addons(&mut self) {
         let lua = self.runtime.lua();
-        for name in &self.config.bootstrap_addons {
-            addons::run_bootstrap(lua, name);
-        }
+        run_bootstraps(lua, &self.config);
         for file in &self.config.blizzard_files {
             addons::run_blizzard_file(lua, file);
         }
@@ -505,6 +503,7 @@ impl Engine {
                 state(lua).warn(format!("Blizzard addon {name} not loaded: {result:?}"));
             }
         }
+        run_bootstraps(lua, &self.config);
         if let Err(err) = echo_prints(lua) {
             state(lua).warn(format!("cannot hook print: {err}"));
         }
@@ -1097,6 +1096,19 @@ fn unescape_global_string(s: &str) -> Vec<u8> {
         }
     }
     out
+}
+
+/// Run the `[Bootstrap]` files of load-on-demand addons: all Blizzard ones
+/// with the full default UI, and those the config names.
+fn run_bootstraps(lua: &Lua, config: &EngineConfig) {
+    let mut names = Vec::new();
+    if config.blizzard_addons.iter().any(|n| n == "*") {
+        names = addons::startup_bootstrap_addons(lua);
+    }
+    names.extend(config.bootstrap_addons.iter().cloned());
+    for name in &names {
+        addons::run_bootstrap(lua, name);
+    }
 }
 
 /// Run a scenario's `scenario.lua`, which sets up game state before any

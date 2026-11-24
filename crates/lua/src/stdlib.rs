@@ -80,7 +80,75 @@ fn install_string(lua: &Lua) -> Result<()> {
     })?;
     globals.set("tostringall", tostringall)?;
 
+    // The client's string.format also takes positional arguments ("%2$s"),
+    // which localized strings use to reorder words.
+    let original: Function = string.get("format")?;
+    let format = lua.create_function(move |lua, (fmt, args): (LuaString, MultiValue)| {
+        let Some((rewritten, order)) = rewrite_positional(&fmt.as_bytes()) else {
+            return original.call::<MultiValue>((fmt, args));
+        };
+        let args: Vec<Value> = args.into_iter().collect();
+        let mut call = MultiValue::new();
+        call.push_back(Value::String(lua.create_string(&rewritten)?));
+        for i in order {
+            call.push_back(args.get(i).cloned().unwrap_or(Value::Nil));
+        }
+        original.call::<MultiValue>(call)
+    })?;
+    string.set("format", format)?;
+
     Ok(())
+}
+
+/// Rewrite a format string with positional specifiers (`%2$s`) into plain
+/// ones, with the argument index (from 0) that each specifier takes.
+/// Returns `None` when the string has no positional specifier.
+fn rewrite_positional(fmt: &[u8]) -> Option<(Vec<u8>, Vec<usize>)> {
+    let mut out = Vec::with_capacity(fmt.len());
+    let mut order = Vec::new();
+    let mut next = 0usize;
+    let mut positional = false;
+    let mut i = 0;
+    while i < fmt.len() {
+        let b = fmt[i];
+        out.push(b);
+        i += 1;
+        if b != b'%' {
+            continue;
+        }
+        if fmt.get(i) == Some(&b'%') {
+            out.push(b'%');
+            i += 1;
+            continue;
+        }
+        // An optional "<digits>$" position.
+        let digits_end = fmt[i..]
+            .iter()
+            .position(|c| !c.is_ascii_digit())
+            .map_or(fmt.len(), |p| i + p);
+        if digits_end > i && fmt.get(digits_end) == Some(&b'$') {
+            let n: usize = std::str::from_utf8(&fmt[i..digits_end])
+                .ok()?
+                .parse()
+                .ok()?;
+            order.push(n.checked_sub(1)?);
+            positional = true;
+            i = digits_end + 1;
+        } else {
+            order.push(next);
+            next += 1;
+        }
+        // Copy flags, width, precision and the conversion letter.
+        while i < fmt.len() {
+            let c = fmt[i];
+            out.push(c);
+            i += 1;
+            if c.is_ascii_alphabetic() {
+                break;
+            }
+        }
+    }
+    positional.then_some((out, order))
 }
 
 /// Split `subject` on any byte in `delims`, like the client's `strsplit`.
@@ -331,6 +399,18 @@ mod tests {
             assert(p == "a" and q == "b c", q)
             assert(string.split("=", "k=v") == "k")
             "##,
+        );
+    }
+
+    #[test]
+    fn format_takes_positional_arguments() {
+        check(
+            r#"
+            assert(string.format("%2$s %1$s", "a", "b") == "b a")
+            assert(string.format("%1$d%%-%1$d", 7) == "7%-7")
+            assert(("%s=%d"):format("x", 3) == "x=3")
+            assert(string.format("%2$5.1f|%1$s", "n", 2.5) == "  2.5|n")
+            "#,
         );
     }
 

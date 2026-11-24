@@ -92,22 +92,9 @@ fn lookup(lua: &Lua, name: &str) -> Option<usize> {
 /// in the normal environment; see `GetGlobalEnvironment` in
 /// `lua/client.lua`.
 pub fn startup_blizzard_addons(lua: &Lua) -> Vec<String> {
-    let (ui, glue) = {
-        let st = state(lua);
-        (st.ui_source_dir.clone(), st.glue)
-    };
-    let Some(ui) = ui else {
-        return Vec::new();
-    };
-    let Some(dir) = resolve_path(&ui, "Interface/AddOns") else {
-        return Vec::new();
-    };
-    let mut addons: Vec<(bool, bool, String, String)> = std::fs::read_dir(dir)
+    let glue = state(lua).glue;
+    let mut addons: Vec<(bool, bool, String, String)> = blizzard_addons_in_source(lua)
         .into_iter()
-        .flatten()
-        .filter_map(|e| e.ok())
-        .filter(|e| e.file_name().to_string_lossy().starts_with("Blizzard_"))
-        .filter_map(|e| read_addon(&e.path(), AddonKind::Blizzard, glue))
         .filter(|a| !a.toc.load_on_demand() && a.toc.loadable_in(glue))
         .map(|a| {
             let secure = a
@@ -124,6 +111,40 @@ pub fn startup_blizzard_addons(lua: &Lua) -> Vec<String> {
         .collect();
     addons.sort();
     addons.into_iter().map(|(_, _, _, name)| name).collect()
+}
+
+/// Names of the load-on-demand Blizzard addons with `[Bootstrap]` files,
+/// sorted by name. The client runs those files at startup: they define
+/// the functions that load the addon, such as `TimeManager_LoadUI`.
+pub fn startup_bootstrap_addons(lua: &Lua) -> Vec<String> {
+    let glue = state(lua).glue;
+    let mut names: Vec<String> = blizzard_addons_in_source(lua)
+        .into_iter()
+        .filter(|a| a.toc.load_on_demand() && a.toc.loadable_in(glue))
+        .filter(|a| a.toc.entries.iter().any(|e| e.bootstrap))
+        .map(|a| a.name)
+        .collect();
+    names.sort_by_key(|n| n.to_ascii_lowercase());
+    names
+}
+
+/// Every `Blizzard_*` addon in the UI source, read for the current
+/// screen (glue or game).
+fn blizzard_addons_in_source(lua: &Lua) -> Vec<Addon> {
+    let (ui, glue) = {
+        let st = state(lua);
+        (st.ui_source_dir.clone(), st.glue)
+    };
+    let Some(dir) = ui.and_then(|ui| resolve_path(&ui, "Interface/AddOns")) else {
+        return Vec::new();
+    };
+    std::fs::read_dir(dir)
+        .into_iter()
+        .flatten()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_name().to_string_lossy().starts_with("Blizzard_"))
+        .filter_map(|e| read_addon(&e.path(), AddonKind::Blizzard, glue))
+        .collect()
 }
 
 /// `names` with their dependencies placed before them, each once, in the

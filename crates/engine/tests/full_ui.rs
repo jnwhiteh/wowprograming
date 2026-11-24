@@ -6,7 +6,7 @@
 use std::path::{Path, PathBuf};
 
 use wowprogramming_engine::gamedata::GameData;
-use wowprogramming_engine::{Engine, EngineConfig};
+use wowprogramming_engine::{Engine, EngineConfig, Output};
 
 fn ui_source() -> Option<PathBuf> {
     let ui = std::env::var_os("WOWPROGRAMMING_UI_SOURCE")
@@ -58,8 +58,17 @@ fn full_ui(wtf: &Path) -> Option<Engine> {
     )
     .unwrap();
     engine.start();
-    engine.tick(0.1);
-    engine.drain_output();
+    // The default UI loads and runs a few seconds without a Lua error
+    // (errors at login and from OnUpdate scripts fill the console).
+    let mut errors = Vec::new();
+    for _ in 0..50 {
+        engine.tick(0.1);
+        errors.extend(engine.drain_output().into_iter().filter_map(|o| match o {
+            Output::Error(e) => Some(e),
+            _ => None,
+        }));
+    }
+    assert!(errors.is_empty(), "Lua errors:\n{}", errors.join("\n"));
     Some(engine)
 }
 

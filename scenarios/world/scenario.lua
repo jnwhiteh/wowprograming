@@ -38,7 +38,7 @@ S.SetUnit("player", {
     name = c.name or "Player", level = c.level or 90,
     class = names[classFile] or classFile, classFile = classFile,
     classID = classIDs[classFile],
-    race = c.race, raceFile = c.race, sex = (c.sex or 0) + 2,
+    race = c.race or "Human", raceFile = c.race or "Human", sex = (c.sex or 0) + 2,
     health = 750000, healthMax = 750000,
     power = p[3], powerMax = p[3], powerType = p[1], powerToken = p[2],
     isPlayer = true, reaction = 5, faction = c.faction, role = "DAMAGER",

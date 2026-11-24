@@ -110,6 +110,12 @@ fn method_chain(object_type: &str) -> Vec<&'static str> {
                 "MapScene" => chain.push("MapScene"),
                 "ModelFFX" => chain.extend(["Model", "ModelFFX"]),
                 "Minimap" => chain.push("Minimap"),
+                "QuestPOIFrame" => chain.push("QuestPOIFrame"),
+                "ScenarioPOIFrame" => chain.push("ScenarioPOIFrame"),
+                "ArchaeologyDigSiteFrame" => chain.push("ArchaeologyDigSiteFrame"),
+                "FogOfWarFrame" => chain.push("FogOfWarFrame"),
+                "UnitPositionFrame" => chain.push("UnitPositionFrame"),
+                "OffScreenFrame" => chain.push("OffScreenFrame"),
                 _ => {}
             }
         }

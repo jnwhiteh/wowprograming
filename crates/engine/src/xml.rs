@@ -254,7 +254,9 @@ fn process_ui(lua: &Lua, ui: &Rc<Elem>, ctx: &FileCtx) {
                 };
                 let mut build = Build::default();
                 let result = build_object(lua, &mut build, child, parent, None);
+                let loaded = build.onloads.clone();
                 finish(lua, build);
+                show_visible(lua, &loaded);
                 if let Err(e) = result {
                     report(lua, child, &e.to_string());
                 }
@@ -286,6 +288,14 @@ fn inherited_attr(lua: &Lua, elem: &Elem, attr: &str, depth: usize) -> Option<St
         }
     }
     None
+}
+
+/// An XML problem that the client writes to its FrameXML log instead of
+/// raising a Lua error, such as an anchor to a frame that does not exist
+/// (Blizzard's own XML has a few). Inferred: players see no error for
+/// them in the game.
+fn warn_xml(lua: &Lua, elem: &Elem, msg: &str) {
+    state(lua).warn(format!("{}:{}: {msg}", elem.file, elem.line));
 }
 
 fn report(lua: &Lua, elem: &Elem, msg: &str) {
@@ -371,6 +381,23 @@ fn finish(lua: &Lua, build: Build) {
     }
     for id in build.onloads {
         fire_script(lua, id, "OnLoad", ());
+    }
+}
+
+/// Fire `OnShow` for frames of an XML file that are visible after their
+/// `OnLoad`, children before parents. Inferred: Blizzard's personal
+/// resource display is created visible and sets itself up only in
+/// OnShow, and Edit Mode uses that setup at every login. Frames from
+/// `CreateFrame` (with or without a template) do not get it here.
+fn show_visible(lua: &Lua, ids: &[FrameId]) {
+    for &id in ids {
+        let visible = {
+            let st = state(lua);
+            st.frames.get(id).is_some_and(|f| !f.is_region()) && frames::is_visible(&st.frames, id)
+        };
+        if visible {
+            fire_script(lua, id, "OnShow", ());
+        }
     }
 }
 
@@ -1094,6 +1121,17 @@ fn apply_child(
                 .unwrap();
             let existing = crate::widgets::button_slot_texture(lua, id, slot)?;
             let tex_table = state(lua).table(existing);
+            // <NormalTexture name="$parentNormalTexture"/>: a global name,
+            // as for any other region.
+            if let Some(raw) = child.attr("name").filter(|n| !n.is_empty()) {
+                let name = {
+                    let mut st = state(lua);
+                    let name = frames::expand_parent_name(&st.frames, raw, Some(id));
+                    st.frames[existing].name = Some(name.clone());
+                    name
+                };
+                lua.globals().set(name, tex_table.clone())?;
+            }
             if child.children.iter().any(|c| c.tag == "Anchors") {
                 // Explicit anchors replace the default full-size anchors.
                 state(lua).frames[existing].points.clear();
@@ -1384,7 +1422,7 @@ fn apply_masked_textures(lua: &Lua, mask: FrameId, list: &Rc<Elem>) {
                     report(lua, m, &e.to_string());
                 }
             }
-            None => report(lua, m, &format!("masked texture '{key}' not found")),
+            None => warn_xml(lua, m, &format!("masked texture '{key}' not found")),
         }
     }
 }
@@ -1408,7 +1446,7 @@ fn apply_anchors(lua: &Lua, id: FrameId, elem: &Rc<Elem>) {
             match relative_key(lua, id, key) {
                 Some(t) => Value::Table(t),
                 None => {
-                    report(lua, a, &format!("relativeKey '{key}' not found"));
+                    warn_xml(lua, a, &format!("relativeKey '{key}' not found"));
                     continue;
                 }
             }
@@ -1423,7 +1461,7 @@ fn apply_anchors(lua: &Lua, id: FrameId, elem: &Rc<Elem>) {
                 match lua.globals().get::<Value>(name.as_str()) {
                     Ok(Value::Table(t)) => Value::Table(t),
                     _ => {
-                        report(lua, a, &format!("relativeTo '{name}' not found"));
+                        warn_xml(lua, a, &format!("relativeTo '{name}' not found"));
                         continue;
                     }
                 }

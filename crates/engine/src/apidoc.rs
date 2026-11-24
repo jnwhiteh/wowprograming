@@ -62,6 +62,16 @@ pub const WIDGET_DOCS: &[(&str, &str)] = &[
     ("SimpleColorSelectAPI", "ColorSelect"),
     ("MinimapFrameAPI", "Minimap"),
     ("SimpleAnimGroupAPI", "AnimationGroup"),
+    // Map widgets: the point-of-interest frames are blobs.
+    ("FrameAPIBlob", "QuestPOIFrame"),
+    ("FrameAPIBlob", "ScenarioPOIFrame"),
+    ("FrameAPIBlob", "ArchaeologyDigSiteFrame"),
+    ("FrameAPIQuestPOI", "QuestPOIFrame"),
+    ("FrameAPIScenarioPOI", "ScenarioPOIFrame"),
+    ("FrameAPIArchaeologyDigSiteFrame", "ArchaeologyDigSiteFrame"),
+    ("FrameAPIFogOfWarFrame", "FogOfWarFrame"),
+    ("FrameAPIUnitPositionFrame", "UnitPositionFrame"),
+    ("SimpleOffScreenFrameAPI", "OffScreenFrame"),
 ];
 
 /// Build `Enum` and `Constants`, and return the widget method stubs by
@@ -128,23 +138,28 @@ pub fn install(lua: &Lua, ui_source_dir: Option<&Path>) -> Result<HashMap<String
     let mut groups: HashMap<String, Table> = HashMap::new();
     for pair in widget_stubs.pairs::<String, Table>() {
         let (doc, methods) = pair?;
-        let group = WIDGET_DOCS
+        // A documentation table can serve several widget types.
+        let mut targets: Vec<&str> = WIDGET_DOCS
             .iter()
-            .find(|(d, _)| *d == doc)
+            .filter(|(d, _)| *d == doc)
             .map(|(_, g)| *g)
-            .or_else(|| doc.starts_with("SimpleAnim").then_some("Animation"));
-        let Some(group) = group else { continue };
-        let target = match groups.get(group) {
-            Some(t) => t.clone(),
-            None => {
-                let t = lua.create_table()?;
-                groups.insert(group.to_string(), t.clone());
-                t
+            .collect();
+        if targets.is_empty() && doc.starts_with("SimpleAnim") {
+            targets.push("Animation");
+        }
+        for group in targets {
+            let target = match groups.get(group) {
+                Some(t) => t.clone(),
+                None => {
+                    let t = lua.create_table()?;
+                    groups.insert(group.to_string(), t.clone());
+                    t
+                }
+            };
+            for pair in methods.pairs::<Value, Value>() {
+                let (k, v) = pair?;
+                target.raw_set(k, v)?;
             }
-        };
-        for pair in methods.pairs::<Value, Value>() {
-            let (k, v) = pair?;
-            target.raw_set(k, v)?;
         }
     }
     Ok(groups)
@@ -222,7 +237,13 @@ pub fn install_named_stubs(lua: &Lua, names: &[String]) -> Result<usize> {
         let f = lua.create_function(move |_, _: mlua::MultiValue| {
             let n: i64 = called.raw_get(full.as_str()).unwrap_or(0);
             called.raw_set(full.as_str(), n + 1)?;
-            Ok(if is_count { Some(0) } else { None })
+            // Other stubs return no values at all (not one nil): Blizzard
+            // code counts the results of some, such as GetChannelList.
+            Ok(if is_count {
+                mlua::MultiValue::from_iter([Value::Integer(0)])
+            } else {
+                mlua::MultiValue::new()
+            })
         })?;
         container.raw_set(key, f)?;
         count += 1;

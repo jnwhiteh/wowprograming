@@ -207,17 +207,42 @@ for _, doc in ipairs(finalDocs) do
     end
 end
 
--- Mixins of documented return values: full name -> { [index] = mixin }.
--- Scenarios use them to restore methods on recorded results.
+-- Mixins of documented return values, for restoring methods on recorded
+-- results: full name -> { [index] = shape }. A shape is
+-- { mixin = name, fields = { [field] = shape }, each = shape }: the
+-- value's own mixin, the shapes of its structure fields, and the shape of
+-- every element of a list. Only parts with a mixin somewhere are kept.
+local function shapeOf(arg, depth)
+    if depth > 5 then return nil end
+    if arg.Type == "table" and arg.InnerType then
+        local inner = shapeOf({ Type = arg.InnerType }, depth + 1)
+        return inner and { each = inner } or nil
+    end
+    local fields
+    local s = structures[arg.Type]
+    if s then
+        for _, field in ipairs(s.Fields or {}) do
+            local sh = shapeOf(field, depth + 1)
+            if sh then
+                fields = fields or {}
+                fields[field.Name] = sh
+            end
+        end
+    end
+    if not arg.Mixin and not fields then return nil end
+    return { mixin = arg.Mixin, fields = fields }
+end
+
 local returnMixins = {}
 for _, doc in ipairs(finalDocs) do
     if doc.Type ~= "ScriptObject" then
         for _, fn in ipairs(doc.Functions or {}) do
             local full = doc.Namespace and (doc.Namespace .. "." .. fn.Name) or fn.Name
             for i, r in ipairs(fn.Returns or {}) do
-                if r.Mixin then
+                local sh = shapeOf(r, 0)
+                if sh then
                     returnMixins[full] = returnMixins[full] or {}
-                    returnMixins[full][i] = r.Mixin
+                    returnMixins[full][i] = sh
                 end
             end
         end

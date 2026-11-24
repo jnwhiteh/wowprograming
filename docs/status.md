@@ -6,13 +6,29 @@ work (see "Keeping this file current" below).
 
 For goals, design and the full roadmap, see [scope.md](scope.md).
 
-Last updated: 2026-11-24 (desktop fixes merged; client state goal started).
+Last updated: 2026-11-24 (console errors fixed; client state goal started).
 
 ## Current state
 
 - **Client state goal: started on 2026-11-24**, branch `client-state`
   (from `main`), with the user's go-ahead. See "Client state: a training
   dummy session" in [scope.md](scope.md) and "Next steps".
+- **Console errors fixed (2026-11-24, branch `client-state`):** the user
+  reported constant errors in the console. The default UI now loads and
+  runs without Lua errors in all scenarios (`monk`, `evoker`, `paladin`,
+  `hud`, `world`), after `/reload`, and from character select into the
+  world for all 13 characters (about 57 distinct errors before). The
+  full-UI test fails on any Lua error in the first 5 seconds.
+  `run --glue --seconds N --exec "/run SelectCharacter(i) EnterWorld()"`
+  now follows Enter World headless, as the window does. Main causes: a
+  captured load guard (`g_middleClassLoaded`) stopped `middleclass` from
+  loading; `[Bootstrap]` files of load-on-demand addons did not run;
+  stubs returned one nil instead of nothing; `string.format` lacked
+  positional arguments; CVar defaults were missing without a capture;
+  map widget methods and named button textures were missing; class
+  resources reported the main power's maximum. New inferred rules are in
+  [client-runtime.md](client-runtime.md) ("Loading XML and client
+  answers").
 - **Desktop feedback (2026-11-24):** fixes from the user's first desktop
   run (character select list art and text shadows, loading screen
   progress, PTR issue reporter, cast bars at login, buff and game menu
@@ -280,8 +296,15 @@ Last updated: 2026-11-24 (desktop fixes merged; client state goal started).
 
 ## Next steps
 
+Console errors: ask the user to run the GUI again and report any error
+that is left (interactions such as opening panels can still raise some;
+the headless runs only cover loading and idle play).
+
 Client state goal: work through the seven done criteria in scope.md in
 order, each with a headless test in `crates/engine/tests/full_ui.rs`.
+Spell data comes from DB2 (SpellName, SpellMisc and others); find their
+FileDataIDs first (the CASC lookup by `DBFilesClient/<name>.db2` path
+finds nothing).
 
 Desktop feedback (merged). Not reproduced: buff tooltips "adding lines until full"
 (with the fixes, buff tooltips show the aura name, description and time
@@ -291,7 +314,7 @@ not read closed tutorials; the GUI's Enter World does.
 
 Frame runtime goal: done and merged. Leftovers of the frame
 runtime are in the backlog in scope.md. When the open questions in
-client-runtime.md are worth a session (there are 19), write the probe
+client-runtime.md are worth a session (there are 21), write the probe
 addon described there and ask the user before running it.
 
 Paused character select and world goal: ask the user to try
@@ -528,6 +551,16 @@ Things that cost time once and should not cost it again.
   Mode appends its presets to the table `C_EditMode.GetLayouts` returns.
 - `ctl hover` does not work on a GUI window: the window sends its own
   pointer position every frame. Test hover with `run --serve`.
+- Captured "numbers" include globals that Blizzard Lua sets, such as the
+  load guard `g_middleClassLoaded`; setting them before the addons load
+  stops the addon. Find such causes by watching assignments with a
+  metatable on `_G` from a copy of a scenario.
+- To find console errors, run each scenario headless, group the
+  `[error]` lines with `sort | uniq -c`, and print the Blizzard source
+  line of each: most come from a client function that returns nothing.
+- Some strings are missing from GlobalStrings.db2 as the sandbox reads it
+  (probably in encrypted sections), such as
+  `SOCIAL_ENABLE_DISCORD_FUNCTIONALITY`; `client.lua` defines stand-ins.
 
 ## Keeping this file current
 
