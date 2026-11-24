@@ -724,10 +724,35 @@ mod art {
     pub const CREATURES: [u32; 2] = [123362, 125512];
 }
 
-/// Skin and hair colors for character models, whose real textures are
-/// composed from many layers in the client. The skin color depends on the
-/// race (ChrRaces ID).
-fn character_paints(race: u32) -> HashMap<u32, Paint> {
+/// The default skin texture of a race and sex (ChrRaces ID; 0 male, 1
+/// female): `character/<race>/<sex>/<race><sex>skin00_00_hd.blp`, a whole
+/// body and face texture in the layout the model expects. The client
+/// composes skins from customization choices; this is the first choice.
+fn default_skin(race: u32, sex: u32) -> Option<u32> {
+    let (male, female) = match race {
+        1 => (1027767, 1002483),
+        2 => (916966, 949450),
+        3 => (878515, 949155),
+        4 => (1030035, 0),
+        5 => (959282, 1019816),
+        6 => (974717, 996031),
+        7 => (916486, 948734),
+        8 => (1034514, 1037096),
+        9 => (3058800, 3062624),
+        10 => (1098758, 1098217),
+        11 => (1003984, 1022933),
+        22 => (3056241, 3057321),
+        // character/dracthyr/dracthyrdragon_skin_color_4207726.blp
+        52 => (4207726, 4207726),
+        _ => (0, 0),
+    };
+    let id = if sex == 1 { female } else { male };
+    (id != 0).then_some(id)
+}
+
+/// Skin and hair paints for character models: the race's default skin
+/// texture where known, else a color by race (ChrRaces ID).
+fn character_paints(race: u32, sex: u32) -> HashMap<u32, Paint> {
     let skin = match race {
         // Orc, Mag'har: green; Troll, Zandalari: blue-green.
         2 | 36 => [96, 130, 70],
@@ -749,7 +774,11 @@ fn character_paints(race: u32) -> HashMap<u32, Paint> {
         _ => [196, 150, 120],
     };
     let mut m = HashMap::new();
-    m.insert(1, Paint::Color([skin[0], skin[1], skin[2], 255]));
+    let skin = match default_skin(race, sex) {
+        Some(id) => Paint::Texture(id),
+        None => Paint::Color([skin[0], skin[1], skin[2], 255]),
+    };
+    m.insert(1, skin);
     m.insert(6, Paint::Color([90, 60, 40, 255]));
     m.insert(2, Paint::Color([120, 100, 80, 255]));
     m
@@ -840,7 +869,7 @@ pub fn demo_scene(gd: &GameData, race: u32, sex: u32, view: View) -> World {
         load_model(
             gd,
             f,
-            &character_paints(race),
+            &character_paints(race, sex),
             Some(default_character_geoset),
         )
     });

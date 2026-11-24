@@ -172,7 +172,10 @@ Last updated: 2026-11-24.
   3D models inside UI frames (PlayerModel, ModelScene).
 - 3D view: models hold the first frame of Stand (no animation playback;
   Stand stored in `.anim` files is not read, which leaves those models in
-  the bind pose); character skin and hair are flat colors per race; no equipment; the ground is a flat plane;
+  the bind pose); character skin is the race's first skin texture
+  (`world::default_skin`, a table of FileDataIDs for the classic races and
+  Dracthyr; other races get a flat color), hair is a flat color, other
+  replaceable textures (Dracthyr wings) are grey; no equipment; the ground is a flat plane;
   textures have no mipmaps (distant grass shimmers); the scene is the same
   for every map. Only the selected character stands on character select
   (the game shows the warband group in a camp scene).
@@ -209,9 +212,12 @@ Character select and world goal (branch `character-select`):
 2. 3D view: play animations (interpolate the keys over time; read `.anim`
    files listed in the AFID chunk for sequences without flag 0x20). Then
    mipmaps for textures.
-3. Character skin textures: compose from `ChrCustomizationMaterial` and
-   related tables (FileDataIDs in the listfile, layouts in WoWDBDefs), or
-   pick one baked texture per race as a stand-in.
+3. Character textures from the customization tables
+   (ChrCustomizationOption -> Choice -> Element -> Material ->
+   TextureFileData) instead of the `default_skin` table. Blocker found:
+   the DB2 reader returns no relation value for ChrCustomizationOption
+   (ChrModelID column is 0), although relations work for ChrModel; check
+   the relationship section handling in `formats/db2.rs` first.
 4. Character select: the frame above the first card, then several
    characters (the warband group) in the scene.
 5. Logout (`Logout()`/`/logout` in the game returns to character select);
