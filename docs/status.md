@@ -91,6 +91,8 @@ Last updated: 2026-11-24.
 - 3D view (`world.rs`, `formats/m2.rs`): M2 models and skins (vertices,
   textures, materials, sections, batches), creature skins from
   CreatureDisplayInfo, race models through ChrRaceXChrModel and ChrModel,
+  the first frame of Stand (`m2::stand_pose`; character bones are in the
+  skeleton file named by the SKID chunk: SKB1 bones, SKS1 sequences),
   a multi-threaded software rasterizer (near-plane clipping, depth buffer,
   alpha test and blending, sun light, fog, sky gradient). The demo scene:
   a grass ground (Elwynn tileset), Elwynn trees, bushes and rocks, a deer
@@ -168,8 +170,9 @@ Last updated: 2026-11-24.
   are one pixel wider in the captures).
 - Cooldown swipes, portraits (a placeholder portrait is shown), minimap,
   3D models inside UI frames (PlayerModel, ModelScene).
-- 3D view: models are in their bind pose (arms out); character skin and
-  hair are flat colors per race; no equipment; the ground is a flat plane;
+- 3D view: models hold the first frame of Stand (no animation playback;
+  Stand stored in `.anim` files is not read, which leaves those models in
+  the bind pose); character skin and hair are flat colors per race; no equipment; the ground is a flat plane;
   textures have no mipmaps (distant grass shimmers); the scene is the same
   for every map. Only the selected character stands on character select
   (the game shows the warband group in a camp scene).
@@ -203,9 +206,9 @@ Character select and world goal (branch `character-select`):
 1. Ask the user to try `gui --glue --scenario scenarios/charselect
    --no-addons` on the desktop (see [running-the-gui.md](running-the-gui.md))
    and act on the report.
-2. 3D view: play the Stand animation (read sequences and bones; animation
-   data is in `.anim` files listed in the AFID chunk), so models stop
-   standing in the bind pose. Then mipmaps for textures.
+2. 3D view: play animations (interpolate the keys over time; read `.anim`
+   files listed in the AFID chunk for sequences without flag 0x20). Then
+   mipmaps for textures.
 3. Character skin textures: compose from `ChrCustomizationMaterial` and
    related tables (FileDataIDs in the listfile, layouts in WoWDBDefs), or
    pick one baked texture per race as a stand-in.

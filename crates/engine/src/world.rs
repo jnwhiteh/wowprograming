@@ -84,7 +84,38 @@ pub fn load_model(
     replace: &HashMap<u32, Paint>,
     geoset: Option<fn(u16) -> bool>,
 ) -> Option<Mesh> {
-    let model = m2::parse(&gd.read_file(file)?).ok()?;
+    let data = gd.read_file(file)?;
+    let mut model = m2::parse(&data).ok()?;
+    // Pose the model in the first frame of Stand.
+    let skeleton = (model.skeleton_file != 0)
+        .then(|| gd.read_file(model.skeleton_file))
+        .flatten();
+    if let Some(pose) = m2::stand_pose(&data, skeleton.as_deref()) {
+        for v in &mut model.vertices {
+            let total: u32 = v.bone_weights.iter().map(|&w| w as u32).sum();
+            if total == 0 {
+                continue;
+            }
+            let (mut p, mut n) = ([0.0f32; 3], [0.0f32; 3]);
+            for k in 0..4 {
+                let w = v.bone_weights[k] as f32 / total as f32;
+                if w == 0.0 {
+                    continue;
+                }
+                let Some(m) = pose.get(v.bone_indices[k] as usize) else {
+                    continue;
+                };
+                let tp = m2::transform(m, v.pos, 1.0);
+                let tn = m2::transform(m, v.normal, 0.0);
+                for c in 0..3 {
+                    p[c] += tp[c] * w;
+                    n[c] += tn[c] * w;
+                }
+            }
+            v.pos = p;
+            v.normal = n;
+        }
+    }
     let skin_file = *model.skin_files.first()?;
     let skin = m2::parse_skin(&gd.read_file(skin_file)?).ok()?;
     let mut batches = Vec::new();
