@@ -6,18 +6,19 @@ work (see "Keeping this file current" below).
 
 For goals, design and the full roadmap, see [scope.md](scope.md).
 
-Last updated: 2026-11-24 (fixes from the user's first desktop run).
+Last updated: 2026-11-24 (desktop fixes merged; client state goal started).
 
 ## Current state
 
-- **Desktop feedback (2026-11-24), branch `desktop-feedback`:** the user
-  ran the GUI on the desktop for the first time and listed problems.
-  Fixed on this branch (not merged yet): character select list art
-  (nine-slice atlases) and text shadows (named colors), loading screen
-  progress with a status line, the PTR issue reporter no longer loads,
-  empty cast bars at login, buff tooltips, the game menu tooltip (line
-  breaks, text under the border), closing help tips, leaving Edit Mode
-  without errors, blocky magnified textures. See "Next steps".
+- **Client state goal: started on 2026-11-24**, branch `client-state`
+  (from `main`), with the user's go-ahead. See "Client state: a training
+  dummy session" in [scope.md](scope.md) and "Next steps".
+- **Desktop feedback (2026-11-24):** fixes from the user's first desktop
+  run (character select list art and text shadows, loading screen
+  progress, PTR issue reporter, cast bars at login, buff and game menu
+  tooltips, help tips, leaving Edit Mode, magnified textures). Merged
+  into `main` by the user's request (fast-forward, not pushed); the
+  branch `desktop-feedback` is deleted.
 - **Frame runtime goal: done on 2026-11-24**, merged into `main` by the
   user's request (fast-forward, not pushed). All done
   criteria in [scope.md](scope.md) ("Frame runtime") hold:
@@ -32,8 +33,6 @@ Last updated: 2026-11-24 (fixes from the user's first desktop run).
   in Edit Mode and finds it after `/reload`. Rules, inferred behavior and
   the open questions for a probe session are in
   [client-runtime.md](client-runtime.md).
-- **Next goal (user's go-ahead needed): client state**,
-  a training dummy session, on its own branch.
 - **Direction (proposed 2026-11-24):** client state (a
   training dummy session: drag spells to the bar, instant, cast and
   channeled spells, cooldowns, buffs and debuffs, target, tooltips, macros, Clique), then the security model
@@ -281,16 +280,16 @@ Last updated: 2026-11-24 (fixes from the user's first desktop run).
 
 ## Next steps
 
-Desktop feedback: ask the user to try `desktop-feedback` on the desktop
-and to merge it. Not reproduced: buff tooltips "adding lines until full"
+Client state goal: work through the seven done criteria in scope.md in
+order, each with a headless test in `crates/engine/tests/full_ui.rs`.
+
+Desktop feedback (merged). Not reproduced: buff tooltips "adding lines until full"
 (with the fixes, buff tooltips show the aura name, description and time
 left, and the game menu tooltip keeps its size); ask for the exact frame
 if it happens again. The headless `run` has no character name, so it does
 not read closed tutorials; the GUI's Enter World does.
 
-Frame runtime goal: done and merged. With the user's go-ahead,
-start the client state goal on a new branch (see "Client state: a
-training dummy session" in [scope.md](scope.md)). Leftovers of the frame
+Frame runtime goal: done and merged. Leftovers of the frame
 runtime are in the backlog in scope.md. When the open questions in
 client-runtime.md are worth a session (there are 19), write the probe
 addon described there and ask the user before running it.
