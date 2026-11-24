@@ -13,10 +13,12 @@ pub mod coverage;
 pub mod editbox;
 pub mod frames;
 pub mod gamedata;
+pub mod hyperlink;
 pub mod input;
 pub mod layout;
 pub mod layoutcache;
 pub mod loading;
+pub mod messageframe;
 pub mod movement;
 pub mod natives;
 pub mod render;
@@ -396,6 +398,7 @@ impl Engine {
         }
         timers::run_due(lua);
         cooldown::update(lua);
+        messageframe::update(lua);
         editbox::fire_pending_text_changes(lua);
         frames::run_on_update(lua, elapsed);
         widgets::fire_size_changes(lua);
@@ -823,6 +826,7 @@ fn build_runtime(
         last_click: None,
         moving: None,
         slider_drag: None,
+        hover_link: None,
         hover_generation: 0,
         key_targets: HashMap::new(),
         anim_fx: HashMap::new(),

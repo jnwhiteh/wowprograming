@@ -322,6 +322,34 @@ Implemented in `slider.rs` and `widgets.rs`.
   scroll frame's range (scroll child size minus frame size) changed, and
   at once from `UpdateScrollChildRect` (inferred).
 
+### Message frames
+
+Implemented in `messageframe.rs`.
+
+- `AddMessage(text, r, g, b[, a, messageID])` adds a line; without a
+  colour the line is white (inferred). A message with the ID of an
+  earlier one replaces it (inferred). `Clear` removes all.
+- Defaults from UI.xsd: fading on, 10 s visible (`displayDuration`), 3 s
+  fade, fade power 1, insert mode BOTTOM. While fading, the alpha falls
+  as `(1 - t) ^ power` (shape inferred) and the line is dropped at the
+  end. TOP puts new lines at the top.
+
+### Hyperlinks
+
+Implemented in `hyperlink.rs`; the text layout keeps the `|Hdata|h`
+data on each run.
+
+- A frame with `SetHyperlinksEnabled(true)` (or `hyperlinksEnabled` in
+  XML) gets the scripts for links in the visible font strings of itself
+  and its child frames (and its own lines if it is a message frame)
+  (scope of child frames inferred).
+- OnHyperlinkEnter `(link, text, region, left, bottom, width, height)`
+  and OnHyperlinkLeave `(link, text)` fire as the mouse moves over and
+  off a link; OnHyperlinkClick `(link, text, button, region, left,
+  bottom, width, height)` fires at a release inside the pressed frame,
+  before OnClick (order inferred). The rectangle is in the frame's units
+  (inferred).
+
 ### Edit Mode
 
 - The client keeps the saved layouts. `C_EditMode` is in

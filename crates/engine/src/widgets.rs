@@ -224,6 +224,7 @@ pub fn method_groups(lua: &Lua) -> Result<HashMap<&'static str, Table>> {
     groups.insert("StatusBar", value_methods(lua, false)?);
     groups.insert("ScrollFrame", scroll_frame_methods(lua)?);
     groups.insert("Cooldown", crate::cooldown::methods(lua)?);
+    groups.insert("MessageFrame", crate::messageframe::methods(lua)?);
     groups.insert("AnimCommon", anim_common_methods(lua)?);
     // Tooltip methods override some frame methods (Show) and call them.
     let tooltip: Table = lua
@@ -2140,6 +2141,18 @@ fn frame_methods(lua: &Lua) -> Result<Table> {
     method!(lua, m, "GetPropagateKeyboardInput", |lua, this_: Value| {
         with(lua, &this_, |f| f.propagate_keyboard)
     });
+    method!(lua, m, "SetHyperlinksEnabled", |lua,
+                                             (this_, v): (
+        Value,
+        Value
+    )| {
+        with(lua, &this_, |f| f.hyperlinks_enabled = truthy(&v))
+    });
+    method!(lua, m, "GetHyperlinksEnabled", |lua, this_: Value| with(
+        lua,
+        &this_,
+        |f| f.hyperlinks_enabled
+    ));
     method!(lua, m, "LockHighlight", |lua, this_: Value| {
         with(lua, &this_, |f| f.highlight_locked = true)
     });
@@ -2165,7 +2178,6 @@ fn frame_methods(lua: &Lua) -> Result<Table> {
         "EnableMouseWheel",
         "EnableGamePadButton",
         "EnableGamePadStick",
-        "SetHyperlinksEnabled",
         "SetDrawLayerEnabled",
         "SetIsFrameBuffer",
         "SetUsingParentLevel",

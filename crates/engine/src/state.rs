@@ -193,6 +193,41 @@ impl Default for EditState {
     }
 }
 
+/// One line of a message frame.
+#[derive(Clone, Debug)]
+pub struct Message {
+    pub text: String,
+    pub color: [f32; 4],
+    pub id: Option<f64>,
+    /// `GetTime()` when it was added.
+    pub time: f64,
+}
+
+/// Message frame state. Defaults from UI.xsd.
+#[derive(Clone, Debug)]
+pub struct MessageState {
+    pub messages: Vec<Message>,
+    pub fading: bool,
+    pub time_visible: f64,
+    pub fade_duration: f64,
+    pub fade_power: f64,
+    /// "TOP" or "BOTTOM": where new messages go.
+    pub insert_mode: String,
+}
+
+impl Default for MessageState {
+    fn default() -> Self {
+        Self {
+            messages: Vec::new(),
+            fading: true,
+            time_visible: 10.0,
+            fade_duration: 3.0,
+            fade_power: 1.0,
+            insert_mode: "BOTTOM".into(),
+        }
+    }
+}
+
 /// Cooldown frame state. Times are `GetTime()` seconds.
 #[derive(Clone, Debug)]
 pub struct CooldownState {
@@ -345,6 +380,8 @@ pub struct FrameData {
     pub propagate_keyboard: bool,
     /// `LockHighlight` on a frame: the HIGHLIGHT layer stays shown.
     pub highlight_locked: bool,
+    /// `SetHyperlinksEnabled`: the frame gets OnHyperlink* scripts.
+    pub hyperlinks_enabled: bool,
     /// Disabled edit box or slider (buttons keep this in `button`).
     pub disabled: bool,
     pub clips_children: bool,
@@ -361,6 +398,7 @@ pub struct FrameData {
     pub button: Option<Box<ButtonState>>,
     pub edit: Option<Box<EditState>>,
     pub cooldown: Option<Box<CooldownState>>,
+    pub messages: Option<Box<MessageState>>,
     pub anim: Option<Box<AnimState>>,
     /// Slider and status bar values: min, max, value.
     pub value: (f64, f64, f64),
@@ -418,6 +456,7 @@ impl FrameData {
             propagate_keyboard: false,
             highlight_locked: false,
             disabled: false,
+            hyperlinks_enabled: false,
             clips_children: false,
             ignore_parent_alpha: false,
             ignore_parent_scale: false,
@@ -432,6 +471,7 @@ impl FrameData {
             button: None,
             edit: None,
             cooldown: None,
+            messages: None,
             anim: None,
             value: (0.0, 0.0, 0.0),
             status_texture: None,
@@ -489,6 +529,18 @@ pub struct LastClick {
     pub time: f64,
     /// The click was the second of a double click.
     pub double: bool,
+}
+
+/// The hyperlink under the mouse.
+#[derive(Clone, Debug)]
+pub struct HoverLink {
+    /// The frame with hyperlinks enabled that gets the scripts.
+    pub owner: FrameId,
+    /// The font string (or message frame) that shows the link.
+    pub region: FrameId,
+    pub link: String,
+    pub text: String,
+    pub rect: crate::layout::Rect,
 }
 
 /// A frame following the mouse after `StartMoving` or `StartSizing`.
@@ -610,6 +662,8 @@ pub struct State {
     /// The slider whose thumb follows the mouse, and where the thumb was
     /// grabbed relative to its centre.
     pub slider_drag: Option<(FrameId, (f64, f64))>,
+    /// The hyperlink under the mouse.
+    pub hover_link: Option<HoverLink>,
     /// The frame being moved or sized with the mouse.
     pub moving: Option<Moving>,
     /// Keys held down, and the frame that took each one (it gets OnKeyUp).

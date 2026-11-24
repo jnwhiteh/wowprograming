@@ -65,6 +65,7 @@ pub fn mouse_move(lua: &Lua, x: f64, y: f64) {
     crate::slider::follow_mouse(lua);
     maybe_start_drag(lua);
     update_focus(lua, true);
+    crate::hyperlink::update(lua);
 }
 
 /// Fire OnDragStart when the held button has moved far enough over a
@@ -157,6 +158,7 @@ pub fn refresh_focus(lua: &Lua) {
     };
     if changed {
         update_focus(lua, false);
+        crate::hyperlink::update(lua);
     }
 }
 
@@ -257,6 +259,9 @@ pub fn mouse_up(lua: &Lua, button: &str) {
     let (x, y) = state(lua).mouse;
     let inside = hit_test(lua, x, y) == Some(id);
     fire_script(lua, id, "OnMouseUp", (button, inside));
+    if inside {
+        crate::hyperlink::click(lua, id, button);
+    }
     if inside && registered_for(lua, id, button, false) {
         click_or_double(lua, id, button, false);
     }

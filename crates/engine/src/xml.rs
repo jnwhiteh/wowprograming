@@ -582,6 +582,7 @@ fn apply_attributes(
             "enableMouseMotion" => state(lua).frames[id].mouse_motion = b,
             "movable" => state(lua).frames[id].movable = b,
             "resizable" => state(lua).frames[id].resizable = b,
+            "hyperlinksEnabled" => state(lua).frames[id].hyperlinks_enabled = b,
             "clampedToScreen" => state(lua).frames[id].clamped = b,
             "dontSavePosition" => state(lua).frames[id].dont_save_position = b,
             "enableKeyboard" => state(lua).frames[id].keyboard_enabled = b,
@@ -617,6 +618,19 @@ fn apply_attributes(
                     "drawBling" => cd.draw_bling = b,
                     "hideCountdownNumbers" => cd.hide_numbers = b,
                     _ => cd.rotation = f,
+                }
+            }
+            "fade" | "fadeDuration" | "fadePower" | "displayDuration" | "insertMode"
+                if state(lua).frames[id].messages.is_some() =>
+            {
+                let mut st = state(lua);
+                let m = st.frames[id].messages.as_deref_mut().expect("messages");
+                match key.as_str() {
+                    "fade" => m.fading = b,
+                    "fadeDuration" => m.fade_duration = f,
+                    "fadePower" => m.fade_power = f,
+                    "displayDuration" => m.time_visible = f,
+                    _ => m.insert_mode = value.to_ascii_uppercase(),
                 }
             }
             "registerForDrag" => {

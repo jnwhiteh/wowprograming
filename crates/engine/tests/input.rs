@@ -699,3 +699,102 @@ fn cooldowns_sweep_and_finish() {
     assert_eq!(log(&e), "");
     assert!(!e.eval::<bool>("return CD:IsShown()").unwrap());
 }
+
+#[test]
+fn message_frames_show_and_fade_messages() {
+    let wtf = tempfile::tempdir().unwrap();
+    let mut e = started(wtf.path());
+    e.exec(
+        r#"
+        MF = CreateFrame("MessageFrame", nil, UIParent)
+        MF:SetSize(300, 100)
+        MF:SetPoint("CENTER")
+        MF:SetTimeVisible(2)
+        MF:SetFadeDuration(1)
+        MF:AddMessage("first", 1, 0, 0)
+        MF:AddMessage("second", 0, 1, 0, 1, 7)
+        "#,
+    );
+    let texts = |e: &Engine| -> Vec<(String, f32)> {
+        e.scene()
+            .items
+            .iter()
+            .filter_map(|i| match i {
+                wowprogramming_engine::scene::Item::Text(t) => Some(t),
+                _ => None,
+            })
+            .flat_map(|t| t.lines.iter())
+            .map(|l| {
+                let s: String = l.runs.iter().map(|r| r.text.as_str()).collect();
+                let a = l.runs.first().and_then(|r| r.color).map_or(1.0, |c| c[3]);
+                (s, a)
+            })
+            .collect()
+    };
+    assert_eq!(
+        texts(&e),
+        vec![("first".to_string(), 1.0), ("second".to_string(), 1.0)]
+    );
+    assert!(e.eval::<bool>("return MF:HasMessageByID(7)").unwrap());
+    e.tick(2.5);
+    let t = texts(&e);
+    assert!((t[0].1 - 0.5).abs() < 0.01, "{t:?}");
+    e.tick(1.0);
+    assert!(texts(&e).is_empty());
+    assert!(!e.eval::<bool>("return MF:HasMessageByID(7)").unwrap());
+    e.exec("MF:AddMessage('x') MF:Clear()");
+    assert!(texts(&e).is_empty());
+}
+
+#[test]
+fn hyperlinks_fire_enter_leave_and_click() {
+    let wtf = tempfile::tempdir().unwrap();
+    let mut e = started(wtf.path());
+    e.exec(
+        r#"
+        Log = {}
+        HF = CreateFrame("Frame", nil, UIParent)
+        HF:SetSize(400, 40)
+        HF:SetPoint("CENTER")
+        HF:EnableMouse(true)
+        HF:SetHyperlinksEnabled(true)
+        local fs = HF:CreateFontString()
+        fs:SetFont("Fonts\\FRIZQT__.TTF", 14, "")
+        fs:SetPoint("LEFT")
+        fs:SetText("Get |cff0070dd|Hitem:19019|h[Thunderfury]|h|r now")
+        HF:SetScript("OnHyperlinkEnter", function(_, link, text) table.insert(Log, "enter:" .. link .. ":" .. text) end)
+        HF:SetScript("OnHyperlinkLeave", function(_, link) table.insert(Log, "leave:" .. link) end)
+        HF:SetScript("OnHyperlinkClick", function(_, link, text, button) table.insert(Log, "click:" .. link .. ":" .. button) end)
+        "#,
+    );
+    // Find the link's place in the drawn text.
+    let (x, y) = e
+        .scene()
+        .items
+        .iter()
+        .find_map(|i| match i {
+            wowprogramming_engine::scene::Item::Text(t) => {
+                let line = &t.lines[0];
+                let mut pen = line.x;
+                for r in &line.runs {
+                    let w: f64 = r.advances.iter().sum();
+                    if r.link.is_some() {
+                        return Some((pen + w / 2.0, line.y_top - t.size / 2.0));
+                    }
+                    pen += w;
+                }
+                None
+            }
+            _ => None,
+        })
+        .expect("a link run");
+    e.mouse_move(x - 200.0, y);
+    log(&e);
+    e.mouse_move(x, y);
+    assert_eq!(log(&e), "enter:item:19019:[Thunderfury]");
+    e.mouse_down("RightButton");
+    e.mouse_up("RightButton");
+    assert_eq!(log(&e), "click:item:19019:RightButton");
+    e.mouse_move(x + 300.0, y);
+    assert_eq!(log(&e), "leave:item:19019");
+}

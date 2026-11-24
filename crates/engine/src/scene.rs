@@ -194,7 +194,7 @@ pub fn build(st: &mut State) -> Scene {
         frame_info.insert(fid, (alpha, clip));
         let strata = strata_index(st.frames[fid].strata);
         let level = st.frames[fid].level;
-        if st.frames[fid].object_type == "EditBox" {
+        if matches!(st.frames[fid].object_type, "EditBox" | "MessageFrame") {
             entries.push(Entry {
                 key: (strata, level, 3, i64::MAX, pos, std::cmp::Reverse(0)),
                 frame: fid,
@@ -239,6 +239,8 @@ pub fn build(st: &mut State) -> Scene {
         let Some(r) = e.region else {
             if st.frames[e.frame].cooldown.is_some() {
                 cooldown_swipe(st, e.frame, clip, alpha, &mut scene);
+            } else if st.frames[e.frame].messages.is_some() {
+                message_frame_text(st, e.frame, clip, alpha, &mut scene);
             } else {
                 edit_box_text(st, e.frame, clip, alpha, &mut scene);
             }
@@ -520,6 +522,58 @@ fn font_string_text(
     let has_width = f.width > 0.0 || layout::has_two(&f.points, true);
     let wrap = has_width.then_some(rect.width / es);
     push_text(st, id, rect, wrap, clip, alpha, scene);
+}
+
+/// The laid-out text of a font string or message frame, as it would be
+/// drawn: for finding the hyperlink under the mouse.
+pub fn text_item(st: &mut State, id: FrameId) -> Option<TextItem> {
+    let mut scene = Scene::default();
+    match st.frames[id].object_type {
+        "FontString" => font_string_text(st, id, None, 1.0, &mut scene),
+        "MessageFrame" => message_frame_text(st, id, None, 1.0, &mut scene),
+        _ => {}
+    }
+    scene.items.into_iter().find_map(|i| match i {
+        Item::Text(t) => Some(t),
+        _ => None,
+    })
+}
+
+/// The visible lines of a message frame.
+fn message_frame_text(
+    st: &mut State,
+    id: FrameId,
+    clip: Option<Rect>,
+    alpha: f64,
+    scene: &mut Scene,
+) {
+    let Some((text, justify_v)) = crate::messageframe::display_text(st, id) else {
+        return;
+    };
+    let Some(rect) = layout::rect(st, id) else {
+        return;
+    };
+    if let Some(t) = st.frames[id].text.as_deref_mut() {
+        t.text = text;
+    }
+    // New lines grow from the insert side; the API keeps its own value.
+    let saved = st.frames[id]
+        .font
+        .as_deref_mut()
+        .map(|f| f.justify_v.replace(justify_v.into()));
+    let es = effective_scale(st, id);
+    push_text(
+        st,
+        id,
+        rect,
+        Some(rect.width / es),
+        clip.or(Some(rect)),
+        alpha,
+        scene,
+    );
+    if let (Some(saved), Some(f)) = (saved, st.frames[id].font.as_deref_mut()) {
+        f.justify_v = saved;
+    }
 }
 
 fn edit_box_text(st: &mut State, id: FrameId, clip: Option<Rect>, alpha: f64, scene: &mut Scene) {

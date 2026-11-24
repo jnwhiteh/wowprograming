@@ -176,6 +176,9 @@ Last updated: 2026-11-24.
   `S.ApplyCVars`, `S.SpellbookStandIns` (for reduced UIs).
 - Capture addon (`tools/capture/WowProgrammingCapture`) and
   `wowprogramming import-capture`; see [capture.md](capture.md).
+- Message frames (`messageframe.rs`): lines with colours and IDs that
+  fade out. Hyperlinks (`hyperlink.rs`): OnHyperlinkEnter, Leave and
+  Click for links in the text of frames with hyperlinks enabled.
 - Cooldown frames (`cooldown.rs`): the swipe is drawn and shrinks over
   time; the widget hides and OnCooldownDone fires at the end.
 - Sliders (`slider.rs`): the thumb follows the value; pressing and
@@ -268,8 +271,8 @@ done criteria; rules and open questions in
    release), edit box editing, sliders, scroll bar thumbs and scroll
    ranges (the same test drags a Settings slider and the Settings list's
    scroll bar), cooldown frames (the same test checks an action
-   button's swipe and OnCooldownDone). Next: MessageFrame
-   (`UIErrorsFrame`), hyperlinks, then the remaining coverage gaps.
+   button's swipe and OnCooldownDone), message frames, hyperlinks.
+   Next: the remaining coverage gaps (`wowprogramming coverage`).
 4. When a behavior is unknown, implement a best guess, mark it
    "inferred" in client-runtime.md and add a question to its "Open
    questions for a probe session". Do not ask the user to record a
@@ -359,6 +362,7 @@ Decisions already made with the user. Do not reopen them without a reason.
 | `crates/engine/src/editbox.rs` | Edit box editing: cursor, highlight, limits, keys, autoFocus |
 | `crates/engine/src/slider.rs` | Slider thumb placement and dragging |
 | `crates/engine/src/cooldown.rs` | Cooldown frames: swipe, OnCooldownDone |
+| `crates/engine/src/messageframe.rs`, `hyperlink.rs` | Message frames; hyperlink scripts |
 | `crates/engine/src/coverage.rs` | The coverage report (`wowprogramming coverage`) |
 | `crates/engine/src/apidoc.rs` | `Enum` and `Constants` from the API documentation |
 | `crates/engine/src/savedvars.rs` | SavedVariables reading and writing |

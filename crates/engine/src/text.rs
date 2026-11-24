@@ -142,6 +142,8 @@ pub fn resolve_font(st: &State, id: FrameId) -> ResolvedFont {
 pub struct Run {
     pub text: String,
     pub color: Option<[f32; 4]>,
+    /// The hyperlink data (`|Hdata|h`) of this run's text, if it is a link.
+    pub link: Option<String>,
     /// How far the pen moves after each character (kerning included), in
     /// the font string's units, or in screen units inside a scene.
     pub advances: Vec<f64>,
@@ -158,12 +160,23 @@ pub struct Line {
 struct Glyph {
     c: char,
     color: Option<[f32; 4]>,
+    /// 1 + the index of the hyperlink this character belongs to, or 0.
+    link: u32,
 }
 
 /// Resolve WoW escape sequences: colours, links, textures and newlines.
+#[cfg(test)]
 fn parse_markup(text: &str) -> Vec<Glyph> {
+    parse_markup_links(text).0
+}
+
+/// Like [`parse_markup`], with the hyperlink data that the glyphs' `link`
+/// fields point to.
+fn parse_markup_links(text: &str) -> (Vec<Glyph>, Vec<String>) {
     let mut out = Vec::with_capacity(text.len());
     let mut colors: Vec<[f32; 4]> = Vec::new();
+    let mut links: Vec<String> = Vec::new();
+    let mut link: u32 = 0;
     let chars: Vec<char> = text.chars().collect();
     let mut i = 0;
     while i < chars.len() {
@@ -174,6 +187,7 @@ fn parse_markup(text: &str) -> Vec<Glyph> {
                 out.push(Glyph {
                     c: '\n',
                     color: None,
+                    link: 0,
                 });
             }
             i += 1;
@@ -183,6 +197,7 @@ fn parse_markup(text: &str) -> Vec<Glyph> {
             out.push(Glyph {
                 c,
                 color: colors.last().copied(),
+                link,
             });
             i += 1;
             continue;
@@ -193,6 +208,7 @@ fn parse_markup(text: &str) -> Vec<Glyph> {
                 out.push(Glyph {
                     c: '|',
                     color: colors.last().copied(),
+                    link,
                 });
                 i += 2;
             }
@@ -221,20 +237,25 @@ fn parse_markup(text: &str) -> Vec<Glyph> {
                 out.push(Glyph {
                     c: '\n',
                     color: None,
+                    link: 0,
                 });
                 i += 2;
             }
             'H' => {
                 // |Hlinkdata|h shown text |h
                 let rest = &chars[i + 2..];
-                let skip = rest
-                    .windows(2)
-                    .position(|w| w == ['|', 'h'])
-                    .map(|p| p + 4)
-                    .unwrap_or(rest.len() + 2);
+                let end = rest.windows(2).position(|w| w == ['|', 'h']);
+                let skip = end.map(|p| p + 4).unwrap_or(rest.len() + 2);
+                if let Some(p) = end {
+                    links.push(rest[..p].iter().collect());
+                    link = links.len() as u32;
+                }
                 i += skip;
             }
-            'h' => i += 2,
+            'h' => {
+                link = 0;
+                i += 2;
+            }
             'T' | 'A' | 'K' => {
                 // Inline texture, atlas or protected string: shown as a space.
                 let end_code = code.to_ascii_lowercase();
@@ -248,6 +269,7 @@ fn parse_markup(text: &str) -> Vec<Glyph> {
                     out.push(Glyph {
                         c: ' ',
                         color: None,
+                        link: 0,
                     });
                 }
                 i += skip;
@@ -256,12 +278,13 @@ fn parse_markup(text: &str) -> Vec<Glyph> {
                 out.push(Glyph {
                     c,
                     color: colors.last().copied(),
+                    link,
                 });
                 i += 1;
             }
         }
     }
-    out
+    (out, links)
 }
 
 /// Measures text for one font and size, as the client does.
@@ -442,7 +465,7 @@ pub fn layout_lines(
     non_space_wrap: bool,
     max_lines: usize,
 ) -> Vec<Line> {
-    let glyphs = parse_markup(text);
+    let (glyphs, links) = parse_markup_links(text);
     let mut lines: Vec<Vec<Glyph>> = Vec::new();
     let mut current: Vec<Glyph> = Vec::new();
     // Pen position after the last glyph of `current`.
@@ -505,13 +528,13 @@ pub fn layout_lines(
         lines.truncate(max_lines);
         truncated = true;
     }
-    let mut out: Vec<Line> = lines.iter().map(|l| to_line(m, l)).collect();
+    let mut out: Vec<Line> = lines.iter().map(|l| to_line(m, l, &links)).collect();
     // Without wrapping, a line wider than the box ends in an ellipsis.
     let limit = max_width.filter(|w| *w > 0.0);
     if let Some(maxw) = limit {
         for (line, glyphs) in out.iter_mut().zip(&lines) {
             if line.width > maxw + 0.5 {
-                *line = ellipsize(m, glyphs, maxw);
+                *line = ellipsize(m, glyphs, maxw, &links);
             }
         }
     }
@@ -522,10 +545,10 @@ pub fn layout_lines(
             glyphs.pop();
         }
         glyphs.extend(dots());
-        let l = to_line(m, &glyphs);
+        let l = to_line(m, &glyphs, &links);
         let n = out.len();
         out[n - 1] = if l.width > maxw {
-            ellipsize(m, last, maxw)
+            ellipsize(m, last, maxw, &links)
         } else {
             l
         };
@@ -538,24 +561,32 @@ fn dots() -> [Glyph; 3] {
     [Glyph {
         c: '.',
         color: None,
+        link: 0,
     }; 3]
 }
 
-fn to_line(m: &Measurer, glyphs: &[Glyph]) -> Line {
+fn to_line(m: &Measurer, glyphs: &[Glyph], links: &[String]) -> Line {
     let chars: Vec<char> = glyphs.iter().map(|g| g.c).collect();
     let advances = pen_advances(m, &chars);
     let mut runs: Vec<Run> = Vec::new();
+    let mut run_links: Vec<u32> = Vec::new();
     for (g, adv) in glyphs.iter().zip(advances) {
         match runs.last_mut() {
-            Some(r) if r.color == g.color => {
+            Some(r) if r.color == g.color && run_links.last() == Some(&g.link) => {
                 r.text.push(g.c);
                 r.advances.push(adv);
             }
-            _ => runs.push(Run {
-                text: g.c.to_string(),
-                color: g.color,
-                advances: vec![adv],
-            }),
+            _ => {
+                runs.push(Run {
+                    text: g.c.to_string(),
+                    color: g.color,
+                    link: (g.link > 0)
+                        .then(|| links.get(g.link as usize - 1).cloned())
+                        .flatten(),
+                    advances: vec![adv],
+                });
+                run_links.push(g.link);
+            }
         }
     }
     Line {
@@ -566,13 +597,13 @@ fn to_line(m: &Measurer, glyphs: &[Glyph]) -> Line {
 
 /// The longest start of `glyphs` that fits in `max_width` with an ellipsis
 /// after it.
-fn ellipsize(m: &Measurer, glyphs: &[Glyph], max_width: f64) -> Line {
+fn ellipsize(m: &Measurer, glyphs: &[Glyph], max_width: f64, links: &[String]) -> Line {
     let mut keep = glyphs.len();
     loop {
         let mut g: Vec<Glyph> = glyphs[..keep].to_vec();
         g.extend(dots());
         if keep == 0 || glyphs_width(m, &g) <= max_width + 0.01 {
-            let mut line = to_line(m, &g);
+            let mut line = to_line(m, &g, links);
             // The ellipsis is its own run, so callers can find it.
             if let Some(last) = line.runs.last_mut()
                 && last.text.len() > 3
@@ -584,6 +615,7 @@ fn ellipsize(m: &Measurer, glyphs: &[Glyph], max_width: f64) -> Line {
                 line.runs.push(Run {
                     text,
                     color: None,
+                    link: None,
                     advances,
                 });
             }

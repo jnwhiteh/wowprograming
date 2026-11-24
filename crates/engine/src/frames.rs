@@ -314,6 +314,9 @@ pub fn create_object(
         // edit box sets it (inferred).
         data.mouse_enabled = true;
     }
+    if object_type == "MessageFrame" {
+        data.messages = Some(Box::default());
+    }
     if object_type == "Cooldown" {
         data.cooldown = Some(Box::default());
     }
@@ -594,6 +597,9 @@ pub const FIRED_SCRIPTS: &[&str] = &[
     "OnEvent",
     "OnHide",
     "OnHorizontalScroll",
+    "OnHyperlinkClick",
+    "OnHyperlinkEnter",
+    "OnHyperlinkLeave",
     "OnKeyDown",
     "OnKeyUp",
     "OnLeave",
@@ -751,6 +757,7 @@ mod tests {
             include_str!("xml.rs"),
             include_str!("editbox.rs"),
             include_str!("cooldown.rs"),
+            include_str!("hyperlink.rs"),
         ];
         let mut found = std::collections::BTreeSet::new();
         for src in sources {
