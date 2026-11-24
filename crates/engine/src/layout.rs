@@ -248,12 +248,13 @@ fn compute(st: &mut State, id: FrameId) -> Option<Rect> {
         (None, None, Some(c)) => c - height / 2.0,
         _ => return None,
     };
-    let mut r = Rect {
+    let r = Rect {
         left: l,
         bottom: b,
         width,
         height,
     };
+    let mut r = crate::movement::clamp_rect(st, id, r);
     if let Some(fx) = st.anim_fx.get(&id) {
         r.left += fx.offset.0 * es;
         r.bottom += fx.offset.1 * es;

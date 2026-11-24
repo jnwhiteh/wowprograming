@@ -681,7 +681,6 @@ fn script_region_methods(lua: &Lua) -> Result<Table> {
     method!(lua, m, "IsAnchoringRestricted", |_, _this: Value| Ok(false));
     method!(lua, m, "IsAnchoringSecret", |_, _this: Value| Ok(false));
     empty!(lua, m, "IsCollapsed", |_, _this: Value| Ok(false));
-    empty!(lua, m, "IsDragging", |_, _this: Value| Ok(false));
     method!(lua, m, "GetSourceLocation", |_, _this: Value| Ok(
         Value::Nil
     ));
@@ -1888,8 +1887,6 @@ fn frame_methods(lua: &Lua) -> Result<Table> {
         &this_,
         |f| f.toplevel
     ));
-    empty!(lua, m, "Raise", |_, _this: Value| Ok(()));
-    empty!(lua, m, "Lower", |_, _this: Value| Ok(()));
     method!(
         lua,
         m,
@@ -1929,22 +1926,197 @@ fn frame_methods(lua: &Lua) -> Result<Table> {
         &this_,
         |f| f.movable
     ));
-    for name in [
-        "StartMoving",
-        "StartSizing",
-        "StopMovingOrSizing",
-        "RegisterForDrag",
-        "SetClampedToScreen",
+    method!(lua, m, "StartMoving", |lua,
+                                    (this_, from_mouse): (
+        Value,
+        Value
+    )| {
+        let id = this(&this_)?;
+        crate::movement::start(lua, id, None, truthy(&from_mouse))
+    });
+    method!(lua, m, "StartSizing", |lua,
+                                    (this_, point, from_mouse): (
+        Value,
+        Value,
+        Value
+    )| {
+        let id = this(&this_)?;
+        let point = match &point {
+            Value::String(s) => point_name(&s.to_string_lossy()).unwrap_or("BOTTOMRIGHT"),
+            _ => "BOTTOMRIGHT",
+        };
+        crate::movement::start(lua, id, Some(point), truthy(&from_mouse))
+    });
+    method!(lua, m, "StopMovingOrSizing", |lua, this_: Value| {
+        let id = this(&this_)?;
+        crate::movement::stop(lua, id);
+        Ok(())
+    });
+    method!(lua, m, "RegisterForDrag", |lua, args: Variadic<Value>| {
+        let buttons: Vec<String> = args[1..]
+            .iter()
+            .filter_map(|v| match v {
+                Value::String(s) => Some(s.to_string_lossy()),
+                _ => None,
+            })
+            .collect();
+        with(lua, args.first().unwrap_or(&Value::Nil), |f| {
+            f.drag_buttons = buttons
+        })
+    });
+    method!(lua, m, "IsDragging", |lua, this_: Value| {
+        let id = this(&this_)?;
+        let st = state(lua);
+        Ok(st
+            .press
+            .as_ref()
+            .is_some_and(|p| p.dragging && p.frame == id))
+    });
+    method!(lua, m, "SetClampedToScreen", |lua,
+                                           (this_, v): (
+        Value,
+        Value
+    )| {
+        let id = this(&this_)?;
+        let mut st = state(lua);
+        st.frames[id].clamped = truthy(&v);
+        layout::invalidate(&mut st);
+        Ok(())
+    });
+    method!(lua, m, "IsClampedToScreen", |lua, this_: Value| with(
+        lua,
+        &this_,
+        |f| f.clamped
+    ));
+    method!(
+        lua,
+        m,
         "SetClampRectInsets",
-        "EnableKeyboard",
-        "SetPropagateKeyboardInput",
+        |lua, args: Variadic<Value>| {
+            let id = this(args.first().unwrap_or(&Value::Nil))?;
+            let mut st = state(lua);
+            st.frames[id].clamp_insets = [
+                num(args.get(1)),
+                num(args.get(2)),
+                num(args.get(3)),
+                num(args.get(4)),
+            ];
+            layout::invalidate(&mut st);
+            Ok(())
+        }
+    );
+    method!(lua, m, "GetClampRectInsets", |lua, this_: Value| with(
+        lua,
+        &this_,
+        |f| {
+            let i = f.clamp_insets;
+            (i[0], i[1], i[2], i[3])
+        }
+    ));
+    method!(
+        lua,
+        m,
         "SetUserPlaced",
-        "SetDontSavePosition",
+        |lua, (this_, v): (Value, Value)| { with(lua, &this_, |f| f.user_placed = truthy(&v)) }
+    );
+    method!(lua, m, "IsUserPlaced", |lua, this_: Value| with(
+        lua,
+        &this_,
+        |f| f.user_placed
+    ));
+    method!(lua, m, "SetDontSavePosition", |lua,
+                                            (this_, v): (
+        Value,
+        Value
+    )| {
+        with(lua, &this_, |f| f.dont_save_position = truthy(&v))
+    });
+    method!(lua, m, "GetDontSavePosition", |lua, this_: Value| with(
+        lua,
+        &this_,
+        |f| f.dont_save_position
+    ));
+    method!(lua, m, "SetResizable", |lua, (this_, v): (Value, Value)| {
+        with(lua, &this_, |f| f.resizable = truthy(&v))
+    });
+    method!(lua, m, "IsResizable", |lua, this_: Value| with(
+        lua,
+        &this_,
+        |f| f.resizable
+    ));
+    method!(lua, m, "SetResizeBounds", |lua, args: Variadic<Value>| {
+        with(lua, args.first().unwrap_or(&Value::Nil), |f| {
+            f.resize_bounds = [
+                num(args.get(1)),
+                num(args.get(2)),
+                num(args.get(3)),
+                num(args.get(4)),
+            ]
+        })
+    });
+    method!(lua, m, "GetResizeBounds", |lua, this_: Value| with(
+        lua,
+        &this_,
+        |f| {
+            let b = f.resize_bounds;
+            (b[0], b[1], b[2], b[3])
+        }
+    ));
+    method!(lua, m, "Raise", |lua, this_: Value| {
+        let id = this(&this_)?;
+        crate::movement::raise(lua, id);
+        Ok(())
+    });
+    method!(lua, m, "Lower", |lua, this_: Value| {
+        let id = this(&this_)?;
+        crate::movement::lower(lua, id);
+        Ok(())
+    });
+    method!(
+        lua,
+        m,
+        "EnableKeyboard",
+        |lua, (this_, v): (Value, Value)| {
+            with(lua, &this_, |f| f.keyboard_enabled = truthy(&v))
+        }
+    );
+    method!(lua, m, "IsKeyboardEnabled", |lua, this_: Value| with(
+        lua,
+        &this_,
+        |f| f.keyboard_enabled
+    ));
+    method!(lua, m, "SetPropagateKeyboardInput", |lua,
+                                                  (this_, v): (
+        Value,
+        Value
+    )| {
+        with(lua, &this_, |f| f.propagate_keyboard = truthy(&v))
+    });
+    method!(lua, m, "GetPropagateKeyboardInput", |lua, this_: Value| {
+        with(lua, &this_, |f| f.propagate_keyboard)
+    });
+    method!(lua, m, "LockHighlight", |lua, this_: Value| {
+        with(lua, &this_, |f| f.highlight_locked = true)
+    });
+    method!(lua, m, "UnlockHighlight", |lua, this_: Value| {
+        with(lua, &this_, |f| f.highlight_locked = false)
+    });
+    method!(lua, m, "SetHighlightLocked", |lua,
+                                           (this_, v): (
+        Value,
+        Value
+    )| {
+        with(lua, &this_, |f| f.highlight_locked = truthy(&v))
+    });
+    method!(lua, m, "IsHighlightLocked", |lua, this_: Value| with(
+        lua,
+        &this_,
+        |f| f.highlight_locked
+    ));
+    for name in [
         "SetFixedFrameStrata",
         "SetFixedFrameLevel",
         "SetFlattensRenderLayers",
-        "SetResizable",
-        "SetResizeBounds",
         "EnableMouseWheel",
         "EnableGamePadButton",
         "EnableGamePadStick",
@@ -1953,18 +2125,9 @@ fn frame_methods(lua: &Lua) -> Result<Table> {
         "SetIsFrameBuffer",
         "SetUsingParentLevel",
         "SetWindow",
-        "LockHighlight",
-        "UnlockHighlight",
     ] {
         m.raw_set(name, empty_fn(lua)?)?;
     }
-    empty!(lua, m, "IsUserPlaced", |_, _this: Value| Ok(false));
-    empty!(lua, m, "IsClampedToScreen", |_, _this: Value| Ok(false));
-    empty!(lua, m, "IsKeyboardEnabled", |_, _this: Value| Ok(false));
-    empty!(lua, m, "GetPropagateKeyboardInput", |_, _this: Value| Ok(
-        true
-    ));
-    empty!(lua, m, "IsResizable", |_, _this: Value| Ok(false));
     method!(lua, m, "GetBoundsRect", |lua, this_: Value| {
         let id = this(&this_)?;
         match own_rect(lua, id) {

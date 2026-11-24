@@ -143,18 +143,22 @@ Sources: W = warcraft.wiki.gg page named after the function or handler
 - **Mouse capture.** The frame that got OnMouseDown also gets OnMouseUp,
   even if the cursor left it. OnMouseUp takes `(self, button, upInside)`
   (W OnMouseUp). OnClick for an Up registration fires only if the cursor
-  is over the button at release (W OnClick). The sandbox today sends
-  OnMouseUp to whatever frame is under the cursor; this is wrong.
+  is over the button at release (W OnClick). A Down registration clicks
+  at the press, with `down` true. Implemented in `input.rs`. While one
+  button is held, the sandbox ignores presses of another (inferred).
 - **Double click.** Press, release, press, release over the button, the
   last three quickly (W OnDoubleClick). Needs the Up registration. When
   OnDoubleClick fires it replaces PreClick, OnClick and PostClick for that
   release, so rapid clicks alternate between OnClick and OnDoubleClick.
-  The time window is an open question.
+  The sandbox uses 0.5 s between the two releases, the Windows default
+  (inferred), and only replaces the click when the frame has an
+  OnDoubleClick handler (inferred; otherwise action buttons would lose
+  every second click).
 - **OnEnter and OnLeave** take `(self, motion)`. `motion` is true for real
   mouse movement and false otherwise, for example when a frame is shown
-  under a still cursor (W OnEnter). The sandbox passes true only on mouse
-  moves; it should also update the mouse focus when frames show, hide or
-  move under a still cursor, with `motion` false.
+  under a still cursor (W OnEnter). The sandbox checks the mouse focus
+  once per frame, after layout or visibility changed, and fires with
+  `motion` false (the timing, next frame, is inferred).
 
 ### Dragging
 
@@ -168,8 +172,11 @@ Sources: W = warcraft.wiki.gg page named after the function or handler
   drag is released over it. It does not clear the cursor (W
   OnReceiveDrag). It also fires when the drag was a frame move, with
   nothing on the cursor.
-- The distance the mouse must move before a drag starts is an open
-  question.
+- The sandbox starts a drag when the mouse has moved 4 pixels from the
+  press, the Windows default (inferred). At release, OnDragStop fires on
+  the dragged frame first, then OnReceiveDrag on the frame under the
+  mouse (order inferred). A button stops looking pushed when its drag
+  starts (inferred).
 
 ### Moving and sizing
 
@@ -184,7 +191,14 @@ Sources: W = warcraft.wiki.gg page named after the function or handler
   the move (W StartMoving).
 - `StartSizing([resizePoint, alwaysStartFromMouse])`, default point
   `BOTTOMRIGHT` (W StartSizing). Sizing respects `SetResizeBounds`.
-- What `alwaysStartFromMouse` does is an open question.
+- `StartSizing` errors with `Frame:StartSizing(): Frame is not
+  resizable` unless `SetResizable(true)` was called (message inferred
+  from the StartMoving one).
+- The sandbox moves the frame by the mouse's movement since the press,
+  so it does not lag behind after the drag threshold; with
+  `alwaysStartFromMouse` it uses the movement since the call (inferred
+  from the name). While moving or sizing, the frame has one anchor,
+  TOPLEFT to UIParent's TOPLEFT (inferred).
 
 ### User-placed positions
 
@@ -212,15 +226,23 @@ Sources: W = warcraft.wiki.gg page named after the function or handler
 
 - `SetClampedToScreen(true)` keeps the frame on screen for `SetPoint`,
   moves and sizing (W SetClampedToScreen). `SetClampRectInsets` adds
-  padding inside or beyond the screen edges. The exact math, including
-  the sign of the insets, is an open question. A first guess: the frame's
-  rectangle, grown by the insets, must lie inside the screen.
+  padding inside or beyond the screen edges. The insets
+  `(left, right, top, bottom)` move the frame's edges in screen
+  directions (positive is right and up), and that rectangle must lie
+  inside the screen (B: `SetClampRectInsets(-10, 10, 10, -10)` grows the
+  rectangle by 10 on every side; `(0, 200 - width, 10, 0)` keeps only the
+  left 200 units and 10 above the top on screen). The sandbox clamps the
+  rectangle in layout; `GetPoint` still returns the offsets that were set
+  (inferred).
 
 ### Raising and frame levels
 
 - A toplevel frame (`SetToplevel(true)`, XML `toplevel="true"`) raises its
-  frame level when it is clicked or shown (W SetToplevel). How far it
-  raises (above all frames of its strata?) is an open question.
+  frame level when it is clicked or shown (W SetToplevel). The sandbox's
+  `Raise` puts the frame one level above every other visible frame of
+  its strata and moves its children by the same amount; `Lower` does the
+  opposite (inferred). A click raises the nearest toplevel frame at or
+  above the clicked one.
 
 ### Keyboard
 
@@ -263,6 +285,20 @@ justify one session. Each question names what the probe measures.
    after `Clear()`?
 7. OnEnter `motion` = false: does showing a frame under a still cursor
    fire OnEnter at once or on the next frame?
+8. Drag release order: does OnDragStop fire before or after
+   OnReceiveDrag on the frame under the mouse? Does OnReceiveDrag fire
+   on the dragged frame itself when it is under the mouse?
+9. Clamping and `GetPoint`: after `SetPoint` puts a clamped frame off
+   screen, does `GetPoint` return the requested offsets or the clamped
+   ones?
+10. Anchors while moving: `GetNumPoints` and `GetPoint(1)` of a frame
+    between `StartMoving` and `StopMovingOrSizing`.
+11. Double click without an OnDoubleClick handler: do two quick clicks
+    give two OnClick calls?
+12. A second mouse button pressed while the first is held over a
+    frame: which scripts fire?
+13. Raise: the frame level after `Raise()` for a frame below two others
+    in the same strata, and its child's level.
 
 ## Later layers (not part of the current goal)
 

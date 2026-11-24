@@ -235,6 +235,22 @@ pub struct FrameData {
     pub mouse_motion: bool,
     pub mouse_over: bool,
     pub movable: bool,
+    /// Mouse buttons that start a drag (`RegisterForDrag`).
+    pub drag_buttons: Vec<String>,
+    /// Moved by the user (`StartMoving`, `SetUserPlaced`).
+    pub user_placed: bool,
+    pub dont_save_position: bool,
+    pub clamped: bool,
+    /// `SetClampRectInsets`: left, right, top, bottom.
+    pub clamp_insets: [f64; 4],
+    pub resizable: bool,
+    /// `SetResizeBounds`: min width, min height, max width, max height
+    /// (0 for no maximum).
+    pub resize_bounds: [f64; 4],
+    pub keyboard_enabled: bool,
+    pub propagate_keyboard: bool,
+    /// `LockHighlight` on a frame: the HIGHLIGHT layer stays shown.
+    pub highlight_locked: bool,
     pub clips_children: bool,
     pub ignore_parent_alpha: bool,
     pub ignore_parent_scale: bool,
@@ -289,6 +305,16 @@ impl FrameData {
             mouse_motion: false,
             mouse_over: false,
             movable: false,
+            drag_buttons: Vec::new(),
+            user_placed: false,
+            dont_save_position: false,
+            clamped: false,
+            clamp_insets: [0.0; 4],
+            resizable: false,
+            resize_bounds: [0.0; 4],
+            keyboard_enabled: false,
+            propagate_keyboard: false,
+            highlight_locked: false,
             clips_children: false,
             ignore_parent_alpha: false,
             ignore_parent_scale: false,
@@ -327,6 +353,37 @@ impl FrameData {
     pub fn is_frame(&self) -> bool {
         !self.is_region() && self.anim.is_none() && self.object_type != "Font"
     }
+}
+
+/// A mouse button held down over a frame. The frame gets the release
+/// (mouse capture).
+#[derive(Clone, Debug)]
+pub struct Press {
+    pub frame: FrameId,
+    pub button: String,
+    /// Mouse position at the press, in screen units.
+    pub at: (f64, f64),
+    /// OnDragStart fired for this press.
+    pub dragging: bool,
+}
+
+#[derive(Clone, Debug)]
+pub struct LastClick {
+    pub frame: FrameId,
+    pub button: String,
+    pub time: f64,
+    /// The click was the second of a double click.
+    pub double: bool,
+}
+
+/// A frame following the mouse after `StartMoving` or `StartSizing`.
+#[derive(Clone, Debug)]
+pub struct Moving {
+    pub frame: FrameId,
+    /// The point being dragged when sizing; `None` when moving.
+    pub sizing: Option<&'static str>,
+    pub mouse: (f64, f64),
+    pub rect: crate::layout::Rect,
 }
 
 pub struct Timer {
@@ -431,6 +488,14 @@ pub struct State {
     pub bindings: HashMap<String, Function>,
     /// Mouse position in screen units.
     pub mouse: (f64, f64),
+    /// The mouse button held down, and the frame that captured it.
+    pub press: Option<Press>,
+    /// The last click, for double clicks.
+    pub last_click: Option<LastClick>,
+    /// The frame being moved or sized with the mouse.
+    pub moving: Option<Moving>,
+    /// Layout generation when the mouse focus was last checked.
+    pub hover_generation: u64,
     /// Order in which frames were last raised, for frames at the same level.
     pub raise_counter: u64,
     /// Visual effects of the animations that are playing, by target.

@@ -459,10 +459,15 @@ pub fn change_visibility(lua: &Lua, id: FrameId, change: impl FnOnce(&mut Vec<Fr
                 st.focus = None;
             }
         }
+        // Hiding a frame that follows the mouse stops the move.
+        crate::movement::stop(lua, f);
         fire_script(lua, f, "OnHide", ());
     }
     for f in shown {
         if is_visible(&state(lua).frames, f) {
+            if state(lua).frames[f].toplevel {
+                crate::movement::raise(lua, f);
+            }
             fire_script(lua, f, "OnShow", ());
         }
     }
@@ -557,6 +562,9 @@ pub const FIRED_SCRIPTS: &[&str] = &[
     "OnChar",
     "OnClick",
     "OnDisable",
+    "OnDoubleClick",
+    "OnDragStart",
+    "OnDragStop",
     "OnEditFocusGained",
     "OnEditFocusLost",
     "OnEnable",
@@ -579,6 +587,7 @@ pub const FIRED_SCRIPTS: &[&str] = &[
     "OnValueChanged",
     "OnVerticalScroll",
     "PostClick",
+    "OnReceiveDrag",
     "PreClick",
     // Animation scripts (not in ScriptsType).
     "OnFinished",

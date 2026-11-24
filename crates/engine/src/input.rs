@@ -7,7 +7,7 @@ use wowprogramming_lua::mlua;
 use crate::frames::{fire_script, is_visible};
 use crate::layout;
 use crate::scene::frame_order;
-use crate::state::{FrameId, state};
+use crate::state::{FrameId, LastClick, Press, state};
 use crate::widgets::{click, update_button_font};
 
 /// The topmost visible frame under the point that takes mouse input.
@@ -51,16 +51,71 @@ pub fn hit_test(lua: &Lua, x: f64, y: f64) -> Option<FrameId> {
     None
 }
 
+/// How far the mouse must move after a press before OnDragStart fires,
+/// in screen pixels. Inferred (the Windows default); see client-runtime.md.
+pub const DRAG_THRESHOLD_PIXELS: f64 = 4.0;
+
+/// Longest time between two clicks of a double click, in seconds.
+/// Inferred (the Windows default); see client-runtime.md.
+pub const DOUBLE_CLICK_TIME: f64 = 0.5;
+
 pub fn mouse_move(lua: &Lua, x: f64, y: f64) {
     state(lua).mouse = (x, y);
+    crate::movement::follow_mouse(lua);
+    maybe_start_drag(lua);
+    update_focus(lua, true);
+}
+
+/// Fire OnDragStart when the held button has moved far enough over a
+/// frame registered for dragging with it.
+fn maybe_start_drag(lua: &Lua) {
+    let (frame, button) = {
+        let mut st = state(lua);
+        let threshold = DRAG_THRESHOLD_PIXELS / st.pixel_scale.max(0.01);
+        let mouse = st.mouse;
+        let Some(p) = st.press.as_mut() else { return };
+        if p.dragging {
+            return;
+        }
+        let (dx, dy) = (mouse.0 - p.at.0, mouse.1 - p.at.1);
+        if (dx * dx + dy * dy).sqrt() < threshold {
+            return;
+        }
+        let (frame, button) = (p.frame, p.button.clone());
+        let registered = st.frames[frame].drag_buttons.iter().any(|b| {
+            let b = b.to_ascii_lowercase();
+            b == button.to_ascii_lowercase() || b == "anybutton"
+        });
+        if !registered {
+            return;
+        }
+        let p = st.press.as_mut().expect("press");
+        p.dragging = true;
+        if let Some(b) = st.frames[frame].button.as_deref_mut() {
+            b.pushed = false;
+        }
+        (frame, button)
+    };
+    fire_script(lua, frame, "OnDragStart", button);
+}
+
+/// Recompute the frame under the mouse and fire OnLeave and OnEnter.
+/// `motion` is false when frames moved, showed or hid under a still mouse.
+pub fn update_focus(lua: &Lua, motion: bool) {
+    let (x, y) = state(lua).mouse;
     let hit = hit_test(lua, x, y);
-    let old = state(lua).mouse_focus;
+    let old = {
+        let mut st = state(lua);
+        st.hover_generation = st.layout_generation;
+        st.mouse_focus
+    };
     if old == hit {
         return;
     }
     {
         let mut st = state(lua);
         st.mouse_focus = hit;
+        let captured = st.press.as_ref().filter(|p| !p.dragging).map(|p| p.frame);
         if let Some(o) = old {
             st.frames[o].mouse_over = false;
             if let Some(b) = st.frames[o].button.as_deref_mut() {
@@ -69,19 +124,38 @@ pub fn mouse_move(lua: &Lua, x: f64, y: f64) {
         }
         if let Some(h) = hit {
             st.frames[h].mouse_over = true;
+            // Coming back over the pressed button pushes it again.
+            if captured == Some(h)
+                && let Some(b) = st.frames[h].button.as_deref_mut()
+                && b.enabled
+            {
+                b.pushed = true;
+            }
         }
     }
     if let Some(o) = old {
         update_button_font(lua, o);
         if motion_allowed(lua, o) {
-            fire_script(lua, o, "OnLeave", true);
+            fire_script(lua, o, "OnLeave", motion);
         }
     }
     if let Some(h) = hit {
         update_button_font(lua, h);
         if motion_allowed(lua, h) {
-            fire_script(lua, h, "OnEnter", true);
+            fire_script(lua, h, "OnEnter", motion);
         }
+    }
+}
+
+/// Once per frame: if the layout or visibility changed, frames may have
+/// moved under the still mouse.
+pub fn refresh_focus(lua: &Lua) {
+    let changed = {
+        let st = state(lua);
+        st.hover_generation != st.layout_generation
+    };
+    if changed {
+        update_focus(lua, false);
     }
 }
 
@@ -93,7 +167,26 @@ fn motion_allowed(lua: &Lua, id: FrameId) -> bool {
     }
 }
 
+/// Whether a button is registered for clicks of `button` going up or down.
+fn registered_for(lua: &Lua, id: FrameId, button: &str, down: bool) -> bool {
+    let st = state(lua);
+    let dir = if down { "down" } else { "up" };
+    let wanted = format!("{}{dir}", button.to_ascii_lowercase());
+    let any = format!("any{dir}");
+    st.frames[id].button.as_deref().is_some_and(|b| {
+        b.clicks.iter().any(|c| {
+            let c = c.to_ascii_lowercase();
+            c == wanted || c == any
+        })
+    })
+}
+
 pub fn mouse_down(lua: &Lua, button: &str) {
+    if state(lua).press.is_some() {
+        // A second button while one is held: the client tracks one
+        // capture at a time here.
+        return;
+    }
     let Some(id) = state(lua).mouse_focus else {
         // Clicking empty space clears keyboard focus.
         let focus = state(lua).focus.take();
@@ -112,46 +205,95 @@ pub fn mouse_down(lua: &Lua, button: &str) {
             fire_script(lua, id, "OnEditFocusGained", ());
         }
     }
-    if let Some(b) = state(lua).frames[id].button.as_deref_mut()
-        && b.enabled
+    crate::movement::raise_toplevel(lua, id);
     {
-        b.pushed = true;
+        let mut st = state(lua);
+        let at = st.mouse;
+        st.press = Some(Press {
+            frame: id,
+            button: button.to_string(),
+            at,
+            dragging: false,
+        });
+        if let Some(b) = st.frames[id].button.as_deref_mut()
+            && b.enabled
+        {
+            b.pushed = true;
+        }
     }
     fire_script(lua, id, "OnMouseDown", button);
+    if registered_for(lua, id, button, true) {
+        click_or_double(lua, id, button, true);
+    }
 }
 
 pub fn mouse_up(lua: &Lua, button: &str) {
-    let Some(id) = state(lua).mouse_focus else {
-        return;
-    };
-    let was_pushed = {
+    let press = {
         let mut st = state(lua);
-        match st.frames[id].button.as_deref_mut() {
-            Some(b) => {
-                let p = b.pushed;
-                b.pushed = false;
-                Some(p)
-            }
-            None => None,
+        match &st.press {
+            Some(p) if p.button.eq_ignore_ascii_case(button) => st.press.take(),
+            _ => None,
         }
     };
-    fire_script(lua, id, "OnMouseUp", button);
-    if was_pushed == Some(true) {
-        let registered = {
-            let st = state(lua);
-            st.frames[id].button.as_deref().is_some_and(|b| {
-                b.clicks.iter().any(|c| {
-                    let c = c.to_ascii_lowercase();
-                    c == "anyup"
-                        || c == format!("{}up", button.to_ascii_lowercase())
-                        || c == "anydown"
-                        || c == format!("{}down", button.to_ascii_lowercase())
-                })
-            })
-        };
-        if registered {
-            click(lua, id, button, false);
+    let Some(press) = press else { return };
+    let id = press.frame;
+    if let Some(b) = state(lua).frames[id].button.as_deref_mut() {
+        b.pushed = false;
+    }
+    if press.dragging {
+        // After a drag, neither OnMouseUp nor OnClick fires. The drag
+        // ends on the frame that started it, then the frame under the
+        // mouse receives it (order inferred).
+        fire_script(lua, id, "OnDragStop", ());
+        update_focus(lua, true);
+        let target = state(lua).mouse_focus;
+        if let Some(target) = target {
+            fire_script(lua, target, "OnReceiveDrag", ());
         }
+        return;
+    }
+    let (x, y) = state(lua).mouse;
+    let inside = hit_test(lua, x, y) == Some(id);
+    fire_script(lua, id, "OnMouseUp", (button, inside));
+    if inside && registered_for(lua, id, button, false) {
+        click_or_double(lua, id, button, false);
+    }
+}
+
+/// A click, or a double click if the same button clicked this frame a
+/// moment ago and the frame has an OnDoubleClick handler.
+fn click_or_double(lua: &Lua, id: FrameId, button: &str, down: bool) {
+    let enabled = state(lua).frames[id]
+        .button
+        .as_deref()
+        .is_none_or(|b| b.enabled);
+    if !enabled {
+        return;
+    }
+    let double = {
+        let st = state(lua);
+        st.frames[id].has_script("OnDoubleClick")
+            && st.last_click.as_ref().is_some_and(|c| {
+                c.frame == id
+                    && !c.double
+                    && c.button.eq_ignore_ascii_case(button)
+                    && st.time - c.time <= DOUBLE_CLICK_TIME
+            })
+    };
+    {
+        let mut st = state(lua);
+        let time = st.time;
+        st.last_click = Some(LastClick {
+            frame: id,
+            button: button.to_string(),
+            time,
+            double,
+        });
+    }
+    if double {
+        fire_script(lua, id, "OnDoubleClick", (button, down));
+    } else {
+        click(lua, id, button, down);
     }
 }
 

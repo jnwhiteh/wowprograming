@@ -14,6 +14,7 @@ pub mod gamedata;
 pub mod input;
 pub mod layout;
 pub mod loading;
+pub mod movement;
 pub mod natives;
 pub mod render;
 pub mod savedvars;
@@ -387,6 +388,7 @@ impl Engine {
         timers::run_due(lua);
         frames::run_on_update(lua, elapsed);
         widgets::fire_size_changes(lua);
+        input::refresh_focus(lua);
     }
 
     /// The current scene: visible regions in draw order.
@@ -520,6 +522,19 @@ impl Engine {
 
     pub fn mouse_up(&mut self, button: &str) {
         input::mouse_up(self.runtime.lua(), button);
+    }
+
+    /// Press a mouse button at `(x, y)`, move by `(dx, dy)` in `steps`
+    /// equal moves, and release. Positions are in screen units, y up.
+    pub fn drag(&mut self, from: (f64, f64), by: (f64, f64), button: &str, steps: u32) {
+        let steps = steps.max(1);
+        self.mouse_move(from.0, from.1);
+        self.mouse_down(button);
+        for i in 1..=steps {
+            let t = i as f64 / steps as f64;
+            self.mouse_move(from.0 + by.0 * t, from.1 + by.1 * t);
+        }
+        self.mouse_up(button);
     }
 
     pub fn mouse_wheel(&mut self, delta: f64) {
@@ -757,6 +772,10 @@ fn build_runtime(
         bindings: HashMap::new(),
         mouse: (-1.0, -1.0),
         raise_counter: 0,
+        press: None,
+        last_click: None,
+        moving: None,
+        hover_generation: 0,
         anim_fx: HashMap::new(),
         last_sizes: HashMap::new(),
     });

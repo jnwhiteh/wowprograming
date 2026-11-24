@@ -15,6 +15,10 @@
 //! - `type <text>`: type text into the focused edit box.
 //! - `click <expr> [button]`: click the frame the Lua expression returns.
 //! - `hover <expr>`: move the mouse over that frame.
+//! - `drag <expr> <dx> <dy> [button]`: press over the centre of that
+//!   frame, move by (dx, dy) in ten steps, release. `drag <x> <y> <dx>
+//!   <dy> [button]` starts at a screen position instead.
+//! - `down [button]`, `up [button]`: press or release a mouse button.
 //! - `mouse <x> <y>`: move the mouse to a screen position (y up).
 //! - `under [x y]`: frames under a position (default: the mouse).
 //! - `tree <expr> [depth]`: shown widgets below a frame, with rectangles.
@@ -192,6 +196,58 @@ fn handle(engine: &mut Engine, line: &str) -> (String, Action) {
                 _ => (center, Action::None),
             }
         }
+        "drag" => {
+            let mut words: Vec<&str> = rest.split_whitespace().collect();
+            let button = match words.last() {
+                Some(b) if b.ends_with("Button") => {
+                    let b = b.to_string();
+                    words.pop();
+                    b
+                }
+                _ => "LeftButton".to_string(),
+            };
+            let nums: Vec<f64> = words.iter().filter_map(|w| w.parse().ok()).collect();
+            let (from, by) = if nums.len() == 4 && words.len() == 4 {
+                ((nums[0], nums[1]), (nums[2], nums[3]))
+            } else if words.len() >= 3 {
+                let n = words.len();
+                let (Ok(dx), Ok(dy)) = (words[n - 2].parse(), words[n - 1].parse()) else {
+                    return ("usage: drag <expr> <dx> <dy> [button]".into(), Action::None);
+                };
+                let expr = words[..n - 2].join(" ");
+                let center = lua_helper(engine, "Inspect_Center", &lua_quote(&expr));
+                let mut parts = center.split_whitespace().map(|p| p.parse::<f64>());
+                match (parts.next(), parts.next()) {
+                    (Some(Ok(x)), Some(Ok(y))) => ((x, y), (dx, dy)),
+                    _ => return (center, Action::None),
+                }
+            } else {
+                return ("usage: drag <expr> <dx> <dy> [button]".into(), Action::None);
+            };
+            engine.drag(from, by, &button, 10);
+            let focus = engine
+                .mouse_focus_name()
+                .unwrap_or_else(|| "nothing".into());
+            (
+                format!(
+                    "dragged from {:.1} {:.1} to {:.1} {:.1}, over {focus}",
+                    from.0,
+                    from.1,
+                    from.0 + by.0,
+                    from.1 + by.1
+                ),
+                Action::None,
+            )
+        }
+        "down" | "up" => {
+            let button = if rest.is_empty() { "LeftButton" } else { rest };
+            if cmd == "down" {
+                engine.mouse_down(button);
+            } else {
+                engine.mouse_up(button);
+            }
+            (String::new(), Action::None)
+        }
         "mouse" => {
             let v: Vec<f64> = rest
                 .split_whitespace()
@@ -265,7 +321,7 @@ fn handle(engine: &mut Engine, line: &str) -> (String, Action) {
         }
         "quit" => ("bye".into(), Action::Quit),
         "" => (
-            "commands: exec eval dofile key type click hover mouse under tree tick screenshot stubs quit"
+            "commands: exec eval dofile key type click hover drag down up mouse under tree tick screenshot stubs quit"
                 .into(),
             Action::None,
         ),

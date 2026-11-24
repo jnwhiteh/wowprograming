@@ -122,7 +122,9 @@ fn clip_rect(st: &mut State, id: FrameId) -> Option<Rect> {
 fn region_active(st: &State, frame: FrameId, region: FrameId) -> bool {
     let f = &st.frames[frame];
     let r = &st.frames[region];
-    let highlighted = f.mouse_over || f.button.as_deref().is_some_and(|b| b.locked_highlight);
+    let highlighted = f.mouse_over
+        || f.highlight_locked
+        || f.button.as_deref().is_some_and(|b| b.locked_highlight);
     if r.draw_layer == 4 && !highlighted {
         return false;
     }
