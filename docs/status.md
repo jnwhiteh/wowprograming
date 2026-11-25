@@ -15,7 +15,35 @@ Last updated: 2026-11-25 (real addons work; world map, modifiers, hover casting,
   Criterion 1: `specs/default_ui_panels.lua` (also the test
   `every_panel_opens_without_errors`) opens 34 panels; all open and
   close without a Lua error. Known gap: talents (needs specialization
-  and talent tree data). Next: the playable world (criteria 2 to 5).
+  and talent tree data).
+  Criteria 2 to 5 (playable world), started 2026-11-25 and stopped at
+  the usage limit: `clientstate.lua` now has the combat model, built and
+  passing the existing tests but NOT yet used by any scenario or test:
+  positions and `distance` (units use `u.x`, `u.y`; the player's come
+  from `WowProgrammingWorld`), `dealDamage`, `heal`, death and respawn
+  (`u.respawn` seconds), the combat log (COMBAT_LOG_EVENT_UNFILTERED;
+  `currentEvent` holds the values, but `CombatLogGetCurrentEventInfo`
+  is NOT defined yet), range checks in `castSpell` (out of range fails),
+  harmful spells need a hostile target, helpful targeted spells (`heal`,
+  or an aura with `self = false`) go to a friendly target, channel tick
+  damage (`tickDamage`), periodic auras (`aura.tick` with `heal` or
+  `damage`). Next, in order:
+  1. Define `CombatLogGetCurrentEventInfo` (return `unpack(currentEvent,
+     1, currentEvent.n)`) and the old entry API, in `install()`.
+  2. `scenarios/dummy`: give spells `damage`, `heal`, `tickDamage`,
+     `school`; give the dummy and party positions (offsets from the
+     player after `SetPlayerMapPosition`; the position line must move
+     above the units), add a hostile mob that can die (respawn), a
+     friendly NPC, and a direct heal spell.
+  3. Range in `IsSpellInRange` and `C_ActionBar.IsActionInRange` from
+     `distance`; Tab picks the nearest living hostile within 40 yards.
+  4. A test: cast at the mob until it dies, heal a party member, check
+     health, UNIT_HEALTH and the combat log; walk out of range.
+  5. The GUI: render units at their positions and the camera behind the
+     player from position and facing (`world.rs` Camera, `demo_scene`
+     in `crates/gui`); a click in the 3D view targets the unit under the
+     mouse (shared projection); nameplates (NAME_PLATE_CREATED,
+     NAME_PLATE_UNIT_ADDED with `State.SetExtraToken`).
 - **Real addons goal: criteria done** (set by the user on 2026-11-25),
   on branch `client-state`: TomTom, Clique and WowLua must run without
   errors and work, and the player must be able to move so TomTom's

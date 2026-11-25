@@ -50,14 +50,24 @@ local function flush()
     flushing = false
     local q = queue
     queue = {}
-    for _, e in ipairs(q) do fireNow(unpack(e, 1, e.n)) end
+    for _, e in ipairs(q) do
+        if e.fn then e.fn() else fireNow(unpack(e, 1, e.n)) end
+    end
 end
-local function fire(...)
-    queue[#queue + 1] = { n = select("#", ...), ... }
+local function schedule()
     if not flushing then
         flushing = true
         C_Timer.After(0, flush)
     end
+end
+local function fire(...)
+    queue[#queue + 1] = { n = select("#", ...), ... }
+    schedule()
+end
+-- Run a function in event order (for events that set state first).
+local function queueCall(fn)
+    queue[#queue + 1] = { fn = fn }
+    schedule()
 end
 State.Fire = fire
 
@@ -329,7 +339,7 @@ end
 local function auraData(a)
     local copy = {}
     for k, v in pairs(a) do copy[k] = v end
-    copy.expires = nil
+    copy.expires, copy.periodic = nil, nil
     return copy
 end
 
@@ -374,12 +384,17 @@ local function applyAura(u, s, def)
         description = def.description,
     }
     nextAuraID = nextAuraID + 1
+    if def.tick and (def.heal or def.damage) then
+        -- Not part of the aura data Blizzard code sees (auraData drops it).
+        a.periodic = { interval = def.tick, next = now() + def.tick, heal = def.heal,
+                       damage = def.damage, spell = s, source = def.source ~= "other" and player() or nil }
+    end
     list[#list + 1] = a
     fireAura(u, { isFullUpdate = false, addedAuras = { auraData(a) } })
     return a
 end
 
-local function removeAura(u, instanceID)
+local function removeAuraImpl(u, instanceID)
     local list = auras[u] or {}
     for i, a in ipairs(list) do
         if a.auraInstanceID == instanceID then
@@ -411,6 +426,132 @@ local function leaveCombat()
     fire("PLAYER_REGEN_ENABLED")
 end
 
+local removeAura = removeAuraImpl
+
+-- Positions, health and the combat log ---------------------------------------
+
+-- Units stand at world positions (x north, y west, as in maps.lua) on the
+-- player's continent; the player's position is the world model's.
+local function worldPlayer() return WowProgrammingWorld and WowProgrammingWorld.Player() end
+
+local function position(u)
+    if u == player() then
+        local p = worldPlayer()
+        if p and p.continent then return p.x, p.y end
+        return nil
+    end
+    return u.x, u.y
+end
+
+local function distance(a, b)
+    local ax, ay = position(a)
+    local bx, by = position(b)
+    if not ax or not bx then return nil end
+    return math.sqrt((ax - bx) ^ 2 + (ay - by) ^ 2)
+end
+State.Distance = function(unit) local u = resolveUnit(unit) return u and distance(player(), u) end
+
+-- The tokens that name a unit now (for UNIT_* events).
+local TOKENS = { "player", "target", "focus", "mouseover", "pet",
+                 "party1", "party2", "party3", "party4" }
+local extraTokens = {} -- token -> unit, added by the nameplates
+local function tokensOf(u)
+    local out = {}
+    for _, t in ipairs(TOKENS) do
+        if units[t] == u then out[#out + 1] = t end
+    end
+    for t, x in pairs(extraTokens) do
+        if x == u then out[#out + 1] = t end
+    end
+    return out
+end
+local function fireUnit(event, u, ...)
+    for _, t in ipairs(tokensOf(u)) do fire(event, t, ...) end
+end
+State.TokensOf = tokensOf
+State.SetExtraToken = function(token, u) extraTokens[token] = u end
+
+local function hostile(u) return u ~= nil and u.canAttack == true end
+
+-- The combat log: COMBAT_LOG_EVENT_UNFILTERED with the values of
+-- CombatLogGetCurrentEventInfo, and a list for the old entry API.
+local combatLog = {}
+local currentEvent
+local MAX_LOG = 500
+-- Unit flags (COMBATLOG_OBJECT_*): the player (mine, friendly, player),
+-- party members, hostile NPCs, friendly NPCs.
+local function logFlags(u)
+    if not u then return 0 end
+    if u == player() then return 0x511 end
+    if u.inParty then return 0x512 end
+    if u.canAttack then return 0xa48 end
+    return 0xa18
+end
+local function logEvent(sub, src, dst, ...)
+    local values = { n = 11 + select("#", ...), GetServerTime and GetServerTime() or now(), sub, false,
+        src and src.guid or "", src and src.name or "", logFlags(src), 0,
+        dst and dst.guid or "", dst and dst.name or "", logFlags(dst), 0, ... }
+    combatLog[#combatLog + 1] = values
+    if #combatLog > MAX_LOG then table.remove(combatLog, 1) end
+    queueCall(function()
+        currentEvent = values
+        fireNow("COMBAT_LOG_EVENT_UNFILTERED")
+        fireNow("COMBAT_LOG_EVENT")
+    end)
+end
+State.CombatLog = combatLog
+
+
+local function die(u, killer)
+    u.dead, u.health = true, 0
+    for _, a in ipairs(auras[u] or {}) do
+        removeAura(u, a.auraInstanceID)
+    end
+    logEvent("UNIT_DIED", nil, u, "", false)
+    if u.respawn then
+        C_Timer.After(u.respawn, function()
+            u.dead, u.health = false, u.healthMax or 100
+            fireUnit("UNIT_HEALTH", u)
+        end)
+    end
+end
+
+local function setHealth(u, value)
+    local max = u.healthMax or 100
+    u.health = math.max(0, math.min(max, value))
+    fireUnit("UNIT_HEALTH", u)
+end
+
+local SCHOOL = { physical = 1, holy = 2, fire = 4, nature = 8, frost = 16, shadow = 32, arcane = 64 }
+local function school(s) return SCHOOL[s.school or ""] or 1 end
+
+-- Damage from a spell; overkill is -1 when the unit survives (as in the
+-- game's combat log).
+local function dealDamage(src, dst, s, amount, periodic)
+    if dst.dead then return end
+    local before = dst.health or dst.healthMax or 100
+    setHealth(dst, before - amount)
+    local overkill = amount > before and amount - before or -1
+    logEvent(periodic and "SPELL_PERIODIC_DAMAGE" or "SPELL_DAMAGE", src, dst,
+        s.id, s.name, school(s), amount, overkill, school(s), 0, 0, 0, false, false, false, false)
+    if src == player() or dst == player() then enterCombat() end
+    if dst.health <= 0 then die(dst, src) end
+end
+
+local function heal(src, dst, s, amount, periodic)
+    if dst.dead then return end
+    local before = dst.health or dst.healthMax or 100
+    local max = dst.healthMax or 100
+    local actual = math.min(amount, max - before)
+    setHealth(dst, before + actual)
+    logEvent(periodic and "SPELL_PERIODIC_HEAL" or "SPELL_HEAL", src, dst,
+        s.id, s.name, school(s), amount, amount - actual, 0, false)
+end
+State.Damage = function(unit, amount)
+    local u = resolveUnit(unit)
+    if u then dealDamage(nil, u, { id = 0, name = "", school = "physical" }, amount) end
+end
+
 -- Casting ---------------------------------------------------------------------
 
 local function castGUID()
@@ -419,16 +560,25 @@ local function castGUID()
     return guid
 end
 
+local function isHarmful(s) return s.harmful or (s.aura and s.aura.harmful) or false end
+-- A helpful spell that acts on another unit (a heal, a heal over time).
+local function isTargetedHelp(s)
+    return not isHarmful(s) and (s.heal ~= nil or (s.aura and s.aura.self == false))
+end
+
 local function spellTarget(s, unit)
     if unit then return resolveUnit(unit) end
-    if s.harmful then return units.target end
-    if s.aura and s.aura.harmful then return units.target end
+    if isHarmful(s) then return units.target end
+    -- Helpful spells go to a friendly target, else to the player.
+    if isTargetedHelp(s) and units.target and not hostile(units.target) then return units.target end
     return player()
 end
 
 -- The spell's effects when it lands: costs are paid at the start (inferred),
 -- auras applied here.
 local function land(s, target)
+    if s.damage and target then dealDamage(player(), target, s, s.damage) end
+    if s.heal and target then heal(player(), target, s, s.heal) end
     if s.aura then
         local u = s.aura.harmful and target or (s.aura.self ~= false and player()) or target
         if u then applyAura(u, s, s.aura) end
@@ -488,18 +638,26 @@ local function castSpell(s, unit)
     local ok, noPower = usable(s)
     if not ok then return failCast(s, noPower and ERR_OUT_OF_MANA or nil) end
     local target = spellTarget(s, unit)
-    if (s.harmful or (s.aura and s.aura.harmful)) and not target then
-        return failCast(s, ERR_GENERIC_NO_TARGET or SPELL_FAILED_BAD_TARGETS)
+    if isHarmful(s) then
+        if not target then return failCast(s, ERR_GENERIC_NO_TARGET or SPELL_FAILED_BAD_TARGETS) end
+        if not hostile(target) then return failCast(s, SPELL_FAILED_BAD_TARGETS) end
+    end
+    if target and target.dead then return failCast(s, SPELL_FAILED_TARGETS_DEAD) end
+    -- Range from positions (units without a position are in range).
+    if target and target ~= player() and (s.range or 0) > 0 then
+        local d = distance(player(), target)
+        if d and d > s.range then return failCast(s, SPELL_FAILED_OUT_OF_RANGE or ERR_OUT_OF_RANGE) end
     end
     local u = player()
     local guid = castGUID()
-    if s.harmful or (s.aura and s.aura.harmful) then enterCombat() end
+    if isHarmful(s) then enterCombat() end
     fire("UNIT_SPELLCAST_SENT", "player", target and target.name or "", guid, s.id)
     if s.cost then setPower(u, (u.power or 0) - s.cost) end
     startCooldowns(s)
     local t = now()
     if (s.channel or 0) > 0 then
-        cast = { spell = s, guid = guid, start = t, finish = t + s.channel, channel = true, target = target }
+        cast = { spell = s, guid = guid, start = t, finish = t + s.channel, channel = true, target = target,
+                 nextTick = t + 1 }
         fire("UNIT_SPELLCAST_CHANNEL_START", "player", guid, s.id)
         land(s, target)
     elseif (s.castTime or 0) > 0 then
@@ -522,7 +680,25 @@ local gcdWasActive = false
 local function tick(elapsed)
     local t = now()
     if inCombat and t - lastHostile > COMBAT_TIMEOUT then leaveCombat() end
+    -- A channel deals its tick damage once a second.
+    if cast and cast.channel and cast.spell.tickDamage and cast.target then
+        while cast.nextTick <= t and cast.nextTick <= cast.finish do
+            dealDamage(player(), cast.target, cast.spell, cast.spell.tickDamage, true)
+            cast.nextTick = cast.nextTick + 1
+        end
+    end
     if cast and t >= cast.finish then finishCast(true) end
+    -- Auras that heal or hurt every few seconds.
+    for u, list in pairs(auras) do
+        for _, a in ipairs(list) do
+            local p = a.periodic
+            if p and t >= p.next then
+                p.next = p.next + p.interval
+                if p.heal then heal(p.source, u, p.spell, p.heal, true) end
+                if p.damage then dealDamage(p.source, u, p.spell, p.damage, true) end
+            end
+        end
+    end
     -- Cooldowns ending: the client sends SPELL_UPDATE_COOLDOWN (inferred).
     local gcdActive = gcdStart + gcdDuration > t
     if gcdWasActive and not gcdActive then
