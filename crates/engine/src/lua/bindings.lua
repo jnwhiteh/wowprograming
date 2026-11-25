@@ -9,9 +9,10 @@
 -- and up as its click registrations ask.
 --
 -- Called with the binding actions (name -> function(keystate)), the
--- runOnUp set, a check for click registrations and a function that fires
--- an event. Returns run(key, down).
-local actions, runOnUp, registeredFor, fire = ...
+-- runOnUp set, a check for click registrations, a function that fires an
+-- event and one that saves the bindings file. Returns run(key, down) and
+-- apply(fileText).
+local actions, runOnUp, registeredFor, fire, saveFile = ...
 local type, pairs, ipairs, tostring, table, string, select, unpack =
       type, pairs, ipairs, tostring, table, string, select, unpack
 
@@ -162,7 +163,32 @@ end
 function SetBindingSpell(key, spell) return SetBinding(key, "SPELL " .. spell) end
 function SetBindingMacro(key, macro) return SetBinding(key, "MACRO " .. tostring(macro)) end
 function SetBindingItem(key, item) return SetBinding(key, "ITEM " .. item) end
-function SaveBindings() end
+-- The bindings that differ from the defaults, in the client's
+-- bindings-cache.wtf format ("bind KEY COMMAND", NONE for unbound).
+local function serialize()
+    local keys, seen = {}, {}
+    for k in pairs(bindings) do if not seen[k] then seen[k] = true; keys[#keys + 1] = k end end
+    for k in pairs(DEFAULTS) do if not seen[k] then seen[k] = true; keys[#keys + 1] = k end end
+    table.sort(keys)
+    local lines = {}
+    for _, k in ipairs(keys) do
+        if bindings[k] ~= DEFAULTS[k] then
+            lines[#lines + 1] = "bind " .. k .. " " .. (bindings[k] or "NONE")
+        end
+    end
+    return table.concat(lines, "\n") .. (#lines > 0 and "\n" or "")
+end
+
+-- Apply a bindings-cache.wtf file over the current bindings.
+local function apply(text)
+    for line in (text .. "\n"):gmatch("([^\r\n]*)\r?\n") do
+        local key, command = line:match("^bind%s+(%S+)%s+(.-)%s*$")
+        key = normalize(key)
+        if key then bindings[key] = command ~= "NONE" and command or nil end
+    end
+end
+
+function SaveBindings() saveFile(serialize()) end
 function LoadBindings() bindingsChanged() end
 function GetCurrentBindingSet() return 2 end -- Enum.BindingSet.Character
 
@@ -202,4 +228,4 @@ function ClearOverrideBindings(owner)
     bindingsChanged()
 end
 
-return run
+return run, apply

@@ -12,6 +12,27 @@ const BINDINGS_FILE: &str = "Interface/AddOns/Blizzard_FrameXML/Bindings_Standar
 
 /// Registry key of the Lua function that runs a key: `(key, down) -> bool`.
 const RUN_KEY: &str = "wowprogramming.bindings.run";
+/// Registry key of the Lua function that applies a bindings file.
+const APPLY_KEY: &str = "wowprogramming.bindings.apply";
+/// The client's file of changed key bindings.
+pub const FILE_NAME: &str = "bindings-cache.wtf";
+
+/// The sandbox's own bindings file (account-wide).
+pub fn sandbox_file(lua: &Lua) -> std::path::PathBuf {
+    let st = state(lua);
+    st.wtf
+        .root
+        .join("Account")
+        .join(&st.wtf.account)
+        .join(FILE_NAME)
+}
+
+/// Apply a bindings file's text over the current bindings.
+pub fn apply_file(lua: &Lua, text: &str) {
+    if let Ok(f) = lua.named_registry_value::<Function>(APPLY_KEY) {
+        safe_call(lua, &f, text);
+    }
+}
 
 /// Read binding actions and install the binding API functions.
 pub fn load(lua: &Lua) -> Result<()> {
@@ -61,11 +82,23 @@ pub fn load(lua: &Lua) -> Result<()> {
         crate::frames::dispatch_event(lua, &event, mlua::MultiValue::new());
         Ok(())
     })?;
-    let run: Function = lua
+    // SaveBindings writes the sandbox's own file, never the game's.
+    let save = lua.create_function(|lua, text: String| {
+        let path = sandbox_file(lua);
+        if let Some(dir) = path.parent() {
+            let _ = std::fs::create_dir_all(dir);
+        }
+        if let Err(e) = std::fs::write(&path, text) {
+            state(lua).warn(format!("cannot write {}: {e}", path.display()));
+        }
+        Ok(())
+    })?;
+    let (run, apply): (Function, Function) = lua
         .load(include_str!("lua/bindings.lua"))
         .set_name("=[C]")
-        .call((actions, run_on_up, registered, fire))?;
+        .call((actions, run_on_up, registered, fire, save))?;
     lua.set_named_registry_value(RUN_KEY, run)?;
+    lua.set_named_registry_value(APPLY_KEY, apply)?;
     Ok(())
 }
 

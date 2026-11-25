@@ -875,3 +875,21 @@ fn modifier_keys_are_tracked() {
     assert!(e.eval::<bool>("return IsShiftKeyDown()").unwrap());
     assert_eq!(log(&e), "RCTRL1 RCTRL0 LSHIFT1");
 }
+
+/// SaveBindings writes the changed bindings to the sandbox's
+/// bindings-cache.wtf in the client's format; they come back after a
+/// reload.
+#[test]
+fn saved_bindings_come_back_after_reload() {
+    let wtf = tempfile::tempdir().unwrap();
+    let mut e = started(wtf.path());
+    e.exec("SetBinding('K', 'TOGGLESPELLBOOK') SetBinding('P', nil) SaveBindings(2)");
+    let file = wtf.path().join("Account/SANDBOX/bindings-cache.wtf");
+    let text = std::fs::read_to_string(&file).unwrap();
+    assert_eq!(text, "bind K TOGGLESPELLBOOK\nbind P NONE\n");
+    e.reload();
+    let (k, p): (String, String) = e
+        .eval("return GetBindingAction('K'), GetBindingAction('P')")
+        .unwrap();
+    assert_eq!((k.as_str(), p.as_str()), ("TOGGLESPELLBOOK", ""));
+}

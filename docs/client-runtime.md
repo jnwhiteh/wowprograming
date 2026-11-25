@@ -613,8 +613,12 @@ then the newest other override binding, then its normal binding
 action, `CLICK Name:Button`, `SPELL`, `MACRO`, `ITEM`. Actions with
 `runOnUp="true"` get `"up"` on release (B); a `CLICK` binding clicks
 down and up as the button's click registrations ask. Binding changes
-fire UPDATE_BINDINGS on the next frame. Bindings are not saved and not
-read from the character's `bindings-cache.wtf` yet.
+fire UPDATE_BINDINGS on the next frame. `bindings-cache.wtf` lists
+the bindings that differ from the defaults, one `bind KEY COMMAND` per
+line (`NONE` for unbound), in the account folder and in each
+character's folder (from the user's files). At startup the sandbox
+applies the game's account file, then the character's (read only),
+then its own; `SaveBindings` writes its own.
 
 Modifier keys: the sandbox keeps left and right Shift, Ctrl and Alt.
 Pressing one alone fires MODIFIER_STATE_CHANGED with its name and 1 or 0

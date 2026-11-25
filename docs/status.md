@@ -169,7 +169,8 @@ Last updated: 2026-11-25 (real addons work; world map, modifiers, hover casting,
   places the player from a scenario. `ctl keydown` and `ctl keyup` hold
   a key.
 - `xpcall(f, handler, ...)` passes the extra arguments, as in WoW.
-- Key bindings (`lua/bindings.lua`): default keys including movement,
+- Key bindings (`lua/bindings.lua`): saved to and read from
+  `bindings-cache.wtf` in the client's format; default keys including movement,
   `SetBinding*`, override bindings (`SetOverrideBinding*`,
   `ClearOverrideBindings`, priority first), `CLICK`, `SPELL`, `MACRO`
   commands, and `runOnUp` actions on key release.
@@ -426,9 +427,11 @@ simulator more complete, in order:
 4. WowLua: saving a page and finding it after `/reload` works (tested).
    Not tried: undo, redo, lock, delete, rename (Shift-click Save shows a
    popup).
-5. Save key bindings (`SaveBindings`) and read the character's
-   `bindings-cache.wtf`, `macros-cache.txt` and
-   `click-bindings-cache.txt`, read only.
+5. Key bindings are saved (`SaveBindings` writes the sandbox's
+   `WTF/Account/<account>/bindings-cache.wtf`) and read at startup after
+   the game's account and character files (read only, when a character
+   is known, as on Enter World). Still to read: the character's
+   `macros-cache.txt` and `click-bindings-cache.txt`.
 6. Interaction specs: add helpers when a spec needs them (drag,
    mouse wheel, screenshot comparison), and a way to set up a scenario
    from the spec itself. Ask the user whether TomTom's own Lua harness
@@ -693,6 +696,15 @@ Things that cost time once and should not cost it again.
 - Scenario unit functions answer from their first unit. Functions that
   compare two units (`UnitCanAttack("player", "target")`) need their own
   rule, or macro conditions such as `[harm]` silently fail.
+- A Lua helper that fails to load at startup (`bindings.lua`) only shows
+  a `[warning]` line, and every key stops working. After editing an
+  engine Lua file, run the sandbox once and look for "cannot load".
+  Python string edits that replace the first match can hit an earlier,
+  longer line (`return run` matched `return runCommand(...)`).
+- The API documentation's `Nilable = false` is not always what the
+  client does: `C_PvP.GetOutdoorPvPWaitTime` must return nil outside PvP
+  zones, or the world map shows a battle timer. Blizzard code that tests
+  a value for nil tells the truth.
 - Never run `git stash` to compare against the old state: all work was
   uncommitted, and stashing hid it (it was restored at once).
 

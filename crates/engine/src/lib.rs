@@ -368,12 +368,35 @@ impl Engine {
         if let Err(err) = bindings::load(lua) {
             state(lua).warn(format!("cannot load key bindings: {err}"));
         }
+        self.apply_binding_files();
         self.apply_closed_tutorials();
     }
 
     /// Tutorials and help tips the player closed in the game, from the
     /// config-cache.wtf files the client writes (read only): the account's
     /// and the character's.
+    /// Changed key bindings: the game's account and character files (read
+    /// only), then the sandbox's own file, which SaveBindings writes.
+    fn apply_binding_files(&self) {
+        let lua = self.runtime.lua();
+        let mut files = Vec::new();
+        if let Some(account) = self.config.game_account_dir.as_ref() {
+            files.push(account.join(bindings::FILE_NAME));
+            files.push(
+                account
+                    .join(&self.config.realm)
+                    .join(&self.config.character)
+                    .join(bindings::FILE_NAME),
+            );
+        }
+        files.push(bindings::sandbox_file(lua));
+        for file in files {
+            if let Ok(text) = std::fs::read_to_string(&file) {
+                bindings::apply_file(lua, &text);
+            }
+        }
+    }
+
     fn apply_closed_tutorials(&self) {
         let Some(account) = self.config.game_account_dir.as_ref() else {
             return;
