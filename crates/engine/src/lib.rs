@@ -30,6 +30,7 @@ pub mod state;
 pub mod text;
 pub mod timers;
 pub mod toc;
+pub mod watch;
 pub mod widgets;
 pub mod world;
 pub mod xml;
@@ -153,6 +154,8 @@ pub struct EngineConfig {
     pub start_time: f64,
     /// Time budget for one call into Lua.
     pub script_timeout: Duration,
+    /// Reload the UI when a file of a loaded third-party addon changes.
+    pub watch: bool,
 }
 
 impl Default for EngineConfig {
@@ -176,6 +179,7 @@ impl Default for EngineConfig {
             pixel_scale: 1.0,
             start_time: 1000.0,
             script_timeout: DEFAULT_SCRIPT_TIMEOUT,
+            watch: false,
         }
     }
 }
@@ -190,6 +194,8 @@ pub struct Engine {
     /// Steps done and planned in the current startup, for progress.
     start_done: usize,
     start_total: usize,
+    /// Watches third-party addon files when `config.watch` is set.
+    watcher: Option<watch::Watcher>,
 }
 
 /// One unit of startup work. The window runs one step per frame so the
@@ -246,6 +252,7 @@ impl Engine {
             pending: Default::default(),
             start_done: 0,
             start_total: 0,
+            watcher: None,
         })
     }
 
@@ -328,7 +335,12 @@ impl Engine {
                 }
             }
             StartStep::AddOns => self.load_user_addons(),
-            StartStep::Login { reloading } => self.login(reloading),
+            StartStep::Login { reloading } => {
+                self.login(reloading);
+                if self.config.watch && self.watcher.is_none() {
+                    self.start_watching();
+                }
+            }
             StartStep::Glue => self.load_glue(),
         }
         self.start_done += 1;
@@ -534,6 +546,12 @@ impl Engine {
     /// Advance the clock by `elapsed` seconds: run due timers, then
     /// `OnUpdate` scripts.
     pub fn tick(&mut self, elapsed: f64) {
+        if self.watcher.as_ref().is_some_and(|w| w.take_changed()) {
+            state(self.runtime.lua()).output.push(Output::Print(
+                "Addon files changed: reloading the UI".into(),
+            ));
+            self.reload();
+        }
         let lua = self.runtime.lua();
         {
             let mut st = state(lua);
@@ -844,6 +862,18 @@ impl Engine {
 
     /// Save SavedVariables, rebuild the Lua state and load everything again,
     /// like `/reload` in the client. Output not yet drained is kept.
+    /// Watch the folders of the loaded third-party addons; the next tick
+    /// after a change reloads the UI.
+    pub fn start_watching(&mut self) {
+        let dirs: Vec<PathBuf> = state(self.runtime.lua())
+            .addons
+            .iter()
+            .filter(|a| a.kind == AddonKind::User && a.load_state == LoadState::Loaded)
+            .map(|a| a.dir.clone())
+            .collect();
+        self.watcher = Some(watch::Watcher::start(dirs));
+    }
+
     pub fn reload(&mut self) {
         self.fire_event("PLAYER_LEAVING_WORLD", ());
         addons::save_all(self.runtime.lua());

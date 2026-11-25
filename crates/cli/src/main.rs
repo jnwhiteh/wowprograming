@@ -192,6 +192,9 @@ struct RunArgs {
     /// covers the monitor.
     #[arg(long)]
     windowed: bool,
+    /// Reload the UI when a file of a loaded third-party addon changes.
+    #[arg(long)]
+    watch: bool,
 }
 
 /// Settings read from the config file. Relative paths are relative to the
@@ -560,6 +563,7 @@ fn build_config(args: &RunArgs) -> Result<(EngineConfig, Option<PathBuf>), Strin
     if !args.addons.is_empty() {
         config.only_addons = Some(args.addons.clone());
     }
+    config.watch = args.watch;
     if let Some(v) = file.account {
         config.account = v;
     }

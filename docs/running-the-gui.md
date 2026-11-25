@@ -62,6 +62,13 @@ cargo run --release -- gui --scenario scenarios/monk
 - Only the default UI loads. To load a third-party addon from
   `addons_dir` for testing, name it: `--addon BugSack` (repeat for more).
   Which addons a character has enabled in the game does not matter.
+- `--watch` reloads the UI when a `.lua`, `.xml` or `.toc` file of a
+  loaded third-party addon changes (save the file in your editor and the
+  sandbox runs `/reload` within a second). Example for addon work:
+  `cargo run --release -- gui --scenario scenarios/dummy --addon TomTom --watch`.
+- Walk with W, S (back), A and D (turn), Q and E (strafe), Num Lock
+  (autorun). M opens the world map. In `scenarios/dummy` the character
+  stands in Goldshire; `/way 42 60` sets a TomTom waypoint.
 - The window opens through WSLg on your Windows desktop. Close it with
   Alt+F4, or type `/quit` in the console.
 

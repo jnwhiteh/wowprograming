@@ -127,6 +127,9 @@ Last updated: 2026-11-25 (real addons: TomTom, Clique and WowLua work; maps, mov
   a click.
 - Real addons: TomTom, Clique and WowLua (from `addons_dir`, with
   `--addon`) load and work in the dummy scenario.
+- Reload on change: `--watch` (and `EngineConfig::watch`) reloads the
+  UI when a file of a loaded third-party addon changes (`watch.rs`, a
+  background thread scanning every 0.5 s).
 - Chat windows (`GetChatWindowInfo` and the other chat window functions
   in `lua/client.lua`) with a new character's defaults; login sends
   UPDATE_CHAT_WINDOWS, UPDATE_FLOATING_CHAT_WINDOWS and UPDATE_MACROS in
@@ -507,6 +510,7 @@ Decisions already made with the user. Do not reopen them without a reason.
 | `crates/engine/src/lua/client.lua` | Client functions written in Lua (quality colors, placeholder enums, click bindings) |
 | `crates/engine/src/lua/maps.lua`, `maps.rs` | `C_Map` from the UiMap tables; player position, facing and movement |
 | `crates/engine/src/lua/bindings.lua`, `bindings.rs` | Key map, override bindings, the binding API |
+| `crates/engine/src/watch.rs` | Reload on change: watches third-party addon folders |
 | `crates/engine/tests/real_addons.rs` | TomTom, Clique and WowLua in the full UI (skipped without them) |
 | `crates/engine/src/lua/macros.lua` | Macro line execution through Blizzard's chat parser, `SecureCmdOptionParse`, `RunMacroText` |
 | `crates/engine/src/lua/scenario.lua` | Scenario helpers (`S.LoadStandardCapture`, `S.Replay`, ...) |
