@@ -118,8 +118,9 @@ Last updated: 2026-11-25 (real addons: TomTom, Clique and WowLua work; maps, mov
   `CancelUnitBuff`). Rules and gaps in client-runtime.md ("Client
   state").
 - `scenarios/dummy`: Ilyndra, an invented night elf mage, with two
-  spellbook sections of invented spells and the Straw Sentinel training
-  dummy. Run it with `gui --scenario scenarios/dummy`.
+  spellbook sections of invented spells, the Straw Sentinel training
+  dummy, two party members (Brannoc and Seralyn) and a position in
+  Goldshire. Run it with `gui --scenario scenarios/dummy`.
 - Presses go to the top frame with clicks enabled; frames with only
   mouse motion let clicks through (the player frame's health bar).
   `C_ClickBindings` has the client's default profile (left click
@@ -399,9 +400,12 @@ simulator more complete, in order:
    WorldMapOverlay tables), the minimap (TomTom's minimap pins are placed
    but the Minimap widget draws no terrain), zooming the map with the
    mouse wheel (try it).
-2. Clique's options window (`/clique`, its spellbook tab and binding
-   editor) and Clique on party frames: a party scenario (`scenarios/hud`
-   has a party) with a spell bound to a click on a party frame.
+2. Clique: done for the player frame and party frames
+   (`scenarios/dummy` has two party members and Renewing Bloom, a heal
+   over time on the target). Not tried: the binding editor in the
+   options window (click a spell, press a key or mouse button), modifier
+   clicks (modifier keys always read as up), hover casting with key
+   bindings (Clique's override bindings on mouseover).
 3. TomTom's own in-game test addon `TomTomTest` (load it with
    `--addon TomTomTest`): run its suites and fix what fails.
 4. WowLua: the other toolbar buttons (pages, undo, lock), its saved

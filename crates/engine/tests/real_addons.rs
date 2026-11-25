@@ -201,6 +201,20 @@ fn tomtom_clique_and_wowlua_work() {
         )
         .unwrap();
     assert_eq!(buff.as_deref(), Some("Aegis of Dawn"));
+    // On a party frame, the spell lands on that party member.
+    e.exec(
+        "Clique:AddBinding({ key = 'BUTTON4', type = 'spell', spell = 'Renewing Bloom', sets = { default = true } })",
+    );
+    // After the global cooldown of the first cast.
+    run(&mut e, 1.6);
+    click(&mut e, "PartyFrame.MemberFrame1", "Button4");
+    run(&mut e, 0.2);
+    let hot: Option<String> = e
+        .eval(
+            "local a = C_UnitAuras.GetAuraDataByIndex('party1', 1, 'HELPFUL') return a and a.name",
+        )
+        .unwrap();
+    assert_eq!(hot.as_deref(), Some("Renewing Bloom"));
 
     // 6. WowLua: open the window, type code, run it, see the output.
     e.run_command("/wowlua");

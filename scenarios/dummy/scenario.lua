@@ -66,6 +66,10 @@ State.AddSkillLine({
         { id = 1900006, name = "Wellspring", icon = icons .. "Spell_Nature_ManaRegenTotem",
           cooldown = 45, restore = 30000,
           description = "Draws on the ley lines to restore 30,000 mana." },
+        { id = 1900008, name = "Renewing Bloom", icon = icons .. "Spell_Nature_Rejuvenation",
+          cost = 1500, range = 40,
+          aura = { duration = 12, self = false, description = "Heals 2,000 health every 2 sec." },
+          description = "Heals a friendly target for 12,000 over 12 sec." },
         { id = 1900007, name = "Weave Attunement", icon = icons .. "Spell_Arcane_MindMastery",
           passive = true, subtext = "Passive",
           description = "Your spells cost 5% less mana." },
@@ -83,6 +87,28 @@ State.SetDefaultActions({
     [1] = 1900001, [2] = 1900002, [3] = 1900003, [4] = 1900004,
     [6] = { macro = "Bind & Blink" },
 })
+
+-- Two friends in the party, for click casting on party frames.
+local party = {
+    { name = "Brannoc", class = "Warrior", classFile = "WARRIOR", classID = 1,
+      race = "Dwarf", raceFile = "Dwarf", raceID = 3, role = "TANK", powerType = 1,
+      powerToken = "RAGE", health = 520000, healthMax = 600000, power = 20, powerMax = 100 },
+    { name = "Seralyn", class = "Priest", classFile = "PRIEST", classID = 5,
+      race = "Human", raceFile = "Human", raceID = 1, role = "HEALER", powerType = 0,
+      powerToken = "MANA", health = 380000, healthMax = 380000, power = 250000, powerMax = 250000 },
+}
+for i, member in ipairs(party) do
+    member.level, member.isPlayer, member.reaction = 80, true, 5
+    member.faction, member.inParty = "Alliance", true
+    member.guid = "Player-1-0000PRTY" .. i
+    S.SetUnit("party" .. i, member)
+end
+S.units.player.inParty = true
+S.Set("IsInGroup", function() return true end)
+S.Set("IsInRaid", function() return false end)
+S.Set("GetNumGroupMembers", function() return #party + 1 end)
+S.Set("GetNumSubgroupMembers", function() return #party end)
+S.Set("UnitIsGroupLeader", function(unit) return unit == "player" end)
 
 State.AddHiddenUnit("dummy", {
     name = "Straw Sentinel", level = -1, classification = "normal",
