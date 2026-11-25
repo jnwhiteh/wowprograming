@@ -319,6 +319,37 @@ each building on the one before:
    `specs/README.md`), reload on file change (done 2026-11-25:
    `--watch`), and showing a UI in the browser.
 
+**Full default UI and a playable world (goal set by the user on
+2026-11-25, branch `client-state`).** The whole default UI works in the
+simulation without Lua errors, at load and while used, and the player
+can walk around, select targets in the world, attack or heal them, and
+see the results. Graphics may stay simple (low resolution, simple
+shapes); the simulation matters, not the looks.
+
+Done when all of these hold, each with a headless test or spec:
+
+1. Every panel of the default UI opens and closes without a Lua error:
+   character, spellbook and talents, collections, group finder, adventure
+   guide, achievements, guild and communities, calendar, world map, quest
+   log, bags, game menu, settings, Edit Mode, macros, key bindings,
+   friends, professions, store and help where the client allows them.
+   A spec opens each one (with its tabs) and fails on any error.
+2. Units in the world: hostile and friendly units stand at positions on
+   the map (the training dummy, a friendly NPC, party members near the
+   player). They have nameplates; a click on a unit in the 3D view or on
+   its nameplate targets it; Tab cycles hostile units by distance.
+3. Spells act on targets: damage spells lower the target's health,
+   healing spells raise a friendly target's health (up to the maximum);
+   the unit frames, nameplates and floating combat text show it; the
+   combat log records it (COMBAT_LOG_EVENT_UNFILTERED with
+   `CombatLogGetCurrentEventInfo`). A unit at 0 health dies (the dummy
+   comes back at full health).
+4. Range and facing: spells have a range from positions; out of range
+   shows the error and the action button turns red; the 3D view and
+   the camera follow the player's position and facing while walking.
+5. The full UI runs 60 seconds of play (walking, targeting, casting)
+   without a Lua error.
+
 **Real addons: TomTom, Clique and WowLua (goal set by the user on
 2026-11-25, branch `client-state`).** The sandbox is a simulator for
 addon development: real third-party addons load and work without Lua

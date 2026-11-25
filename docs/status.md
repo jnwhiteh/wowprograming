@@ -10,7 +10,9 @@ Last updated: 2026-11-25 (real addons work; world map, modifiers, hover casting,
 
 ## Current state
 
-- **Real addons goal: in progress** (set by the user on 2026-11-25),
+- **Full default UI and playable world goal: in progress** (set by the
+  user on 2026-11-25, branch `client-state`). Done criteria in scope.md.
+- **Real addons goal: criteria done** (set by the user on 2026-11-25),
   on branch `client-state`: TomTom, Clique and WowLua must run without
   errors and work, and the player must be able to move so TomTom's
   navigation can be tried. Done criteria in scope.md ("Real addons").
@@ -507,6 +509,7 @@ Decisions already made with the user. Do not reopen them without a reason.
 | 2026-11-24 | Only the default UI loads. Third-party addons load only when named (`--addon`), for testing; never from the character's enabled list in the game | The default UI is the focus now; addons are for testing and later work |
 | 2026-11-24 | One branch per goal or major milestone, merged into `main` when the goal is complete | User's rule |
 | 2026-11-24 | Next goal: the frame runtime (the C++ foundations of the UI), not 3D rendering | The user cares about the interface and its interactions, not the game world |
+| 2026-11-25 | Next goal: the full default UI without errors, and a playable world (targets, damage, healing, feedback); graphics may stay simple | User's request ("Full default UI and a playable world" in scope.md) |
 | 2026-11-25 | Next goal: a full simulator for addon development; TomTom, Clique and WowLua must run without errors, with a movable player for TomTom | User's request ("Real addons" in scope.md) |
 | 2026-11-24 | Facts come from static sources first: `UI.xsd`, the widget API documentation, `Wow.exe`, Blizzard code, files the client writes, warcraft.wiki.gg. In-game recording is the last resort: questions are collected and answered in one small probe session | Recording is slow for the user, gives single traces and can produce huge files |
 
