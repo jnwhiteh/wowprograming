@@ -176,6 +176,22 @@ fn handle(engine: &mut Engine, line: &str) -> (String, Action) {
                 Action::None,
             )
         }
+        // Hold a key across ticks (movement keys), then release it.
+        "keydown" => {
+            let ok = engine.key_down(rest);
+            (
+                if ok {
+                    String::new()
+                } else {
+                    format!("no binding for {rest}")
+                },
+                Action::None,
+            )
+        }
+        "keyup" => {
+            engine.key_up(rest);
+            (String::new(), Action::None)
+        }
         "click" | "hover" => {
             let (expr, button) = match rest.rsplit_once(' ') {
                 Some((e, b)) if b.ends_with("Button") => (e, b),

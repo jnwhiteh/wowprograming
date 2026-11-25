@@ -267,6 +267,17 @@ pub fn install(lua: &Lua) -> Result<()> {
     lua.load(include_str!("lua/macros.lua"))
         .set_name("=[C]")
         .call::<()>(())?;
+    let map_data = lua.create_function(|lua, ()| crate::maps::data(lua))?;
+    let fire_map = lua.create_function(|lua, args: MultiValue| {
+        let mut args = args.into_iter();
+        if let Some(Value::String(event)) = args.next() {
+            crate::frames::dispatch_event(lua, &event.to_string_lossy(), args.collect());
+        }
+        Ok(())
+    })?;
+    lua.load(include_str!("lua/maps.lua"))
+        .set_name("=[C]")
+        .call::<()>((map_data, fire_map))?;
     // Undocumented client functions the UI calls at load time.
     g.set(
         "RegisterStaticConstants",

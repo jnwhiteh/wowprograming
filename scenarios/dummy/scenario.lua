@@ -99,4 +99,7 @@ State.ApplyAura("player", 1900801, {
     description = "Armor reduced by 10%.",
 })
 
+-- Ilyndra stands in Goldshire, Elwynn Forest (UiMap 37), facing north.
+WowProgrammingWorld.SetPlayerMapPosition(37, 0.42, 0.65)
+
 print("Dummy scenario: Ilyndra and the Straw Sentinel")

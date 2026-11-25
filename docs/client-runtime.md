@@ -552,6 +552,58 @@ from Blizzard code and the API documentation unless a source is named:
   (`secretunwrap`, `SecureMixin`, ...). The sandbox runs secure
   addons in the global environment, so it puts those six back.
 
+### Maps, position and movement
+
+`lua/maps.lua`, data from `maps.rs`. Sources: the UiMap tables (U),
+WoWDBDefs layouts, Bindings_Standard.xml (B); the rest is inferred.
+
+- UiMap (FileDataID 1957206) gives name, parent, type and flags;
+  UiMapAssignment (1957219) ties a part of a map (`UiMin`..`UiMax`) to a
+  world box (`Region`, min x, y, z then max x, y, z) on a continent
+  (`MapID`); UiMapGroupMember (1957204) gives floors (U). The sandbox
+  takes the assignment that covers most of a map and extends its box to
+  the whole map. Elwynn Forest comes out at 3470.84 x 2314.62 yards, the
+  size the addon community uses.
+- World x points north and world y west. A map position runs left to
+  right along falling world y and top to bottom along falling world x.
+  `C_Map.GetWorldPosFromMapPos` returns a vector of (world x, world y);
+  `UnitPosition("player")` returns world x, world y, z, continent
+  (HereBeDragons reads them this way).
+- The best map for a position is the smallest zone, dungeon or micro
+  map that contains it (system 0), else the smallest map. The client
+  also uses the area the player stands in; maps that overlap (city
+  floors) may differ from the game.
+- Movement: the bindings call `MoveForwardStart` and friends (B). Run
+  speed 7 yards per second, backward 4.5, turning 180 degrees per
+  second (inferred from the client's base speeds). Facing is radians,
+  0 north, turning left adds. Forward and backward cancel; strafing adds
+  a sideways part. No terrain, collision, jumping or falling.
+- Events: PLAYER_STARTED_MOVING and PLAYER_STOPPED_MOVING,
+  PLAYER_STARTED_TURNING and PLAYER_STOPPED_TURNING, ZONE_CHANGED when
+  the best map changes, ZONE_CHANGED_NEW_AREA when the zone name
+  changes. Their order relative to each other in one frame is inferred.
+
+### Key bindings
+
+`lua/bindings.lua`. A key runs the newest priority override binding,
+then the newest other override binding, then its normal binding
+(inferred from the API documentation). Commands: a Bindings_Standard
+action, `CLICK Name:Button`, `SPELL`, `MACRO`, `ITEM`. Actions with
+`runOnUp="true"` get `"up"` on release (B); a `CLICK` binding clicks
+down and up as the button's click registrations ask. Binding changes
+fire UPDATE_BINDINGS on the next frame. Bindings are not saved and not
+read from the character's `bindings-cache.wtf` yet.
+
+### Restricted environment
+
+Blizzard_RestrictedAddOnEnvironment runs secure handler snippets in Lua.
+It needs from the client: `newproxy`, frame methods that work on a
+"surrogate" table holding the frame's `[0]` userdata, `IsProtected`
+(the sandbox reports `protected="true"` from XML templates; a frame is
+protected when it or an ancestor is), `C_Widget.IsFrameWidget`,
+`loadstring_untainted` (plain `loadstring` until taint is tracked) and
+the override binding functions. With these, Clique's snippets run.
+
 ### Client state: invented data and where real data is needed
 
 `scenarios/dummy` uses an invented character (Ilyndra, a night elf

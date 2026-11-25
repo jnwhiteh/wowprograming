@@ -6,7 +6,7 @@ work (see "Keeping this file current" below).
 
 For goals, design and the full roadmap, see [scope.md](scope.md).
 
-Last updated: 2026-11-25 (client state: milestones 1 to 3 done; unit-frame clicks, tooltips, slash commands and macros).
+Last updated: 2026-11-25 (real addons: TomTom, Clique and WowLua work; maps, movement, bindings, restricted environment).
 
 ## Current state
 
@@ -14,8 +14,11 @@ Last updated: 2026-11-25 (client state: milestones 1 to 3 done; unit-frame click
   on branch `client-state`: TomTom, Clique and WowLua must run without
   errors and work, and the player must be able to move so TomTom's
   navigation can be tried. Done criteria in scope.md ("Real addons").
-  Progress: Clique and WowLua load without errors in the full UI;
-  TomTom fails in HereBeDragons because `C_Map` has no map data.
+  Progress: all six done criteria hold (`tests/real_addons.rs`): the
+  three addons load and run without Lua errors, maps come from the
+  UiMap tables, the player walks with W, A, S, D, Q, E, TomTom's arrow
+  leads to a `/way` waypoint, Clique casts from a click, WowLua runs
+  code. See "Next steps" for what to try next.
 - **Client state goal: criteria 1 to 6 done** on branch `client-state`
   (2026-11-25): unit-frame clicks, buff removal, a player debuff,
   tooltips from the model, slash commands and macros. Criterion 7
@@ -122,6 +125,16 @@ Last updated: 2026-11-25 (client state: milestones 1 to 3 done; unit-frame click
   `C_ClickBindings` has the client's default profile (left click
   targets, right click opens the menu), so secure unit frames target on
   a click.
+- Real addons: TomTom, Clique and WowLua (from `addons_dir`, with
+  `--addon`) load and work in the dummy scenario.
+- Maps and movement (`lua/maps.lua`, `maps.rs`): `C_Map` from the
+  UiMap tables (info, children, parents, groups, world size, world and
+  map positions, map rectangles, best map, player position), zone
+  texts, `UnitPosition`, `GetPlayerFacing`, `IsPlayerMoving`,
+  `GetUnitSpeed`; the movement keys move and turn the player over time
+  with movement and zone events. `WowProgrammingWorld.SetPlayerMapPosition`
+  places the player from a scenario. `ctl keydown` and `ctl keyup` hold
+  a key.
 - `xpcall(f, handler, ...)` passes the extra arguments, as in WoW.
 - Key bindings (`lua/bindings.lua`): default keys including movement,
   `SetBinding*`, override bindings (`SetOverrideBinding*`,
@@ -302,7 +315,7 @@ Last updated: 2026-11-25 (client state: milestones 1 to 3 done; unit-frame click
   `LockHighlight`. Moved frames are saved in the sandbox's own
   `layout-local.txt` and restored after `/reload` (`layoutcache.rs`).
   Several details are inferred (see client-runtime.md).
-- Control bridge: `exec`, `eval`, `dofile`, `key`, `type`, `click`,
+- Control bridge: `exec`, `eval`, `dofile`, `key`, `keydown`, `keyup`, `type`, `click`,
   `hover`, `drag`, `down`, `up`, `mouse`, `under`, `tree`, `tick`,
   `screenshot <path> [scale] [frame]`, `stubs`, `quit`. `hover` and
   `click` take one word: store frames in a global first.
@@ -364,32 +377,32 @@ Console errors: ask the user to run the GUI again and report any error
 that is left (interactions such as opening panels can still raise some;
 the headless runs only cover loading and idle play).
 
-Client state goal: the three milestones of 2026-11-25 are done (see
-"Current state"). Ask the user whether to merge `client-state` into
-`main`. What is left, in order:
+Real addons goal (scope.md): the done criteria hold. To make the
+simulator more complete, in order:
 
-1. Criterion 7, Clique: load Clique with `--addon Clique` in the dummy
-   scenario (or a party scenario such as `scenarios/hud`), bind a spell
-   to a click on a party frame, and check that the spell is cast on
-   that party member. Clique uses secure attributes on unit frames
-   (`type1 = spell`), so `SECURE_ACTIONS.spell` must reach
-   `CastSpellByName(spell, unit)`; check `SecureButton_GetModifiedUnit`
-   and the click binding path in `SecureUnitButton_OnClick`. Blizzard's
-   own click casting (`C_ClickBindings.SetProfileByInfo` with a Spell
-   binding) is a smaller first step: `ExecuteBinding` already casts.
-2. Read the character's `macros-cache.txt` and
-   `click-bindings-cache.txt` (read only) when a scenario names a
-   character.
-3. Try the macro window (`/macro`, `Blizzard_MacroUI`) with the model's
-   macros; `CreateMacro`, `EditMacro` and `DeleteMacro` are not
-   implemented.
-4. Draw the held spell's icon at the mouse pointer in the GUI.
+1. The world map (`M`, `Blizzard_WorldMap`) and the minimap: open the
+   world map on the player's zone with map art from UiMapArt and
+   UiMapArtTile, and place TomTom's world map and minimap pins
+   (HereBeDragons-Pins). Check for Lua errors when the world map opens.
+2. Clique's options window (`/clique`, its spellbook tab and binding
+   editor) and Clique on party frames: a party scenario (`scenarios/hud`
+   has a party) with a spell bound to a click on a party frame.
+3. TomTom's own in-game test addon `TomTomTest` (load it with
+   `--addon TomTomTest`): run its suites and fix what fails.
+4. WowLua: the other toolbar buttons (pages, undo, lock), its saved
+   pages after `/reload`.
+5. Save key bindings (`SaveBindings`) and read the character's
+   `bindings-cache.wtf`, `macros-cache.txt` and
+   `click-bindings-cache.txt`, read only.
+6. Then the security model goal: taint (`issecurevariable` and
+   `loadstring_untainted` are stand-ins today), protected functions,
+   combat lockdown, secret values.
 
-Real spell data from DB2 can come later, when a captured character
-should use the model; find the tables' FileDataIDs first (the CASC
-lookup by `DBFilesClient/<name>.db2` path finds nothing). Ask the user
-to try `gui --scenario scenarios/dummy` on the desktop (keys 1 to 6,
-Tab, P, `/cast` in the F12 console).
+Client state leftovers: the macro window (`CreateMacro`, `EditMacro`),
+the held spell's icon at the mouse pointer, real spell data from DB2.
+Ask the user to try `gui --scenario scenarios/dummy --addon TomTom
+--addon Clique --addon WowLua` on the desktop (W, A, S, D to walk,
+`/way 42 60`, `/wowlua`).
 
 Desktop feedback (merged). Not reproduced: buff tooltips "adding lines until full"
 (with the fixes, buff tooltips show the aura name, description and time
@@ -480,6 +493,9 @@ Decisions already made with the user. Do not reopen them without a reason.
 | `scenarios/charselect`, `scenarios/world` | Character select from account data; any character without its own scenario |
 | `tools/capture/!WowProgrammingTrace` | In-game addon that records login and zone change events |
 | `crates/engine/src/lua/client.lua` | Client functions written in Lua (quality colors, placeholder enums, click bindings) |
+| `crates/engine/src/lua/maps.lua`, `maps.rs` | `C_Map` from the UiMap tables; player position, facing and movement |
+| `crates/engine/src/lua/bindings.lua`, `bindings.rs` | Key map, override bindings, the binding API |
+| `crates/engine/tests/real_addons.rs` | TomTom, Clique and WowLua in the full UI (skipped without them) |
 | `crates/engine/src/lua/macros.lua` | Macro line execution through Blizzard's chat parser, `SecureCmdOptionParse`, `RunMacroText` |
 | `crates/engine/src/lua/scenario.lua` | Scenario helpers (`S.LoadStandardCapture`, `S.Replay`, ...) |
 | `crates/engine/src/data/cvar_defaults.txt` | CVar defaults for runs without a CVar capture |
@@ -624,6 +640,11 @@ Things that cost time once and should not cost it again.
   (except tabard and cape) works for all models tried.
 - The commit command must not run after a failed check: use
   `if checks; then git commit ...; fi`, not `checks; git commit`.
+- WoW's `xpcall` passes extra arguments (`xpcall(f, handler, self)`);
+  AddonCore-based addons (TomTom, Clique) fail with "self is nil"
+  without it.
+- Real addons are the fastest way to find missing client behavior:
+  load one with `--addon NAME --seconds 3` and read the first error.
 - Commands Blizzard registers are moved out of `SlashCmdList` into a
   hidden proxy table, and secure ones (`/cast`) never enter it. Run
   slash commands through the client's macro line callback, not by

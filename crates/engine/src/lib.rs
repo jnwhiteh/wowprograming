@@ -18,6 +18,7 @@ pub mod input;
 pub mod layout;
 pub mod layoutcache;
 pub mod loading;
+pub mod maps;
 pub mod messageframe;
 pub mod movement;
 pub mod natives;

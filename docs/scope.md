@@ -349,6 +349,15 @@ Done when all of these hold, each with a headless test:
 Not in this goal: the minimap and world map drawing (TomTom's pins only
 need to be placed), real terrain, collision and flying.
 
+Progress (2026-11-25): criteria 1 to 6 hold, tested by
+`crates/engine/tests/real_addons.rs` (skipped without the addons). The
+player stands in Goldshire (`scenarios/dummy`) and walks with the
+movement keys; TomTom's arrow counts down to a `/way` waypoint and
+clears it on arrival; Clique casts a spell from a middle click on the
+player frame; WowLua runs typed code. Next: the world map and minimap
+with TomTom's pins, Clique's options window and party frames, WowLua's
+other buttons, and TomTom's own in-game test addon (`TomTomTest`).
+
 **Client state: a training dummy session (next goal after the frame
 runtime).** The user's character stands in front of a training dummy,
 and the interface works as in the game. The C++ client holds the state
