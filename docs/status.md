@@ -30,23 +30,22 @@ Last updated: 2026-11-25 (playable world: positions, damage, healing, death, the
   `IsSpellInRange`, `IsActionInRange` and casting (the error, and the hot
   key turns red through ACTION_RANGE_CHECK_UPDATE); combat text for the
   player (UNIT_COMBAT on the player frame, floating combat text through
-  COMBAT_TEXT_UPDATE). Event callbacks (`RegisterEventCallback`) and
+  COMBAT_TEXT_UPDATE); the rat fights back (runs to melee range, bites,
+  leashes at 60 yards); the player can die, release as a ghost, walk to
+  the corpse and recover it. Event callbacks (`RegisterEventCallback`) and
   CVAR_UPDATE from `SetCVar` now work. Finding: in this client
   `CombatLogGetCurrentEventInfo` is nil for addons (the function moved
   to the secure-only `C_CombatLogSecure`); the goal's wording names it,
   so the sandbox follows the UI source and records the question for a
   probe session (client-runtime.md, question 24). Next, in order:
-  1. Hostile units fight back: a unit in combat with the player hits it
-     every few seconds when in melee range (so the player's health,
-     combat text and death matter), and leaves combat when it dies.
-  2. Nameplates: NAME_PLATE_CREATED and NAME_PLATE_UNIT_ADDED for units
+  1. Nameplates: NAME_PLATE_CREATED and NAME_PLATE_UNIT_ADDED for units
      near the player (`State.SetExtraToken("nameplateN", u)`,
      `C_NamePlate.GetNamePlates`), a click on a nameplate targets.
-  3. The GUI: render units at their positions and the camera behind the
+  2. The GUI: render units at their positions and the camera behind the
      player from position and facing (`world.rs` Camera, `demo_scene`
      in `crates/gui`); a click in the 3D view targets the unit under the
      mouse (shared projection).
-  4. Criterion 5: a spec that plays 60 seconds (walking, Tab, casting)
+  3. Criterion 5: a spec that plays 60 seconds (walking, Tab, casting)
      and fails on any Lua error.
 - **Real addons goal: criteria done** (set by the user on 2026-11-25),
   on branch `client-state`: TomTom, Clique and WowLua must run without
@@ -475,7 +474,8 @@ simulator more complete, in order:
    pasting text). Some need sandbox features: combat now exists (a
    hostile cast, or `WowProgrammingState.EnterCombat()` from a spec), so
    HC-1 and ST-14 need only their hand steps; pet battles
-   (PB-1), quest data (QO-*), corpse (CO-1), the TomTom coordinate block
+   (PB-1), quest data (QO-*), corpse (CO-1: the death cycle and
+   `C_DeathInfo.GetCorpseMapPosition` exist now; try it), the TomTom coordinate block
    on the world map (MC-1). Teach the spec the hand steps per test, or
    add these features; then handle the reload tests.
 4. WowLua: saving a page and finding it after `/reload` works (tested).

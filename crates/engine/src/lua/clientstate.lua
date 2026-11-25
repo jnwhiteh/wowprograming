@@ -652,6 +652,9 @@ local function installCombatLog()
 end
 
 
+-- Defined with the death cycle below casting.
+local onPlayerDeath
+
 local function die(u, killer)
     u.dead, u.health = true, 0
     for _, a in ipairs(auras[u] or {}) do
@@ -659,8 +662,11 @@ local function die(u, killer)
     end
     if killer == player() or (killer and killer.inParty) then logEvent("PARTY_KILL", killer, u) end
     logEvent("UNIT_DIED", nil, u, "", false)
+    if u == player() then onPlayerDeath() end
     if u.respawn then
         C_Timer.After(u.respawn, function()
+            -- Back where it started (a unit that fought moved).
+            if u.homeX then u.x, u.y = u.homeX, u.homeY end
             u.dead, u.health = false, u.healthMax or 100
             fireUnit("UNIT_HEALTH", u)
         end)
@@ -693,22 +699,29 @@ local function combatText(u, kind, data, arg3, arg4)
     end)
 end
 
+-- Damage from a spell, or a melee hit without one (SWING_DAMAGE).
 local function dealDamage(src, dst, s, amount, periodic)
-    if dst.dead then return end
+    if dst.dead or dst.ghost then return end
     local before = dst.health or dst.healthMax or 100
+    local mask = s and school(s) or 1
     setHealth(dst, before - amount)
     -- UNIT_COMBAT drives the hit numbers on the player and pet frames.
-    fireUnit("UNIT_COMBAT", dst, "WOUND", "", amount, school(s))
-    combatText(dst, s.id ~= 0 and "SPELL_DAMAGE" or "DAMAGE", amount)
+    fireUnit("UNIT_COMBAT", dst, "WOUND", "", amount, mask)
+    combatText(dst, s and s.id ~= 0 and "SPELL_DAMAGE" or "DAMAGE", amount)
     local overkill = amount > before and amount - before or -1
-    logEvent(periodic and "SPELL_PERIODIC_DAMAGE" or "SPELL_DAMAGE", src, dst,
-        s.id, s.name, school(s), amount, overkill, school(s), nil, nil, nil, false, false, false, false)
+    if s then
+        logEvent(periodic and "SPELL_PERIODIC_DAMAGE" or "SPELL_DAMAGE", src, dst,
+            s.id, s.name, mask, amount, overkill, mask, nil, nil, nil, false, false, false, false)
+    else
+        logEvent("SWING_DAMAGE", src, dst, amount, overkill, mask, nil, nil, nil, false, false, false, false)
+    end
     if src == player() or dst == player() then enterCombat() end
+    if src == player() and dst.attack and State.Engage then State.Engage(dst) end
     if dst.health <= 0 then die(dst, src) end
 end
 
 local function heal(src, dst, s, amount, periodic)
-    if dst.dead then return end
+    if dst.dead or dst.ghost then return end
     local before = dst.health or dst.healthMax or 100
     local max = dst.healthMax or 100
     local actual = math.min(amount, max - before)
@@ -748,6 +761,7 @@ end
 -- The spell's effects when it lands: costs are paid at the start (inferred),
 -- auras applied here.
 local function land(s, target)
+    if isHarmful(s) and target and target.attack then State.Engage(target) end
     if s.damage and target then dealDamage(player(), target, s, s.damage) end
     if s.heal and target then heal(player(), target, s, s.heal) end
     if s.aura then
@@ -801,6 +815,8 @@ end
 -- the player lacks power, or another cast is in progress.
 local function castSpell(s, unit)
     if not s or s.passive then return false end
+    local me = player()
+    if me.dead or me.ghost then return failCast(s, SPELL_FAILED_CASTER_DEAD) end
     if cast then return failCast(s, SPELL_FAILED_SPELL_IN_PROGRESS) end
     local cd = spellCooldown(s)
     if cd.isActive then
@@ -847,6 +863,121 @@ State.CastSpell = function(id, unit) return castSpell(findSpell(id), unit) end
 -- Time ------------------------------------------------------------------------
 
 local regenTimer = 0
+-- Hostile units that fight back -------------------------------------------------
+
+-- A unit with `attack = { damage, interval }` engages when the player
+-- hurts it: it runs to melee range and hits the player every `interval`
+-- seconds (SWING_DAMAGE). Pulled more than 60 yards from where it
+-- started, it goes back at full health. These are simple rules, not the
+-- game's (no threat, no pathing).
+local MELEE_RANGE, LEASH, MOB_SPEED = 5, 60, 7
+local engaged = {}
+function State.Engage(u)
+    local me = player()
+    if engaged[u] or u.dead or not u.attack or me.dead or me.ghost then return end
+    engaged[u] = true
+    u.homeX, u.homeY = u.homeX or u.x, u.homeY or u.y
+    u.nextSwing = now() + 0.5
+end
+function State.Engaged(unit)
+    local u = hidden[unit] or resolveUnit(unit)
+    return u ~= nil and engaged[u] == true
+end
+
+local function fightBack(t, elapsed)
+    local me = player()
+    for u in pairs(engaged) do
+        local px, py = position(me)
+        if u.dead or me.dead or me.ghost or not px or not u.x then
+            engaged[u] = nil
+        elseif math.sqrt((u.x - u.homeX) ^ 2 + (u.y - u.homeY) ^ 2) > LEASH then
+            engaged[u] = nil
+            u.x, u.y = u.homeX, u.homeY
+            setHealth(u, u.healthMax or 100)
+        else
+            local dx, dy = px - u.x, py - u.y
+            local d = math.sqrt(dx * dx + dy * dy)
+            if d > MELEE_RANGE then
+                local step = math.min(MOB_SPEED * elapsed, d - MELEE_RANGE + 0.5)
+                u.x, u.y = u.x + dx / d * step, u.y + dy / d * step
+            elseif t >= u.nextSwing then
+                u.nextSwing = t + (u.attack.interval or 2)
+                dealDamage(u, me, nil, u.attack.damage or 1)
+            end
+        end
+    end
+end
+
+-- The player's death ------------------------------------------------------------
+
+-- At 0 health the player dies (PLAYER_DEAD; Blizzard shows the release
+-- dialog). RepopMe releases the spirit: a ghost (PLAYER_ALIVE) at a
+-- graveyard 60 yards south of the corpse (invented). Within 39 yards of
+-- the corpse the client sends CORPSE_IN_RANGE (inferred distance) and
+-- RetrieveCorpse brings the player back at half health (PLAYER_UNGHOST).
+local RELEASE_TIME, CORPSE_RANGE, GRAVEYARD_SOUTH = 360, 39, 60
+local corpse, deathTime, corpseInRange
+local function setFrozen(on)
+    if WowProgrammingWorld and WowProgrammingWorld.SetFrozen then WowProgrammingWorld.SetFrozen(on) end
+end
+onPlayerDeath = function()
+    if cast then finishCast(false) end
+    local p = worldPlayer()
+    corpse = p and p.continent and { continent = p.continent, x = p.x, y = p.y } or nil
+    deathTime = now()
+    for u in pairs(engaged) do engaged[u] = nil end
+    setFrozen(true)
+    if inCombat then leaveCombat() end
+    fire("PLAYER_DEAD")
+end
+
+local function corpseDistance()
+    local p = worldPlayer()
+    if not corpse or not p or p.continent ~= corpse.continent then return nil end
+    return math.sqrt((p.x - corpse.x) ^ 2 + (p.y - corpse.y) ^ 2)
+end
+
+local function repop()
+    local me = player()
+    if not me.dead then return end
+    me.dead, me.ghost, me.health = false, true, 1
+    setFrozen(false)
+    if corpse then
+        WowProgrammingWorld.SetPlayerWorldPosition(corpse.continent, corpse.x - GRAVEYARD_SOUTH, corpse.y)
+    end
+    corpseInRange = false
+    fireUnit("UNIT_HEALTH", me)
+    fire("PLAYER_ALIVE")
+end
+
+local function retrieveCorpse()
+    local me = player()
+    local d = corpseDistance()
+    if not me.ghost or (d and d > CORPSE_RANGE) then return end
+    me.ghost = false
+    corpse, corpseInRange = nil, nil
+    setHealth(me, math.floor((me.healthMax or 100) / 2))
+    fire("PLAYER_UNGHOST")
+end
+
+local function watchCorpse()
+    if not player().ghost then return end
+    local d = corpseDistance()
+    local near = d ~= nil and d <= CORPSE_RANGE
+    if near ~= corpseInRange then
+        corpseInRange = near
+        fire(near and "CORPSE_IN_RANGE" or "CORPSE_OUT_OF_RANGE")
+    end
+end
+
+local function corpseMapPosition(mapID)
+    if not corpse then return nil end
+    local continent = C_Map.GetWorldPosFromMapPos(mapID, CreateVector2D(0.5, 0.5))
+    if continent ~= corpse.continent then return nil end
+    local _, pos = C_Map.GetMapPosFromWorldPos(corpse.continent, CreateVector2D(corpse.x, corpse.y), mapID)
+    return pos
+end
+
 local gcdWasActive = false
 -- Action slots with range checks on (C_ActionBar.EnableActionRangeCheck):
 -- slot -> { count, inRange, checks }.
@@ -862,6 +993,8 @@ local function tick(elapsed)
         end
     end
     if cast and t >= cast.finish then finishCast(true) end
+    fightBack(t, elapsed)
+    watchCorpse()
     -- Auras that heal or hurt every few seconds.
     for u, list in pairs(auras) do
         for _, a in ipairs(list) do
@@ -1583,6 +1716,18 @@ local function install()
     end)
 
     installCombatLog()
+    set("RepopMe", repop)
+    set("RetrieveCorpse", retrieveCorpse)
+    set("GetReleaseTimeRemaining", function()
+        if not player().dead or not deathTime then return 0 end
+        return math.max(0, RELEASE_TIME - (now() - deathTime))
+    end)
+    set("GetCorpseRecoveryDelay", function() return 0 end)
+    set("CannotBeResurrected", function() return false end)
+    set("C_DeathInfo.GetCorpseMapPosition", function(mapID)
+        local me = player()
+        if me.dead or me.ghost then return corpseMapPosition(mapID) end
+    end)
     set("C_CombatText.GetCurrentEventInfo", function()
         return combatTextInfo[1], combatTextInfo[2], combatTextInfo[3]
     end)

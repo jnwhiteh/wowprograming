@@ -287,8 +287,10 @@ function AscendStop() end
 function MoveAndSteerStart() move.forward = true end
 function MoveAndSteerStop() move.forward = false end
 
+-- A dead player cannot move (the client state model freezes it).
+local frozen = false
 local function step(elapsed)
-    if not player.continent then return end
+    if not player.continent or frozen then return end
     local turn = (move.turnLeft and 1 or 0) - (move.turnRight and 1 or 0)
     local nowTurning = turn ~= 0
     if nowTurning then
@@ -339,6 +341,7 @@ function World.SetPlayerWorldPosition(continent, x, y, facing)
 end
 
 function World.Player() return player end
+function World.SetFrozen(on) frozen = on and true or false end
 function World.Step(elapsed) step(elapsed) end
 
 local driver = CreateFrame("Frame")

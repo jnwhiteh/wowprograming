@@ -132,12 +132,14 @@ State.AddHiddenUnit("dummy", {
     respawn = 3,
 })
 
--- A hostile creature that dies and comes back after 10 s.
+-- A hostile creature that fights back when hurt (a 3,000 bite every
+-- 2 s), dies and comes back after 10 s.
 State.AddHiddenUnit("rat", {
     name = "Tunnel Rat", level = 78, classification = "normal",
     creatureType = "Beast", health = 30000, healthMax = 30000,
     power = 0, powerMax = 0, reaction = 2, canAttack = true, isPlayer = false,
     guid = "Creature-0-0-0-0-1900901-0000000001", respawn = 10,
+    attack = { damage = 3000, interval = 2 },
 })
 
 -- A friendly guard: helpful spells can target it, harmful ones cannot.

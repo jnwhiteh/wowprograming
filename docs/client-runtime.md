@@ -615,6 +615,22 @@ from Blizzard code and the API documentation unless a source is named:
   (SynchronousEvent in the API documentation). Blizzard's
   `CVarCallbackRegistry` and the settings hear it; load-on-demand addons
   that wait for a setting (`Settings.LoadAddOnCVarWatcher`) load then.
+- Hostile units that fight back (simple rules, not the game's): a unit
+  with `attack = { damage, interval }` engages when the player hurts it
+  or casts a harmful spell at it, runs at 7 yards a second to 5 yards,
+  and hits every `interval` seconds (SWING_DAMAGE, UNIT_COMBAT, combat
+  text). More than 60 yards from where it started, it goes back at full
+  health. A unit that comes back after death stands where it started.
+- The player's death: at 0 health PLAYER_DEAD (Blizzard closes windows
+  and shows the DEATH dialog, which reads `GetReleaseTimeRemaining`, 360
+  s in the model); no casting, no movement, combat ends. `RepopMe`
+  (the dialog's Release button) makes a ghost (`UnitIsGhost`) and fires
+  PLAYER_ALIVE; the model puts the ghost 60 yards south of the corpse
+  (invented: no graveyard data). Within 39 yards of the corpse
+  (inferred) the client sends CORPSE_IN_RANGE and Blizzard shows
+  RECOVER_CORPSE; `RetrieveCorpse` brings the player back at half health
+  (inferred) and fires PLAYER_UNGHOST. `C_DeathInfo.GetCorpseMapPosition`
+  answers while dead or a ghost.
 - Event callbacks (`RegisterEventCallback`, `RegisterUnitEventCallback`,
   `frame:RegisterEventCallback`): called after the frames registered for
   the event, with the owner (nil for global callbacks, the frame for a
