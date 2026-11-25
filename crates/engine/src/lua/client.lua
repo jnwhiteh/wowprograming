@@ -751,3 +751,9 @@ do
     function AddChatWindowChannel(i, name) local c = w(i) if c then addTo(c.channels, name) end end
     function RemoveChatWindowChannel(i, name) local c = w(i) if c then removeFrom(c.channels, name) end end
 end
+
+-- No outdoor PvP zone has a battle timer. The documentation says the wait
+-- time is never nil, but the world map shows "Next Battle" whenever it is
+-- not nil, so the client must return nil outside such zones.
+C_PvP = C_PvP or {}
+function C_PvP.GetOutdoorPvPWaitTime() return nil end
