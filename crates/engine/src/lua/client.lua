@@ -669,3 +669,85 @@ do
         return s[1], "Interface\\PaperDoll\\UI-PaperDoll-Slot-" .. s[2], false
     end
 end
+
+-- Chat windows, as the client keeps them in chat-cache.txt. The defaults
+-- are a new character's: General (shown) and Combat Log (docked second),
+-- black at alpha 0.25, General taking the usual message groups. Not saved
+-- between sessions yet.
+do
+    local GENERAL_MESSAGES = {
+        "SYSTEM", "SYSTEM_NOMENU", "SAY", "EMOTE", "YELL", "WHISPER", "PARTY", "PARTY_LEADER",
+        "RAID", "RAID_LEADER", "RAID_WARNING", "GUILD", "OFFICER", "MONSTER_SAY", "MONSTER_YELL",
+        "MONSTER_EMOTE", "MONSTER_WHISPER", "MONSTER_BOSS_EMOTE", "MONSTER_BOSS_WHISPER",
+        "ERRORS", "AFK", "DND", "IGNORED", "BG_HORDE", "BG_ALLIANCE", "BG_NEUTRAL",
+        "COMBAT_FACTION_CHANGE", "SKILL", "LOOT", "MONEY", "CHANNEL", "ACHIEVEMENT",
+        "GUILD_ACHIEVEMENT", "BN_WHISPER", "BN_WHISPER_INFORM", "BN_INLINE_TOAST_ALERT",
+        "CURRENCY", "BN_WHISPER_PLAYER_OFFLINE", "PET_BATTLE_INFO", "INSTANCE_CHAT",
+        "INSTANCE_CHAT_LEADER", "PING",
+    }
+    local windows = {}
+    for i = 1, 10 do
+        windows[i] = { name = "", size = 0, r = 0, g = 0, b = 0, a = 0.25, shown = false,
+                       locked = true, docked = nil, uninteractable = false, messages = {}, channels = {} }
+    end
+    windows[1].name, windows[1].size, windows[1].shown, windows[1].docked = "General", 14, true, 1
+    for _, m in ipairs(GENERAL_MESSAGES) do windows[1].messages[#windows[1].messages + 1] = m end
+    windows[2].name, windows[2].size, windows[2].docked = "Combat Log", 14, 2
+
+    local function w(i) return windows[tonumber(i) or 0] end
+    function GetChatWindowInfo(i)
+        local c = w(i)
+        if not c then return nil end
+        return c.name, c.size, c.r, c.g, c.b, c.a, c.shown, c.locked, c.docked, c.uninteractable
+    end
+    function GetChatWindowMessages(i)
+        local c = w(i)
+        if c then return unpack(c.messages) end
+    end
+    -- Channel name and zone channel flag, for each channel.
+    function GetChatWindowChannels(i)
+        local c = w(i)
+        if not c then return end
+        local out = {}
+        for _, name in ipairs(c.channels) do out[#out + 1] = name; out[#out + 1] = 0 end
+        return unpack(out)
+    end
+    function GetChatWindowSavedPosition(i)
+        local c = w(i)
+        if c and c.point then return c.point, c.x, c.y end
+    end
+    function GetChatWindowSavedDimensions(i)
+        local c = w(i)
+        if c and c.width then return c.width, c.height end
+    end
+    local function setter(field)
+        return function(i, v) local c = w(i) if c then c[field] = v end end
+    end
+    SetChatWindowName, SetChatWindowSize = setter("name"), setter("size")
+    SetChatWindowAlpha, SetChatWindowShown = setter("a"), setter("shown")
+    SetChatWindowLocked, SetChatWindowDocked = setter("locked"), setter("docked")
+    SetChatWindowUninteractable = setter("uninteractable")
+    function SetChatWindowColor(i, r, g, b)
+        local c = w(i)
+        if c then c.r, c.g, c.b = r, g, b end
+    end
+    function SetChatWindowSavedPosition(i, point, x, y)
+        local c = w(i)
+        if c then c.point, c.x, c.y = point, x, y end
+    end
+    function SetChatWindowSavedDimensions(i, width, height)
+        local c = w(i)
+        if c then c.width, c.height = width, height end
+    end
+    local function addTo(list, value)
+        for _, v in ipairs(list) do if v == value then return end end
+        list[#list + 1] = value
+    end
+    local function removeFrom(list, value)
+        for k = #list, 1, -1 do if list[k] == value then table.remove(list, k) end end
+    end
+    function AddChatWindowMessages(i, group) local c = w(i) if c then addTo(c.messages, group) end end
+    function RemoveChatWindowMessages(i, group) local c = w(i) if c then removeFrom(c.messages, group) end end
+    function AddChatWindowChannel(i, name) local c = w(i) if c then addTo(c.channels, name) end end
+    function RemoveChatWindowChannel(i, name) local c = w(i) if c then removeFrom(c.channels, name) end end
+end

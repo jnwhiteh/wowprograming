@@ -432,14 +432,20 @@ impl Engine {
 
     fn login(&mut self, reloading: bool) {
         // The client's order, from traces of logins and reloads (see
-        // docs/status.md): bindings and display first, then saved
+        // docs/status.md): bindings, chat windows and display first, then saved
         // variables, edit mode layouts, PLAYER_LOGIN and
         // PLAYER_ENTERING_WORLD; the loading screen ends, then the spell
         // list arrives.
         self.fire_event("UPDATE_BINDINGS", ());
+        // Chat windows from chat-cache.txt: the chat frames take their
+        // color, alpha and docking on these events.
+        self.fire_event("UPDATE_CHAT_WINDOWS", ());
+        self.fire_event("UPDATE_FLOATING_CHAT_WINDOWS", ());
         self.fire_event("DISPLAY_SIZE_CHANGED", ());
         self.fire_event("UI_SCALE_CHANGED", ());
         self.fire_event("VARIABLES_LOADED", ());
+        self.fire_event("UPDATE_MACROS", ());
+        self.fire_event("UPDATE_CHAT_WINDOWS", ());
         // The edit mode layouts place the unit frames, action bars and
         // other HUD frames.
         let layouts: Option<Table> = self

@@ -127,6 +127,10 @@ Last updated: 2026-11-25 (real addons: TomTom, Clique and WowLua work; maps, mov
   a click.
 - Real addons: TomTom, Clique and WowLua (from `addons_dir`, with
   `--addon`) load and work in the dummy scenario.
+- Chat windows (`GetChatWindowInfo` and the other chat window functions
+  in `lua/client.lua`) with a new character's defaults; login sends
+  UPDATE_CHAT_WINDOWS, UPDATE_FLOATING_CHAT_WINDOWS and UPDATE_MACROS in
+  the traced order, so the chat frame is dark with its tabs.
 - Clique's options window (`/clique`, with the action catalog of the
   model's spells and macros) and TomTom's test addon window (`/tttest`,
   `--addon TomTomTest`) open without errors. `GetInventorySlotInfo`.
@@ -177,8 +181,9 @@ Last updated: 2026-11-25 (real addons: TomTom, Clique and WowLua work; maps, mov
   `--full-ui` forces this for any scenario. Startup takes about 20 s
   (mostly file reads from `/mnt/d`; 2 s of CPU).
 - Login sequence in the client's order, taken from the traces (logins and
-  reloads agree): UPDATE_BINDINGS, DISPLAY_SIZE_CHANGED, UI_SCALE_CHANGED,
-  VARIABLES_LOADED, EDIT_MODE_LAYOUTS_UPDATED (from
+  reloads agree): UPDATE_BINDINGS, UPDATE_CHAT_WINDOWS,
+  UPDATE_FLOATING_CHAT_WINDOWS, DISPLAY_SIZE_CHANGED, UI_SCALE_CHANGED,
+  VARIABLES_LOADED, UPDATE_MACROS, UPDATE_CHAT_WINDOWS, EDIT_MODE_LAYOUTS_UPDATED (from
   `C_EditMode.GetLayouts()`), PLAYER_LOGIN, PLAYER_ENTERING_WORLD,
   LOADING_SCREEN_DISABLED, SPELLS_CHANGED. UIParent stays shown while the
   UI loads (Blizzard's cast bar hides itself at login only when visible).
@@ -365,8 +370,7 @@ Last updated: 2026-11-25 (real addons: TomTom, Clique and WowLua work; maps, mov
   scenario has 59: being in a party creates more model scenes, so the
   model camera error (`OrbitCameraMixin.lua:41`) repeats more often. Some
   repeat every tick (PersonalResourceDisplay).
-- The first action button shows no key label; the chat frame background
-  is white.
+- The first action button shows no key label.
 - Compact raid frames are not tried yet (`scenarios/hud` is a party with
   classic party frames).
 - Taint and secret values.
