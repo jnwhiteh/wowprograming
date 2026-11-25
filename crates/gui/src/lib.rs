@@ -68,6 +68,8 @@ pub struct App {
     loading: Option<Loading>,
     /// The 3D view behind the UI and whose model it shows.
     world: Option<((u32, u32, bool), world::World)>,
+    /// The player's first world position, drawn at the scenery's origin.
+    world_anchor: Option<[f32; 3]>,
 }
 
 /// How to open the window.
@@ -131,6 +133,7 @@ impl App {
             factory: None,
             loading: None,
             world: None,
+            world_anchor: None,
         };
         app.push_log(
             "F12 shows or hides this console. Type /dump <expr>, /run <code> or Lua here.".into(),
@@ -371,7 +374,20 @@ impl App {
                     } else {
                         world::View::Behind
                     };
-                    self.world = Some((subject, world::demo_scene(gd, race, sex, view)));
+                    let scene = world::demo_scene(gd, race, sex, view);
+                    if !charselect {
+                        self.engine.set_camera_extra(scene.camera_extra);
+                    }
+                    self.world = Some((subject, scene));
+                    self.world_anchor = None;
+                }
+                // The player and the units where the game state has them.
+                if !subject.2
+                    && let (Some((_, world)), Some(view)) =
+                        (self.world.as_mut(), self.engine.world_view())
+                {
+                    let anchor = *self.world_anchor.get_or_insert(view.player);
+                    world.place(gd, anchor, &view);
                 }
                 let w = ((scene.width * scale) / 2.0).round().max(1.0) as usize;
                 let h = ((scene.height * scale) / 2.0).round().max(1.0) as usize;

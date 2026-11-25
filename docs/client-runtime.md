@@ -615,6 +615,9 @@ from Blizzard code and the API documentation unless a source is named:
   (SynchronousEvent in the API documentation). Blizzard's
   `CVarCallbackRegistry` and the settings hear it; load-on-demand addons
   that wait for a setting (`Settings.LoadAddOnCVarWatcher`) load then.
+- Moving (translation, not turning) interrupts a cast-time spell or a
+  channel (INTERRUPTED, STOP), and such a spell cannot start while
+  moving (`SPELL_FAILED_MOVING`). Instant spells work while moving.
 - Hostile units that fight back (simple rules, not the game's): a unit
   with `attack = { damage, interval }` engages when the player hurts it
   or casts a harmful spell at it, runs at 7 yards a second to 5 yards,
@@ -658,6 +661,13 @@ from Blizzard code and the API documentation unless a source is named:
   clears the target unless sticky targeting is on (`deselectOnClick`
   "0", the captured setting). The client really picks units by their
   models; this is a stand-in.
+- The 3D view (not client behavior, the sandbox's stand-in): the
+  scenery stands around the player's first position; the player's model
+  and the units move each frame (`World::place`). Units face the player,
+  followers face the player's way. A unit's model is its `model` (a
+  creature model file, such as 903222 for
+  `6IH_IronHorde_CombatDummy01.m2`), the race model for units with a
+  `raceID`, or a stand-in creature.
 - Event callbacks (`RegisterEventCallback`, `RegisterUnitEventCallback`,
   `frame:RegisterEventCallback`): called after the frames registered for
   the event, with the owner (nil for global callbacks, the frame for a

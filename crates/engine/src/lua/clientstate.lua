@@ -822,6 +822,10 @@ local function castSpell(s, unit)
     if not s or s.passive then return false end
     local me = player()
     if me.dead or me.ghost then return failCast(s, SPELL_FAILED_CASTER_DEAD) end
+    -- Spells with a cast time or a channel need the player to stand still.
+    if ((s.castTime or 0) > 0 or (s.channel or 0) > 0) and IsPlayerMoving and IsPlayerMoving() then
+        return failCast(s, SPELL_FAILED_MOVING)
+    end
     if cast then return failCast(s, SPELL_FAILED_SPELL_IN_PROGRESS) end
     local cd = spellCooldown(s)
     if cd.isActive then
@@ -1162,6 +1166,32 @@ function WowProgramming_WorldClick(button, x, y)
         setTarget(nil)
     end
 end
+-- The units the 3D view draws: living units with a position, facing the
+-- player (followers face the player's way). Each entry: x, y (world yards), yaw (radians), raceID and sex
+-- (0 male, 1 female) for characters, else model (a creature model file
+-- ID, optional) and index (a stable number to pick a stand-in model).
+State.WorldUnits = function()
+    local me = player()
+    local px, py = position(me)
+    local out, seen = {}, {}
+    for _, group in ipairs({ hidden, units }) do
+        for _, u in pairs(group) do
+            local x, y = position(u)
+            if not seen[u] and u ~= me and x and not u.dead and not u.ghost then
+                seen[u] = true
+                -- Followers face where the player faces; others face it.
+                local yaw = px and math.atan2(py - y, px - x) or 0
+                local wp = worldPlayer()
+                if u.follow and wp then yaw = wp.facing end
+                out[#out + 1] = { x = x, y = y, yaw = yaw, raceID = u.raceID,
+                    sex = u.sex == 3 and 1 or 0, model = u.model, key = u.guid or u.name or "" }
+            end
+        end
+    end
+    table.sort(out, function(a, b) return a.key < b.key end)
+    for i, e in ipairs(out) do e.index = i end
+    return out
+end
 State.HeadOnScreen = function(unit)
     local u = hidden[unit] or resolveUnit(unit)
     if u then return headOnScreen(u) end
@@ -1235,6 +1265,8 @@ local rangeWatch = {}
 local function tick(elapsed)
     local t = now()
     if inCombat and t - lastHostile > COMBAT_TIMEOUT then leaveCombat() end
+    -- Moving interrupts a cast or a channel.
+    if cast and IsPlayerMoving and IsPlayerMoving() then finishCast(false) end
     -- A channel deals its tick damage once a second.
     if cast and cast.channel and cast.spell.tickDamage and cast.target then
         while cast.nextTick <= t and cast.nextTick <= cast.finish do

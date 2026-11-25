@@ -38,6 +38,27 @@ Equal(UnitName("target"), "Straw Sentinel")
 Press("TAB")
 Equal(UnitName("target"), "Tunnel Rat")
 
+-- Moving: a cast-time spell cannot start while walking, and walking
+-- interrupts one in progress.
+KeyDown("W")
+Wait(0.1)
+Press("1")
+Wait(0.1)
+Equal(UnitCastingInfo("player"), nil, "cast while moving")
+Equal(errors[#errors], SPELL_FAILED_MOVING)
+KeyUp("W")
+Wait(0.1)
+Hold("S", 0.1 / 4.5 * 7) -- back to about where she stood
+Wait(0.1)
+Press("1")
+Wait(0.5)
+Equal(UnitCastingInfo("player"), "Emberlance")
+Hold("W", 0.2)
+Wait(0.1)
+Equal(UnitCastingInfo("player"), nil, "moving interrupts the cast")
+Hold("S", 0.2 / 4.5 * 7)
+Wait(1.5) -- the global cooldown
+
 -- Two Emberlances (18,000 fire damage each) kill the rat (30,000 health).
 Equal(C_Spell.IsSpellInRange(1900001, "target"), true)
 Press("1")

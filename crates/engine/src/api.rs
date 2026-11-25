@@ -302,8 +302,11 @@ pub fn install(lua: &Lua) -> Result<()> {
     // camera (nameplates and clicks in the world use it).
     let project = lua.create_function(
         |lua, (px, py, pz, facing, x, y, z): (f32, f32, f32, f32, f32, f32, f32)| {
-            let (w, h) = state(lua).screen;
-            let cam = crate::world::Camera::behind([px, py, pz], facing, 0.0);
+            let (w, h, extra) = {
+                let st = state(lua);
+                (st.screen.0, st.screen.1, st.camera_extra)
+            };
+            let cam = crate::world::Camera::behind([px, py, pz], facing, extra);
             Ok(match cam.project([x, y, z], w as f32, h as f32) {
                 Some((sx, sy)) => (Some(sx as f64), Some(h - sy as f64)),
                 None => (None, None),

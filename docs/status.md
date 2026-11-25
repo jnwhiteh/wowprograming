@@ -20,8 +20,8 @@ Last updated: 2026-11-25 (playable world: positions, damage, healing, death, the
   (`specs/combat.lua`, also the test `combat_in_the_world`): units in
   `scenarios/dummy` stand at positions near the player (the dummy, a
   hostile Tunnel Rat that dies and comes back after 10 s, a friendly
-  NPC Warden Halric, the two party members, who walk along 3 yards
-  behind the player: `follow = { north, west }`); Tab picks living hostile
+  NPC Warden Halric, the two party members, who walk along beside
+  the player: `follow = { north, west }`); Tab picks living hostile
   units within 40 yards by distance and cycles; damage, healing (capped
   at the maximum), heals over time, channel ticks, death, respawn,
   UNIT_HEALTH; the combat log (COMBAT_LOG_EVENT_UNFILTERED, the filtered
@@ -36,20 +36,25 @@ Last updated: 2026-11-25 (playable world: positions, damage, healing, death, the
   (`specs/nameplates.lua`, test `nameplates_and_world_clicks`) over
   their heads, from one camera and projection shared with the 3D view,
   with health and names; a click on a plate or a unit in the world
-  targets it. Event callbacks (`RegisterEventCallback`) and
+  targets it; the 3D view (GUI, and `run --screenshot F
+  --screenshot-world` headless) draws the player and the units where the
+  game state has them, with the camera following the player's position
+  and facing (`World::place`, `Engine::world_view`); moving stops a
+  cast and blocks starting one; criterion 5 (`specs/play.lua`, test
+  `sixty_seconds_of_play`: a minute of walking, Tab, casting, clicks
+  and panels without a Lua error). Event callbacks (`RegisterEventCallback`) and
   CVAR_UPDATE from `SetCVar` now work. Finding: in this client
   `CombatLogGetCurrentEventInfo` is nil for addons (the function moved
   to the secure-only `C_CombatLogSecure`); the goal's wording names it,
   so the sandbox follows the UI source and records the question for a
   probe session (client-runtime.md, question 24). Next, in order:
-  1. The GUI: draw the player and the units at their positions with
-     `Camera::behind` from the player's position and facing (today
-     `demo_scene` in `world.rs` is static around the origin; anchor it at
-     the player's first position and move instances each frame). The
-     projection and world clicks already match (`ProjectToScreen`).
-     Then try it on the desktop.
-  2. Criterion 5: a spec that plays 60 seconds (walking, Tab, casting)
-     and fails on any Lua error.
+  1. Ask the user to try `gui --scenario scenarios/dummy` on the desktop
+     (Tab, 1 to 8, click units and nameplates, W A S D, die to the rat).
+     Known limits: models stand still in their bind pose, the scenery
+     stays around the start point (400 yards of ground), no terrain.
+  2. Criteria 2 to 5 then hold except the desktop check; the talents
+     panel (criterion 1's known gap) needs specialization and talent
+     tree data. Then ask the user whether the goal is done.
 - **Real addons goal: criteria done** (set by the user on 2026-11-25),
   on branch `client-state`: TomTom, Clique and WowLua must run without
   errors and work, and the player must be able to move so TomTom's

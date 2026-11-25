@@ -696,6 +696,9 @@ pub struct State {
     pub world_entry: Option<crate::WorldEntry>,
     /// Size of the screen in UI units (the size of UIParent at scale 1).
     pub screen: (f64, f64),
+    /// How far the camera behind the player moves out for a tall model
+    /// (`world::Camera::behind`); the GUI sets it from the player's model.
+    pub camera_extra: f32,
     /// Physical pixels per UI unit at scale 1.
     pub pixel_scale: f64,
     pub xml: crate::xml::XmlState,

@@ -264,9 +264,39 @@ impl Camera {
     }
 }
 
+/// What the 3D view shows of the game state: the player and the units
+/// near it, in world coordinates (x north, y west, z up, yards).
+#[derive(Debug, Clone, Default)]
+pub struct WorldView {
+    pub player: [f32; 3],
+    /// Radians, 0 is north, turning left adds.
+    pub facing: f32,
+    pub units: Vec<WorldUnit>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct WorldUnit {
+    pub pos: [f32; 3],
+    pub yaw: f32,
+    /// ChrRaces ID and sex (0 male, 1 female) for characters.
+    pub race: Option<(u32, u32)>,
+    /// A creature model file; without one a stand-in creature is drawn.
+    pub model: Option<u32>,
+    /// Picks the stand-in creature.
+    pub index: usize,
+}
+
 #[derive(Debug, Clone)]
 pub struct World {
+    /// The scenery (trees, rocks), fixed around the origin.
     pub instances: Vec<Instance>,
+    /// The player and the units, placed each frame by `place`.
+    pub actors: Vec<Instance>,
+    /// The player's model, and how far the camera moves out for it.
+    pub player_mesh: Option<Rc<Mesh>>,
+    pub camera_extra: f32,
+    /// Models for units, by race and sex or by creature model file.
+    unit_meshes: HashMap<(u32, u32, u32), Option<Rc<Mesh>>>,
     pub ground: Option<u32>,
     /// Yards per repeat of the ground texture.
     pub ground_tile: f32,
@@ -286,6 +316,10 @@ impl Default for World {
     fn default() -> World {
         World {
             instances: Vec::new(),
+            actors: Vec::new(),
+            player_mesh: None,
+            camera_extra: 0.0,
+            unit_meshes: HashMap::new(),
             ground: None,
             ground_tile: 8.0,
             ground_size: 400.0,
@@ -301,6 +335,75 @@ impl Default for World {
                 target: [0.0, 0.0, 1.5],
                 fov: 0.9,
             },
+        }
+    }
+}
+
+/// The stand-in creatures for units without a model of their own.
+const STAND_IN_CREATURES: [u32; 2] = art::CREATURES;
+
+impl World {
+    /// Put the player, the camera and the units where the game state has
+    /// them. `anchor` is the world position drawn at the origin (where
+    /// the scenery stands).
+    pub fn place(&mut self, gd: &GameData, anchor: [f32; 3], view: &WorldView) {
+        let local = |p: [f32; 3]| [p[0] - anchor[0], p[1] - anchor[1], p[2] - anchor[2]];
+        let player = local(view.player);
+        self.actors.clear();
+        if let Some(mesh) = &self.player_mesh {
+            self.actors.push(Instance {
+                mesh: mesh.clone(),
+                pos: player,
+                yaw: view.facing,
+                scale: 1.0,
+            });
+        }
+        self.camera = Camera::behind(player, view.facing, self.camera_extra);
+        for u in &view.units {
+            let key = match (u.race, u.model) {
+                (Some((race, sex)), _) => (0, race, sex),
+                (None, Some(file)) => (1, file, 0),
+                (None, None) => (1, STAND_IN_CREATURES[u.index % STAND_IN_CREATURES.len()], 0),
+            };
+            let mesh = self
+                .unit_meshes
+                .entry(key)
+                .or_insert_with(|| unit_mesh(gd, key).map(Rc::new))
+                .clone();
+            if let Some(mesh) = mesh {
+                self.actors.push(Instance {
+                    mesh,
+                    pos: local(u.pos),
+                    yaw: u.yaw,
+                    scale: 1.0,
+                });
+            }
+        }
+    }
+}
+
+/// A unit's model: (0, race, sex) for a character, (1, file, 0) for a
+/// creature model with its first display's textures.
+fn unit_mesh(gd: &GameData, key: (u32, u32, u32)) -> Option<Mesh> {
+    match key {
+        (0, race, sex) => race_model(gd, race, sex).and_then(|f| {
+            load_model(
+                gd,
+                f,
+                &character_paints(race, sex),
+                Some(default_character_geoset),
+            )
+        }),
+        (_, file, _) => {
+            let mut replace = HashMap::new();
+            if let Some((_, textures)) = display_for_model(gd, file) {
+                for (k, t) in textures.iter().enumerate() {
+                    if *t != 0 {
+                        replace.insert(11 + k as u32, Paint::Texture(*t));
+                    }
+                }
+            }
+            load_model(gd, file, &replace, None)
         }
     }
 }
@@ -527,7 +630,7 @@ impl World {
             }
         }
 
-        for inst in &self.instances {
+        for inst in self.instances.iter().chain(&self.actors) {
             let (sy, cy) = inst.yaw.sin_cos();
             let world = |v: [f32; 3]| -> [f32; 3] {
                 let x = v[0] * cy - v[1] * sy;
@@ -885,7 +988,13 @@ pub fn demo_scene(gd: &GameData, race: u32, sex: u32, view: View) -> World {
             });
         }
     }
-    for (i, file) in art::CREATURES.iter().enumerate() {
+    // Creatures as scenery on character select; in the world the units
+    // stand where the game state has them (`World::place`).
+    let creatures: &[u32] = match view {
+        View::CharacterSelect => &art::CREATURES,
+        View::Behind => &[],
+    };
+    for (i, file) in creatures.iter().enumerate() {
         let Some((_, textures)) = display_for_model(gd, *file) else {
             continue;
         };
@@ -917,12 +1026,15 @@ pub fn demo_scene(gd: &GameData, race: u32, sex: u32, view: View) -> World {
         // further away.
         let top = m.vertices.iter().map(|v| v.pos[2]).fold(0.0f32, f32::max);
         let extra = (top - 2.0).max(0.0);
-        world.instances.push(Instance {
-            mesh: Rc::new(m),
+        let mesh = Rc::new(m);
+        world.actors.push(Instance {
+            mesh: mesh.clone(),
             pos: [0.0, 0.0, 0.0],
             yaw: 0.0,
             scale: 1.0,
         });
+        world.player_mesh = Some(mesh);
+        world.camera_extra = extra;
         world.camera = match view {
             // About the game's default camera distance, in yards.
             View::Behind => Camera::behind([0.0, 0.0, 0.0], 0.0, extra),
@@ -934,4 +1046,26 @@ pub fn demo_scene(gd: &GameData, race: u32, sex: u32, view: View) -> World {
         };
     }
     world
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The camera behind the player sees a point ahead of the player in
+    /// the middle of the screen, a point to its left (west, for a player
+    /// facing north) on the left, and nothing behind the camera.
+    #[test]
+    fn camera_behind_projects_like_the_game_view() {
+        let cam = Camera::behind([100.0, 50.0, 0.0], 0.0, 0.0);
+        let (x, _) = cam.project([110.0, 50.0, 1.0], 1000.0, 500.0).unwrap();
+        assert!((x - 500.0).abs() < 0.01, "ahead at x {x}");
+        let (x, _) = cam.project([110.0, 55.0, 1.0], 1000.0, 500.0).unwrap();
+        assert!(x < 500.0, "west of a north-facing player is left, x {x}");
+        assert!(cam.project([80.0, 50.0, 1.0], 1000.0, 500.0).is_none());
+        // Facing west (a quarter turn left), north is to the right.
+        let cam = Camera::behind([100.0, 50.0, 0.0], std::f32::consts::FRAC_PI_2, 0.0);
+        let (x, _) = cam.project([105.0, 60.0, 1.0], 1000.0, 500.0).unwrap();
+        assert!(x > 500.0, "north of a west-facing player is right, x {x}");
+    }
 }

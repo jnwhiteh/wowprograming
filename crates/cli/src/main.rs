@@ -198,6 +198,9 @@ struct RunArgs {
     /// Pixels per UI unit for --screenshot.
     #[arg(long, default_value_t = 0.75)]
     screenshot_scale: f64,
+    /// Draw the 3D world behind the UI in --screenshot, as the GUI does.
+    #[arg(long)]
+    screenshot_world: bool,
     /// gui only: open a normal window instead of a borderless window that
     /// covers the monitor.
     #[arg(long)]
@@ -761,7 +764,12 @@ fn run(config: EngineConfig, game_dir: Option<PathBuf>, args: &RunArgs) -> ExitC
         None => run_console(&mut engine, control.as_mut(), args.serve),
     }
     if let Some(path) = &args.screenshot {
-        match engine.save_screenshot(path, args.screenshot_scale) {
+        let saved = if args.screenshot_world {
+            engine.save_screenshot_world(path, args.screenshot_scale)
+        } else {
+            engine.save_screenshot(path, args.screenshot_scale)
+        };
+        match saved {
             Ok(()) => eprintln!("Saved {}", path.display()),
             Err(e) => eprintln!("cannot write {}: {e}", path.display()),
         }

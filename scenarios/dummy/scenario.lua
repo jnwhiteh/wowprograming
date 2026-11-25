@@ -102,18 +102,19 @@ local function near(north, west) return me.x + north, me.y + west end
 -- Two friends in the party, for click casting on party frames.
 local party = {
     { name = "Brannoc", class = "Warrior", classFile = "WARRIOR", classID = 1,
-      race = "Dwarf", raceFile = "Dwarf", raceID = 3, role = "TANK", powerType = 1,
+      race = "Dwarf", raceFile = "Dwarf", raceID = 3, sex = 2, role = "TANK", powerType = 1,
       powerToken = "RAGE", health = 520000, healthMax = 600000, power = 20, powerMax = 100 },
     { name = "Seralyn", class = "Priest", classFile = "PRIEST", classID = 5,
-      race = "Human", raceFile = "Human", raceID = 1, role = "HEALER", powerType = 0,
+      race = "Human", raceFile = "Human", raceID = 1, sex = 3, role = "HEALER", powerType = 0,
       powerToken = "MANA", health = 380000, healthMax = 380000, power = 250000, powerMax = 250000 },
 }
 for i, member in ipairs(party) do
     member.level, member.isPlayer, member.reaction = 80, true, 5
     member.faction, member.inParty = "Alliance", true
     member.guid = "Player-1-0000PRTY" .. i
-    -- They walk along with Ilyndra, 3 yards behind her.
-    member.follow = { -3, i == 1 and 2 or -2 }
+    -- They walk along with Ilyndra, a yard behind and 3 yards to her
+    -- left and right.
+    member.follow = { -1, i == 1 and 3 or -3 }
     S.SetUnit("party" .. i, member)
 end
 S.units.player.inParty = true
@@ -130,6 +131,8 @@ State.AddHiddenUnit("dummy", {
     guid = "Creature-0-0-0-0-1900900-0000000001",
     -- It cannot be killed for good: at 0 health it is back 3 s later.
     respawn = 3,
+    -- The 3D view's model: 6IH_IronHorde_CombatDummy01.m2.
+    model = 903222,
 })
 
 -- A hostile creature that fights back when hurt (a 3,000 bite every
@@ -140,12 +143,15 @@ State.AddHiddenUnit("rat", {
     power = 0, powerMax = 0, reaction = 2, canAttack = true, isPlayer = false,
     guid = "Creature-0-0-0-0-1900901-0000000001", respawn = 10,
     attack = { damage = 3000, interval = 2 },
+    model = 1141018, -- Rat2.m2
 })
 
 -- A friendly guard: helpful spells can target it, harmful ones cannot.
 State.AddHiddenUnit("warden", {
     name = "Warden Halric", level = 80, classification = "normal",
     creatureType = "Humanoid", health = 450000, healthMax = 500000,
+    -- Drawn with the human model in the 3D view.
+    raceID = 1, sex = 2,
     power = 0, powerMax = 0, reaction = 5, canAttack = false, isPlayer = false,
     guid = "Creature-0-0-0-0-1900902-0000000001",
 })

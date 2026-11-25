@@ -649,6 +649,12 @@ fn nameplates_and_world_clicks() {
     let Some(mut e) = full_ui(wtf.path(), "dummy") else {
         return;
     };
+    // The 3D view gets the player and the units near it: the dummy and
+    // the rat with their models, the warden and the party as characters.
+    let view = e.world_view().expect("no world view");
+    assert_eq!(view.units.len(), 5);
+    assert!(view.units.iter().any(|u| u.model == Some(903222)));
+    assert_eq!(view.units.iter().filter(|u| u.race.is_some()).count(), 3);
     // The fixture window stands in the middle of the screen, over the
     // dummy; clicks in the world need it out of the way.
     e.exec("MovableWindowFrame:Hide()");
@@ -658,6 +664,27 @@ fn nameplates_and_world_clicks() {
         outcome.error,
         None,
         "nameplates spec:\n{}",
+        outcome.printed.join("\n")
+    );
+    let errs = errors(&mut e);
+    assert!(errs.is_empty(), "Lua errors:\n{}", errs.join("\n"));
+}
+
+/// Criterion 5 of the playable world goal: sixty seconds of play
+/// (specs/play.lua) without a Lua error.
+#[test]
+fn sixty_seconds_of_play() {
+    let wtf = tempfile::tempdir().unwrap();
+    let Some(mut e) = full_ui(wtf.path(), "dummy") else {
+        return;
+    };
+    e.exec("MovableWindowFrame:Hide()");
+    let spec = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../specs/play.lua");
+    let outcome = e.run_spec(&spec);
+    assert_eq!(
+        outcome.error,
+        None,
+        "play spec:\n{}",
         outcome.printed.join("\n")
     );
     let errs = errors(&mut e);

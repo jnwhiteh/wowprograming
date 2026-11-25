@@ -602,6 +602,48 @@ impl Engine {
         self.save_screenshot_crop(path, scale, None)
     }
 
+    /// Like [`Engine::save_screenshot`], with the 3D world behind the UI as
+    /// the GUI draws it (the player and the units where the game state
+    /// has them; the scenery stands around the player's position now).
+    pub fn save_screenshot_world(
+        &mut self,
+        path: &std::path::Path,
+        scale: f64,
+    ) -> std::io::Result<()> {
+        let scene = self.scene();
+        let gd = self.gamedata.clone();
+        let background = match (gd.as_deref(), self.world_subject()) {
+            (Some(gd), Some((race, sex, charselect))) => {
+                let view = if charselect {
+                    world::View::CharacterSelect
+                } else {
+                    world::View::Behind
+                };
+                let mut w = world::demo_scene(gd, race, sex, view);
+                if !charselect {
+                    self.set_camera_extra(w.camera_extra);
+                    if let Some(v) = self.world_view() {
+                        w.place(gd, v.player, &v);
+                    }
+                }
+                // Half the resolution, as in the GUI.
+                let pw = ((scene.width * scale) / 2.0).round().max(1.0) as usize;
+                let ph = ((scene.height * scale) / 2.0).round().max(1.0) as usize;
+                Some(w.render(gd, pw, ph))
+            }
+            _ => None,
+        };
+        let mut fonts = render::FontStore::default();
+        let canvas = render::render_over(
+            &scene,
+            gd.as_deref(),
+            scale,
+            &mut fonts,
+            background.as_ref(),
+        );
+        render::write_png(path, canvas.width, canvas.height, &canvas.to_rgba8())
+    }
+
     /// Like [`Engine::save_screenshot`], cropped to a rectangle in screen
     /// units.
     pub fn save_screenshot_crop(
@@ -677,6 +719,46 @@ impl Engine {
     /// Screen size in UI units.
     pub fn screen_size(&self) -> (f64, f64) {
         state(self.runtime.lua()).screen
+    }
+
+    /// The player and the units for the 3D view, from the movement model
+    /// and the client state model. None before the player is in the world.
+    pub fn world_view(&self) -> Option<world::WorldView> {
+        let lua = self.runtime.lua();
+        let (x, y, z, facing, units): (Option<f32>, f32, f32, f32, Option<Table>) = lua
+            .load(
+                "local p = WowProgrammingWorld and WowProgrammingWorld.Player() \
+                 if not p or not p.continent then return nil, 0, 0, 0 end \
+                 local s = WowProgrammingState \
+                 return p.x, p.y, p.z or 0, p.facing, s and s.WorldUnits and s.WorldUnits()",
+            )
+            .eval()
+            .ok()?;
+        let x = x?;
+        let mut view = world::WorldView {
+            player: [x, y, z],
+            facing,
+            units: Vec::new(),
+        };
+        for u in units.iter().flat_map(|t| t.sequence_values::<Table>()) {
+            let Ok(u) = u else { continue };
+            let race: Option<u32> = u.get("raceID").ok().flatten();
+            let sex: u32 = u.get("sex").unwrap_or(0);
+            view.units.push(world::WorldUnit {
+                pos: [u.get("x").unwrap_or(0.0), u.get("y").unwrap_or(0.0), 0.0],
+                yaw: u.get("yaw").unwrap_or(0.0),
+                race: race.filter(|&r| r != 0).map(|r| (r, sex)),
+                model: u.get("model").ok().flatten(),
+                index: u.get("index").unwrap_or(0),
+            });
+        }
+        Some(view)
+    }
+
+    /// The camera behind the player moves out by this many yards for a
+    /// tall model; nameplates and clicks in the world follow it.
+    pub fn set_camera_extra(&mut self, extra: f32) {
+        state(self.runtime.lua()).camera_extra = extra;
     }
 
     /// The window's size in physical pixels changed (for example when a
@@ -1182,6 +1264,7 @@ fn build_runtime(
         layout_generation: 0,
         rect_cache: Vec::new(),
         screen: config.screen,
+        camera_extra: 0.0,
         glue: config.glue,
         game_account_dir: config.game_account_dir.clone(),
         enter_world: None,
