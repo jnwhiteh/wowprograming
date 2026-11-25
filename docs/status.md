@@ -6,7 +6,7 @@ work (see "Keeping this file current" below).
 
 For goals, design and the full roadmap, see [scope.md](scope.md).
 
-Last updated: 2026-11-25 (real addons: TomTom, Clique and WowLua work; maps, movement, bindings, restricted environment).
+Last updated: 2026-11-25 (real addons work; world map, modifiers, hover casting, chat windows, --watch, interaction specs).
 
 ## Current state
 
@@ -18,7 +18,12 @@ Last updated: 2026-11-25 (real addons: TomTom, Clique and WowLua work; maps, mov
   three addons load and run without Lua errors, maps come from the
   UiMap tables, the player walks with W, A, S, D, Q, E, TomTom's arrow
   leads to a `/way` waypoint, Clique casts from a click, WowLua runs
-  code. See "Next steps" for what to try next.
+  code. Beyond the criteria: the world map with TomTom's pins and the
+  player arrow, Clique on party frames with modifier clicks and hover
+  casting, WowLua pages across `/reload`. Tools for addon authors
+  started too: `--watch` (reload on change) and `wowprogramming test`
+  (interaction specs, `specs/`). All on `client-state`, committed, not
+  merged, not pushed. See "Next steps".
 - **Client state goal: criteria 1 to 6 done** on branch `client-state`
   (2026-11-25): unit-frame clicks, buff removal, a player debuff,
   tooltips from the model, slash commands and macros. Criterion 7
@@ -425,7 +430,11 @@ simulator more complete, in order:
 5. Save key bindings (`SaveBindings`) and read the character's
    `bindings-cache.wtf`, `macros-cache.txt` and
    `click-bindings-cache.txt`, read only.
-6. Then the security model goal: taint (`issecurevariable` and
+6. Interaction specs: add helpers when a spec needs them (drag,
+   mouse wheel, screenshot comparison), and a way to set up a scenario
+   from the spec itself. Ask the user whether TomTom's own Lua harness
+   specs (`TomTom/tests`) should be ported to sandbox specs.
+7. Then the security model goal: taint (`issecurevariable` and
    `loadstring_untainted` are stand-ins today), protected functions,
    combat lockdown, secret values.
 
@@ -453,8 +462,8 @@ remaining 3D steps (animation, mipmaps, customization textures, terrain)
 are in the backlog in scope.md.
 
 On hold (spellbook and HUD goals): check the captured tooltips and sample
-abilities; HUD problems (first action button key label, white chat
-background, outlined text width); compare
+abilities; HUD problems (first action button key label, outlined text
+width); compare
 party frames with the capture; a raid scenario; capture addon support for
 raid units and trait data.
 
