@@ -128,6 +128,10 @@ Last updated: 2026-11-25 (real addons: TomTom, Clique and WowLua work; maps, mov
   a click.
 - Real addons: TomTom, Clique and WowLua (from `addons_dir`, with
   `--addon`) load and work in the dummy scenario.
+- The mouseover unit follows the unit frame under the mouse (the
+  nearest frame with a `unit` attribute) and fires
+  UPDATE_MOUSEOVER_UNIT (`WowProgramming_MouseFocusChanged` in
+  `scenario.lua`).
 - Modifier keys: `LSHIFT`, `RSHIFT`, `LCTRL`, `RCTRL`, `LALT`, `RALT`
   pressed alone (or `Engine::set_modifiers`, which the GUI calls every
   frame) drive `IsShiftKeyDown` and friends and fire
@@ -405,10 +409,9 @@ simulator more complete, in order:
 2. Clique: done for the player frame and party frames
    (`scenarios/dummy` has two party members and Renewing Bloom, a heal
    over time on the target). Not tried: the binding editor in the
-   options window (click a spell, press a key or mouse button), modifier
-   clicks (modifier keys always read as up), hover casting with key
-   bindings (Clique's override bindings on mouseover). Modifier clicks
-   work (Shift-click casts on a party member in the test).
+   options window (click a spell, press a key or mouse button). Modifier
+   clicks and hover casting (a key over a unit frame) work and are
+   tested.
 3. TomTom's own in-game test addon `TomTomTest` (load it with
    `--addon TomTomTest`): run its suites and fix what fails.
 4. WowLua: the other toolbar buttons (pages, undo, lock), its saved

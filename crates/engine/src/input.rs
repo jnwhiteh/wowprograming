@@ -163,6 +163,14 @@ pub fn update_focus(lua: &Lua, motion: bool) {
             fire_script(lua, h, "OnEnter", motion);
         }
     }
+    // The mouseover unit follows unit frames (scenario.lua keeps units).
+    if let Ok(f) = lua
+        .globals()
+        .get::<mlua::Function>("WowProgramming_MouseFocusChanged")
+    {
+        let table = hit.map(|h| state(lua).table(h));
+        crate::natives::safe_call(lua, &f, table);
+    }
 }
 
 /// Once per frame: if the layout or visibility changed, frames may have

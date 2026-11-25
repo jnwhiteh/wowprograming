@@ -235,6 +235,29 @@ fn tomtom_clique_and_wowlua_work() {
     run(&mut e, 0.1);
     let target: String = e.eval("return UnitName('target')").unwrap();
     assert_eq!(target, "Seralyn");
+    // Hover casting: F over the first party frame casts on that member
+    // (Clique's override binding, the mouseover unit). Renewing Bloom is
+    // already on Brannoc, so the cast refreshes its timer.
+    e.exec(
+        "Clique:AddBinding({ key = 'F', type = 'spell', spell = 'Renewing Bloom', sets = { hovercast = true } })",
+    );
+    run(&mut e, 1.6);
+    let expires = "return C_UnitAuras.GetAuraDataByIndex('party1', 1, 'HELPFUL').expirationTime";
+    let before: f64 = e.eval(expires).unwrap();
+    let (x, y): (f64, f64) = e
+        .eval("return PartyFrame.MemberFrame1:GetCenter()")
+        .unwrap();
+    e.mouse_move(x, y);
+    let over: String = e.eval("return UnitName('mouseover')").unwrap();
+    assert_eq!(over, "Brannoc");
+    assert!(e.key_down("F"));
+    e.key_up("F");
+    run(&mut e, 0.2);
+    let after: f64 = e.eval(expires).unwrap();
+    assert!(
+        after > before + 1.0,
+        "the hover cast did not refresh the aura"
+    );
 
     // 6. WowLua: open the window, type code, run it, see the output.
     e.run_command("/wowlua");

@@ -383,6 +383,25 @@ local function unitData(unit)
     return units[unit:lower()]
 end
 
+-- The mouseover unit: the unit of the frame under the mouse (the nearest
+-- frame up the parents with a "unit" attribute, as on unit frames). The
+-- engine calls this when the mouse focus changes (inferred: the client
+-- also sets it for units in the 3D world).
+function WowProgramming_MouseFocusChanged(frame)
+    local token
+    local f = frame
+    while f and not token do
+        local unit = f.GetAttribute and f:GetAttribute("unit")
+        if type(unit) == "string" and units[unit:lower()] then token = unit:lower() end
+        f = f.GetParent and f:GetParent()
+    end
+    local new = token and units[token] or nil
+    if units.mouseover ~= new then
+        units.mouseover = new
+        fireEvent("UPDATE_MOUSEOVER_UNIT")
+    end
+end
+
 -- Wrap a global so described units answer first.
 local function unitFunction(name, answer)
     local container, key = locate(name)

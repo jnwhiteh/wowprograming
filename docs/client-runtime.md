@@ -619,6 +619,11 @@ Modifier keys pressed alone do not reach OnKeyDown yet. `MakeModifiers`
 returns 0: the bit values are unknown (click-bindings-cache.txt has 3
 and 48 for modified spell bindings, a probe question).
 
+Mouseover: when the mouse focus changes, `mouseover` becomes the unit
+of the nearest frame (the focus or a parent) whose `unit` attribute
+names a known unit, and UPDATE_MOUSEOVER_UNIT fires (inferred; the
+client also does this for units in the 3D world).
+
 ### Restricted environment
 
 Blizzard_RestrictedAddOnEnvironment runs secure handler snippets in Lua.
