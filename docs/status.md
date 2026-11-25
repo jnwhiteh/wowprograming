@@ -6,7 +6,7 @@ work (see "Keeping this file current" below).
 
 For goals, design and the full roadmap, see [scope.md](scope.md).
 
-Last updated: 2026-11-25 (client state: clicks through motion-only frames, click bindings, buff removal, player debuff).
+Last updated: 2026-11-25 (client state: milestones 1 and 2, unit-frame clicks and tooltips from the model).
 
 ## Current state
 
@@ -22,9 +22,10 @@ Last updated: 2026-11-25 (client state: clicks through motion-only frames, click
      on the player frame targets the player). `/stopcasting` moved to
      milestone 3.
   2. Criterion 5, tooltips from the model for spells, action buttons,
-     auras and units: next.
+     auras and units: **done** (spell and action layout from the Monk
+     capture; aura and unit layout inferred).
   3. Criterion 6, slash commands (`/cast`, `/target`, `/stopcasting`,
-     `/reload`, `/logout`) and a macro on an action bar.
+     `/reload`, `/logout`) and a macro on an action bar: next.
   The model (`lua/clientstate.lua`) works with an invented character in
   `scenarios/dummy`. The user asked to invent fantasy data where needed
   and to list where real data or templates are needed: see
@@ -128,6 +129,10 @@ Last updated: 2026-11-25 (client state: clicks through motion-only frames, click
   `C_ClickBindings` has the client's default profile (left click
   targets, right click opens the menu), so secure unit frames target on
   a click.
+- Tooltips from the model (`State.tooltipFunctions` in
+  `clientstate.lua`) for spellbook items, actions, buffs, debuffs and
+  units; Blizzard's `TooltipDataProcessor` draws them. A hidden tooltip
+  has no owner. `|4singular:plural;` text escapes are resolved.
 - Right-click on a buff cancels it; `State.ApplyAura` puts a debuff from
   another source on the player (the dummy scenario's magic curse).
 - Escape runs Blizzard's `ToggleGameMenu`: stop a cast, close windows,
@@ -336,7 +341,7 @@ Last updated: 2026-11-25 (client state: clicks through motion-only frames, click
 - Compact raid frames are not tried yet (`scenarios/hud` is a party with
   classic party frames).
 - Taint and secret values.
-- Client state: no tooltips from data, no macros or slash commands such
+- Client state: no macros or slash commands such
   as `/cast`, no Clique, no icon at the mouse pointer while a spell is
   held, no spell data from DB2 (only invented spells). Modifier keys
   always read as up (`IsShiftKeyDown` is a stub), so modified clicks and
@@ -350,12 +355,11 @@ the headless runs only cover loading and idle play).
 
 Client state goal: continue the three milestones listed under "Current
 state" with `scenarios/dummy`, and extend `training_dummy_session` in
-`crates/engine/tests/full_ui.rs` for each step. Milestone 2 (tooltips):
-build `C_TooltipInfo` lines from the model, using the Monk capture's
-spell tooltips as the template, so Blizzard's `TooltipDataProcessor`
-draws spell, action, aura and unit tooltips. Milestone 3: load the chat
-frame's slash commands, then `/cast`, `/target`, `/stopcasting`, macros
-from `macros-cache.txt` on a bar. Criterion 7 (Clique) comes after.
+`crates/engine/tests/full_ui.rs` for each step. Milestone 3: find why
+the chat frame's slash commands do not load (`/logout` is unknown), then
+`/cast`, `/target`, `/stopcasting`, `/reload`, `/logout`, and a macro on
+an action bar (the dummy scenario can define it; reading the
+character's `macros-cache.txt` can come later). Criterion 7 (Clique) comes after.
 Also worth doing: draw the held spell's icon at the mouse pointer in the
 GUI. Real spell data from DB2 can come later, when a captured character
 should use the model; find the tables' FileDataIDs first (the CASC

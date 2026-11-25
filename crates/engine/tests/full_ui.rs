@@ -338,6 +338,26 @@ fn errors(e: &mut Engine) -> Vec<String> {
         .collect()
 }
 
+/// The shown GameTooltip's lines as "left | right" (empty when hidden),
+/// after hovering a frame.
+fn tooltip(e: &mut Engine, expr: &str) -> Vec<String> {
+    let (x, y) = center(e, expr);
+    e.mouse_move(x, y);
+    e.tick(0.05);
+    let text: String = e
+        .eval(
+            "if not GameTooltip:IsShown() then return '' end
+             local out = {}
+             for i = 1, GameTooltip:NumLines() do
+                 local l, r = _G['GameTooltipTextLeft' .. i], _G['GameTooltipTextRight' .. i]
+                 out[i] = (l:GetText() or '') .. ' | ' .. (r:IsShown() and r:GetText() or '')
+             end
+             return table.concat(out, '\\n')",
+        )
+        .unwrap();
+    text.lines().map(str::to_string).collect()
+}
+
 fn press(e: &mut Engine, key: &str) {
     assert!(e.key_down(key), "no binding for {key}");
     e.key_up(key);
@@ -368,6 +388,18 @@ fn training_dummy_session() {
     e.tick(0.2);
     let button = "(function() for _, f in PlayerSpellsFrame.SpellBookFrame.PagedSpellsFrame:EnumerateFrames() do \
         if f.spellBookItemInfo and f.spellBookItemInfo.name == 'Blinkstep' then return f.Button end end end)()";
+    // 5. Its tooltip comes from the model, in the client's layout.
+    assert_eq!(
+        tooltip(&mut e, button),
+        [
+            "Blinkstep | ",
+            " | ",
+            "Instant | 15 sec cooldown",
+            "Steps forward through the weave. Not on the global cooldown. | ",
+            // Added by Blizzard's spellbook for spells not on a bar.
+            "You haven't added this to your action bars | ",
+        ]
+    );
     let from = center(&e, button);
     let to = center(&e, "ActionButton5");
     e.drag(from, (to.0 - from.0, to.1 - from.1), "LeftButton", 10);
@@ -451,6 +483,33 @@ fn training_dummy_session() {
         .eval("local f = BuffFrame.auraFrames[1] return f.Count:GetText(), f:IsShown()")
         .unwrap();
     assert_eq!((count.as_str(), shown), ("2", true));
+    // 5. Tooltips for an action, a buff, a debuff and a unit.
+    assert_eq!(
+        tooltip(&mut e, "ActionButton2"),
+        [
+            "Frostbind | ",
+            "1,500 Mana | 40 yd range",
+            "Instant | 12 sec cooldown",
+            "Binds the enemy in frost, slowing it by 50% for 8 sec. | ",
+        ]
+    );
+    let buff = tooltip(&mut e, "BuffFrame.auraFrames[1]");
+    assert_eq!(
+        buff[..2],
+        [
+            "Aegis of Dawn | ",
+            "Absorbs damage. Stacks up to 3 times. | "
+        ]
+    );
+    assert!(
+        buff[2].ends_with("|4second:seconds; remaining | "),
+        "{buff:?}"
+    );
+    let debuff = tooltip(&mut e, "DebuffFrame.auraFrames[1]");
+    assert_eq!(debuff[0], "Hex of Brittle Bones | Magic");
+    // Over the portrait: the health bar only shows its text.
+    let unit = tooltip(&mut e, "TargetFrame.TargetFrameContainer.Portrait");
+    assert_eq!(unit[..2], ["Straw Sentinel | ", "Level ?? Mechanical | "]);
     // A right click on the buff cancels it.
     click_with(&mut e, "BuffFrame.auraFrames[1]", "RightButton");
     e.tick(0.1);

@@ -497,6 +497,25 @@ from Blizzard code and the API documentation unless a source is named:
   menu (`Blizzard_Game/Shared/Game.lua`, `Blizzard_GameMenuEsc`).
 - Aura slots from `GetAuraSlots` are the aura instance IDs; a second cast
   of a stacking aura refreshes it and adds a stack.
+- Tooltips: the model answers `C_TooltipInfo.GetSpellByID`,
+  `GetSpellBookItem`, `GetAction`, `GetUnit` and the aura getters.
+  Spell and action lines follow the Monk capture: name (line type
+  SpellName, empty grey right text); cost and range ("1,500 Mana", "40
+  yd range"; without a cost the range moves left; an empty line when
+  neither); cast time and cooldown ("Instant", "2.5 sec cast",
+  "Channeled"; "12 sec cooldown", "15 min cooldown" from 60 s); or a
+  SpellPassive line "Passive"; then the description (SpellDescription,
+  gold 1, 0.82, 0, wrapped). Aura tooltips (name with the dispel type on
+  the right, description in gold, time left rounded up in
+  `SPELL_TIME_REMAINING_*`) and unit tooltips (UnitName with
+  `unitToken`, "Level ?? Mechanical" or "Level 80 Night Elf Mage
+  (Player)", the faction) are inferred: no capture has them.
+- A hidden GameTooltip has no owner (inferred). Blizzard's aura buttons
+  refresh the tooltip from OnUpdate while they own it; keeping the owner
+  showed the tooltip again after OnLeave hid it.
+- Text: `|4singular:plural;` picks the singular after the number 1
+  (`SPELL_TIME_REMAINING_MIN`). It is resolved when drawn; `GetText`
+  returns the escape.
 - Power comes back at 5% of the maximum every half second outside a cast.
   This is a simple rule, not the game's.
 - `Blizzard_EnvironmentCleanup` removes globals from the global
@@ -517,12 +536,11 @@ Where the invented data stops being good enough, in order of need:
    SpellAuraOptions from DB2. Needs the FileDataIDs from the community
    listfile and the column layouts from WoWDBDefs. Then a captured
    character's own spells can drive the same model.
-2. **Tooltip line templates.** `C_TooltipInfo` returns typed lines
-   (`Enum.TooltipDataLineType`). The Monk capture has spell tooltips
-   (name line type 13, cast time line, description type 34 in gold
-   0xFFD100, wrapped). Still missing: an action tooltip with cost and
-   range, an aura tooltip and a unit tooltip. A capture with a target and
-   a buff gives all three (the deferred "capture with a target").
+2. **Tooltip line templates.** The model builds spell and action
+   tooltips from the Monk capture's layout (cost, range, cast time,
+   cooldown and passive lines are all in it). Aura and unit tooltips are
+   inferred; a capture with a target and a buff would confirm both (the
+   deferred "capture with a target").
 3. **Event order for one cast** (probe question 22 below).
 4. **The real training dummy**: its name, level (`??` is -1), creature
    type, classification and tooltip. A capture with a dummy targeted.

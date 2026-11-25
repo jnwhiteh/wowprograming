@@ -256,6 +256,33 @@ fn parse_markup_links(text: &str) -> (Vec<Glyph>, Vec<String>) {
                 link = 0;
                 i += 2;
             }
+            '4' => {
+                // |4singular:plural; picks the form by the number before
+                // it ("1 |4minute:minutes;" is "1 minute").
+                let rest = &chars[i + 2..];
+                let Some(end) = rest.iter().position(|&c| c == ';') else {
+                    i += 2;
+                    continue;
+                };
+                let body: String = rest[..end].iter().collect();
+                let (one, many) = body.split_once(':').unwrap_or((&body, &body));
+                let digits: String = out
+                    .iter()
+                    .rev()
+                    .map(|g| g.c)
+                    .skip_while(|c| !c.is_ascii_digit())
+                    .take_while(|c| c.is_ascii_digit() || *c == ',' || *c == '.')
+                    .collect();
+                let form = if digits == "1" { one } else { many };
+                for c in form.chars() {
+                    out.push(Glyph {
+                        c,
+                        color: colors.last().copied(),
+                        link,
+                    });
+                }
+                i += 2 + end + 1;
+            }
             'T' | 'A' | 'K' => {
                 // Inline texture, atlas or protected string: shown as a space.
                 let end_code = code.to_ascii_lowercase();
@@ -731,6 +758,14 @@ mod tests {
         assert_eq!(s, "abc[X]|");
         assert_eq!(g[1].color, Some([1.0, 0.0, 0.0, 1.0]));
         assert_eq!(g[2].color, None);
+    }
+
+    #[test]
+    fn picks_singular_or_plural() {
+        let text = |s: &str| parse_markup(s).iter().map(|g| g.c).collect::<String>();
+        assert_eq!(text("1 |4minute:minutes; left"), "1 minute left");
+        assert_eq!(text("21 |4minute:minutes; left"), "21 minutes left");
+        assert_eq!(text("|4Min:Min;"), "Min");
     }
 
     #[test]

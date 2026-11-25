@@ -367,8 +367,9 @@ tested with invented data in `scenarios/dummy` (test
 `training_dummy_session`). Criteria 1 to 4 work, except `/stopcasting`
 (Escape works), which needs the chat frame's slash commands (criterion
 6). A click on the player frame targets the player; the dummy has no
-frame of its own (no nameplates), so Tab targets it. Criteria 5 to 7
-are not started. The data each step still needs is listed in
+frame of its own (no nameplates), so Tab targets it. Criterion 5 works:
+spellbook, action, buff, debuff and unit tooltips come from the model
+(aura and unit layouts inferred). Criteria 6 and 7 are not started. The data each step still needs is listed in
 [client-runtime.md](client-runtime.md) ("Client state: invented data
 and where real data is needed").
 

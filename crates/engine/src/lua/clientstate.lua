@@ -473,6 +473,171 @@ local function tick(elapsed)
     end
 end
 
+-- Tooltips ----------------------------------------------------------------------
+
+-- C_TooltipInfo data built from the model. Spell and action tooltips
+-- follow the client's lines in the Monk capture: the name (SpellName,
+-- with an empty grey right text), cost and range, cast time and cooldown
+-- (or a SpellPassive line), then the description in gold, wrapped. Aura
+-- and unit tooltips have no capture yet; their lines are inferred.
+local LINE = { None = 0, UnitName = 2, SpellName = 13, SpellPassive = 33,
+               SpellDescription = 34, UnitLevel = 47 } -- Enum.TooltipDataLineType
+local DATA = { Spell = 1, Unit = 2, UnitAura = 7 }    -- Enum.TooltipDataType
+local nextDataID = 1
+
+local function rgb(r, g, b) return CreateColor(r, g, b, 1) end
+local function white() return rgb(1, 1, 1) end
+local function gold() return rgb(1, 0.82353, 0) end
+local function grey() return rgb(0.50196, 0.50196, 0.50196) end
+
+local function line(kind, left, leftColor, right, rightColor, wrap)
+    return { type = kind, leftText = left, leftColor = leftColor or white(),
+             rightText = right, rightColor = right and (rightColor or white()) or nil,
+             wrapText = wrap or nil }
+end
+
+local function tooltipData(kind, id, lines, extra)
+    local d = { type = kind, id = id, lines = lines, dataInstanceID = nextDataID }
+    nextDataID = nextDataID + 1
+    for k, v in pairs(extra or {}) do d[k] = v end
+    return d
+end
+
+local function fmt(pattern, fallback, ...)
+    local p = type(pattern) == "string" and pattern or fallback
+    return string.format(p, ...)
+end
+
+local function number(n)
+    return BreakUpLargeNumbers and BreakUpLargeNumbers(n) or tostring(n)
+end
+
+local function costText(s)
+    if not s.cost then return nil end
+    local token = powerToken(player() or {})
+    return fmt(_G[token .. "_COST"], "%s " .. token, number(s.cost))
+end
+
+local function rangeText(s)
+    local r = s.range or 0
+    if r <= 0 then return nil end
+    if r <= 5 then return MELEE_RANGE or "Melee Range" end
+    return fmt(SPELL_RANGE, "%s yd range", tostring(r))
+end
+
+local function castText(s)
+    if (s.channel or 0) > 0 then return SPELL_CAST_CHANNELED or "Channeled" end
+    if (s.castTime or 0) > 0 then return fmt(SPELL_CAST_TIME_SEC, "%.2g sec cast", s.castTime) end
+    return SPELL_CAST_TIME_INSTANT or "Instant"
+end
+
+local function cooldownText(s)
+    local cd = s.cooldown or 0
+    if cd <= 0 then return "" end
+    if cd >= 60 then return fmt(SPELL_RECAST_TIME_MIN, "%.2g min cooldown", cd / 60) end
+    return fmt(SPELL_RECAST_TIME_SEC, "%.2g sec cooldown", cd)
+end
+
+local function spellTooltip(s)
+    if not s then return nil end
+    local lines = { line(LINE.SpellName, s.name, white(), "", grey()) }
+    local cost, range = costText(s), rangeText(s)
+    if cost then
+        lines[#lines + 1] = line(LINE.None, cost, nil, range or "")
+    else
+        lines[#lines + 1] = line(LINE.None, range or "", nil, "")
+    end
+    if s.passive then
+        lines[#lines + 1] = line(LINE.SpellPassive, SPELL_PASSIVE or "Passive")
+    else
+        lines[#lines + 1] = line(LINE.None, castText(s), nil, cooldownText(s))
+    end
+    if s.description and s.description ~= "" then
+        lines[#lines + 1] = line(LINE.SpellDescription, s.description, gold(), nil, nil, true)
+    end
+    return tooltipData(DATA.Spell, s.id, lines)
+end
+
+-- Time left on an aura, rounded up (inferred), in the client's strings.
+local function remainingText(left)
+    if left < 60 then
+        return fmt(SPELL_TIME_REMAINING_SEC, "%d |4second:seconds; remaining", math.ceil(left))
+    elseif left < 3600 then
+        return fmt(SPELL_TIME_REMAINING_MIN, "%d |4minute:minutes; remaining", math.ceil(left / 60))
+    end
+    return fmt(SPELL_TIME_REMAINING_HOURS, "%d |4hour:hours; remaining", math.ceil(left / 3600))
+end
+
+-- Inferred: the name with a debuff's dispel type on the right, the
+-- description in gold, then the time left.
+local function auraTooltip(a)
+    if not a then return nil end
+    local lines = { line(LINE.SpellName, a.name, white(), a.isHarmful and a.dispelName or nil) }
+    if a.description and a.description ~= "" then
+        lines[#lines + 1] = line(LINE.SpellDescription, a.description, gold(), nil, nil, true)
+    end
+    local left = (a.expirationTime or 0) - now()
+    if (a.duration or 0) > 0 and left > 0 then
+        lines[#lines + 1] = line(LINE.None, remainingText(left), gold())
+    end
+    return tooltipData(DATA.UnitAura, a.spellId, lines)
+end
+
+-- Inferred: the name (Blizzard colors it by reaction or class from
+-- unitToken), the level line, and a player's faction.
+local function unitTooltip(token)
+    local u = unitData(token)
+    if not u then return nil end
+    local lines = { line(LINE.UnitName, u.name or UNKNOWN or "Unknown") }
+    lines[1].unitToken = token
+    local level = (u.level or 0) < 0 and "??" or tostring(u.level or 1)
+    local text
+    if u.isPlayer then
+        text = fmt(TOOLTIP_UNIT_LEVEL_RACE, "Level %s %s", level, u.race or "")
+            .. " " .. (u.class or "") .. " (" .. (PLAYER or "Player") .. ")"
+    else
+        text = fmt(TOOLTIP_UNIT_LEVEL_RACE, "Level %s %s", level, u.creatureType or "")
+    end
+    lines[2] = line(LINE.UnitLevel, text)
+    if u.isPlayer and u.faction then
+        lines[3] = line(LINE.None, _G["FACTION_" .. u.faction:upper()] or u.faction)
+    end
+    return tooltipData(DATA.Unit, nil, lines, { guid = u.guid, healthGUID = u.guid })
+end
+
+local function findAura(unit, pred)
+    local u = unitData(unit)
+    for _, a in ipairs(u and auras[u] or {}) do
+        if pred(a) then return a end
+    end
+end
+
+local function auraAt(unit, index, filter)
+    local u = unitData(unit)
+    return u and filtered(u, filter)[index]
+end
+
+local function byInstance(unit, id)
+    return auraTooltip(findAura(unit, function(a) return a.auraInstanceID == id end))
+end
+
+State.tooltipFunctions = {
+    GetSpellByID = function(id) return spellTooltip(findSpell(id)) end,
+    GetSpellBookItem = function(slot, bank) return spellTooltip(bookSpell(slot, bank)) end,
+    GetAction = function(slot) return spellTooltip(actionSpell(slot)) end,
+    GetUnit = function(unit) return unitTooltip(unit) end,
+    GetUnitAura = function(unit, index, filter) return auraTooltip(auraAt(unit, index, filter)) end,
+    GetUnitBuff = function(unit, index, filter)
+        return auraTooltip(auraAt(unit, index, "HELPFUL" .. (filter and ("|" .. filter) or "")))
+    end,
+    GetUnitDebuff = function(unit, index, filter)
+        return auraTooltip(auraAt(unit, index, "HARMFUL" .. (filter and ("|" .. filter) or "")))
+    end,
+    GetUnitAuraByAuraInstanceID = byInstance,
+    GetUnitBuffByAuraInstanceID = byInstance,
+    GetUnitDebuffByAuraInstanceID = byInstance,
+}
+
 -- Client functions --------------------------------------------------------------
 
 local function set(path, fn)
@@ -864,6 +1029,19 @@ local function install()
             if a.spellId == s.id and a.isHelpful then removeAura(u, a.auraInstanceID) return end
         end
     end)
+
+    -- Unit tokens from GUIDs: the first token that names the unit.
+    set("UnitTokenFromGUID", function(guid)
+        if guid == nil then return nil end
+        for _, token in ipairs({ "player", "target", "focus", "mouseover", "pet",
+                "party1", "party2", "party3", "party4" }) do
+            local u = units[token]
+            if u and u.guid == guid then return token end
+        end
+    end)
+
+    -- Tooltips.
+    for name, fn in pairs(State.tooltipFunctions) do set("C_TooltipInfo." .. name, fn) end
 
     local driver = CreateFrame("Frame")
     driver:SetScript("OnUpdate", function(_, elapsed) tick(elapsed) end)

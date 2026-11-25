@@ -101,9 +101,9 @@ local M = {}
 
 function M:SetOwner(owner, anchor, x, y)
     local t = d(self)
-    t.owner, t.anchor, t.x, t.y = owner, anchor or "ANCHOR_LEFT", x or 0, y or 0
     M.ClearLines(self)
     self:Hide()
+    t.owner, t.anchor, t.x, t.y = owner, anchor or "ANCHOR_LEFT", x or 0, y or 0
 end
 function M:GetOwner() return d(self).owner end
 function M:IsOwned(frame) return d(self).owner == frame end
@@ -235,6 +235,15 @@ function M:Show()
     end
     layout(self)
     return FrameMethods.Show(self)
+end
+
+-- A hidden tooltip has no owner (inferred: Blizzard's aura buttons
+-- refresh the tooltip from OnUpdate while `GameTooltip:IsOwned(self)`,
+-- which would show it again after OnLeave hid it). The lines stay, so
+-- Blizzard code that reads a hidden tooltip still finds them.
+function M:Hide()
+    d(self).owner = nil
+    return FrameMethods.Hide(self)
 end
 
 function M:FadeOut() self:Hide() end
