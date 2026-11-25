@@ -562,6 +562,64 @@ from Blizzard code and the API documentation unless a source is named:
   second).
 - Power comes back at 5% of the maximum every half second outside a cast.
   This is a simple rule, not the game's.
+- Positions, damage and healing: units stand at world positions (yards,
+  x north, y west, as in "Maps, position and movement"); the player's is
+  the movement model's. Spell range is a straight distance; units
+  without a position are in range. A harmful spell needs a living
+  hostile target; a heal (or a heal over time with `self = false`) goes
+  to a friendly target, else to the player. A unit at 0 health is dead
+  (`UnitIsDead`) and loses its auras. Healing stops at the maximum.
+- Tab (`TargetNearestEnemy`) picks living hostile units within 40 yards,
+  nearest first; pressing it again moves to the next one (inferred: the
+  game also weighs facing and the view).
+- Range on action buttons: the bars call
+  `C_ActionBar.EnableActionRangeCheck(slot, true)` for every slot they
+  show, and the client sends `ACTION_RANGE_CHECK_UPDATE(slot, inRange,
+  checksRange)` when the answer changes (API documentation). Blizzard's
+  button then colors the hot key text red (`ActionButton_UpdateRangeIndicator`).
+  `checksRange` is false without a target (and, in the model, for a
+  spell aimed at the player).
+- The combat log (API documentation, `Blizzard_CombatLogProcessor`):
+  in this client `GetCurrentEventInfo`, `GetCurrentEntryInfo`, the
+  entry cursor (`SeekToNewestEntry`, `SeekToPreviousEntry`), the filters
+  and `CreateCombatLogMessage` are in `C_CombatLogSecure`, whose
+  Environment is "SecureOnly". `C_CombatLog` keeps the filter settings,
+  the message limit and `DoesObjectMatchFilter`, but has no
+  `GetCurrentEventInfo`, so the deprecated `CombatLogGetCurrentEventInfo`
+  (`C_CombatLog.GetCurrentEventInfo`) is nil for addons. Blizzard's
+  processor hears COMBAT_LOG_EVENT (the filtered event) through
+  `Event.RegisterCallback`, builds the text and calls
+  `CreateCombatLogMessage`; the client then fires COMBAT_LOG_MESSAGE,
+  and `CombatLogDriverFrame` adds the line to the combat log tab.
+  COMBAT_LOG_EVENT_UNFILTERED fires for every entry. Inferred: the
+  model fires COMBAT_LOG_EVENT only for entries that pass a filter;
+  `SeekToPreviousEntry` returns nil (not false) past the oldest entry,
+  because Blizzard's refilter loop compares the result with nil and
+  would never end otherwise; resisted, blocked and absorbed are nil when
+  zero (Blizzard prints "(0 Resisted)" for 0); an entry without a source
+  has a nil name and the flags `Enum.CombatLogObject.None`.
+  `DoesObjectMatchFilter`: for each flag group the filter names
+  (affiliation, reaction, control, type, special), one of the unit's
+  bits must match.
+- Combat text: damage and heals on a unit with a token fire
+  `UNIT_COMBAT(unit, "WOUND" or "HEAL", flagText, amount, schoolMask)`;
+  the player and pet frames show the number (`CombatFeedback.lua`).
+  Floating combat text (`Blizzard_CombatText`, loaded when the
+  `enableFloatingCombatText` setting turns on) shows what happens to the
+  unit named by `C_CombatText.SetActiveUnit`: `COMBAT_TEXT_UPDATE(type)`
+  and `C_CombatText.GetCurrentEventInfo()` = the amount for DAMAGE and
+  SPELL_DAMAGE, `(healerName, amount)` for HEAL and PERIODIC_HEAL
+  (`CombatText.lua`). Numbers over other units in the 3D view are drawn
+  by the client, not the UI.
+- `SetCVar` with a new value fires `CVAR_UPDATE(name, value)` at once
+  (SynchronousEvent in the API documentation). Blizzard's
+  `CVarCallbackRegistry` and the settings hear it; load-on-demand addons
+  that wait for a setting (`Settings.LoadAddOnCVarWatcher`) load then.
+- Event callbacks (`RegisterEventCallback`, `RegisterUnitEventCallback`,
+  `frame:RegisterEventCallback`): called after the frames registered for
+  the event, with the owner (nil for global callbacks, the frame for a
+  frame's) and then the payload, without the event name
+  (`ClassTalentHelper.lua`: `function(_nilOwner, loadoutName)`).
 - `Blizzard_EnvironmentCleanup` removes globals from the global
   environment that the client's secure environment keeps
   (`secretunwrap`, `SecureMixin`, ...). The sandbox runs secure
@@ -753,6 +811,13 @@ justify one session. Each question names what the probe measures.
     UNIT_POWER_FREQUENT, and which arrive in the same frame as the key.
 23. Picking up a spell from the spellbook and dropping it on a slot: the
     events and the `GetCursorInfo()` values at each step.
+24. Combat log for addons: does `frame:RegisterEvent(
+    "COMBAT_LOG_EVENT_UNFILTERED")` from an addon work or raise an error,
+    and are `C_CombatLog.GetCurrentEventInfo` and
+    `CombatLogGetCurrentEventInfo` nil? The values of one SPELL_DAMAGE
+    and one SPELL_HEAL (nil or 0 for resisted, blocked, absorbed).
+25. Tab targeting: the order for three hostile units at different
+    distances, in front and behind; does it skip units out of view?
 
 ## Later layers (not part of the current goal)
 

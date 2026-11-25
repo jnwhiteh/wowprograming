@@ -44,9 +44,16 @@ pub fn install(lua: &Lua) -> Result<()> {
         }
         Ok(d)
     })?;
+    // A changed value fires CVAR_UPDATE at once (SynchronousEvent in the
+    // API documentation); Blizzard's CVar callbacks and settings hear it.
     let set_cvar = lua.create_function(|lua, (name, value): (String, Value)| {
         let v = cvar_string(lua, value)?;
-        state(lua).cvars.insert(name.to_ascii_lowercase(), v);
+        let old = state(lua)
+            .cvars
+            .insert(name.to_ascii_lowercase(), v.clone());
+        if old.as_deref() != Some(v.as_str()) {
+            crate::frames::dispatch_event(lua, "CVAR_UPDATE", (name, v).into_lua_multi(lua)?);
+        }
         Ok(true)
     })?;
     let get_cvar_bool = lua.create_function(|lua, name: String| {
@@ -271,9 +278,11 @@ pub fn install(lua: &Lua) -> Result<()> {
         crate::frames::dispatch_event(lua, &event, args.collect());
         Ok(())
     })?;
-    lua.load(include_str!("lua/client.lua"))
+    let callbacks: Table = lua
+        .load(include_str!("lua/client.lua"))
         .set_name("=[C]")
-        .call::<()>(fire)?;
+        .call(fire)?;
+    crate::frames::install_event_callbacks(lua, &callbacks)?;
     lua.load(include_str!("lua/undocumented.lua"))
         .set_name("=[C]")
         .call::<()>(())?;

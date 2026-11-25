@@ -1058,7 +1058,11 @@ fn region_methods(lua: &Lua) -> Result<Table> {
     });
     method!(lua, m, "GetVertexColor", |lua, this_: Value| {
         with(lua, &this_, |f| {
-            let c = f.tex.as_deref().map(|t| t.vertex_color).unwrap_or([1.0; 4]);
+            let c = match (f.tex.as_deref(), f.font.as_deref()) {
+                (Some(t), _) => t.vertex_color,
+                (None, Some(font)) => font.color.unwrap_or([1.0; 4]),
+                _ => [1.0; 4],
+            };
             (c[0], c[1], c[2], c[3])
         })
     });
@@ -1933,6 +1937,47 @@ fn frame_methods(lua: &Lua) -> Result<Table> {
         let id = this(&this_)?;
         unregister_event(lua, id, &event);
         Ok(())
+    });
+    method!(lua, m, "RegisterEventCallback", |lua,
+                                              (this_, event, cb): (
+        Value,
+        String,
+        Value
+    )| {
+        this(&this_)?;
+        crate::frames::register_event_callback(lua, this_, &event, cb, None)
+    });
+    method!(lua, m, "RegisterUnitEventCallback", |lua,
+                                                  (
+        this_,
+        event,
+        cb,
+        units,
+    ): (
+        Value,
+        String,
+        Value,
+        Variadic<String>
+    )| {
+        this(&this_)?;
+        for unit in units.iter() {
+            crate::frames::register_event_callback(
+                lua,
+                this_.clone(),
+                &event,
+                cb.clone(),
+                Some(unit.clone()),
+            )?;
+        }
+        Ok(true)
+    });
+    method!(lua, m, "UnregisterEventCallback", |lua,
+                                                (this_, event): (
+        Value,
+        String
+    )| {
+        this(&this_)?;
+        crate::frames::unregister_event_callback(lua, this_, &event)
     });
     method!(lua, m, "UnregisterAllEvents", |lua, this_: Value| {
         let id = this(&this_)?;

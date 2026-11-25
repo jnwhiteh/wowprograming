@@ -6,7 +6,7 @@ work (see "Keeping this file current" below).
 
 For goals, design and the full roadmap, see [scope.md](scope.md).
 
-Last updated: 2026-11-25 (real addons work; world map, modifiers, hover casting, chat windows, --watch, interaction specs).
+Last updated: 2026-11-25 (playable world: positions, damage, healing, death, the combat log, range, Tab by distance).
 
 ## Current state
 
@@ -16,34 +16,38 @@ Last updated: 2026-11-25 (real addons work; world map, modifiers, hover casting,
   `every_panel_opens_without_errors`) opens 34 panels; all open and
   close without a Lua error. Known gap: talents (needs specialization
   and talent tree data).
-  Criteria 2 to 5 (playable world), started 2026-11-25 and stopped at
-  the usage limit: `clientstate.lua` now has the combat model, built and
-  passing the existing tests but NOT yet used by any scenario or test:
-  positions and `distance` (units use `u.x`, `u.y`; the player's come
-  from `WowProgrammingWorld`), `dealDamage`, `heal`, death and respawn
-  (`u.respawn` seconds), the combat log (COMBAT_LOG_EVENT_UNFILTERED;
-  `currentEvent` holds the values, but `CombatLogGetCurrentEventInfo`
-  is NOT defined yet), range checks in `castSpell` (out of range fails),
-  harmful spells need a hostile target, helpful targeted spells (`heal`,
-  or an aura with `self = false`) go to a friendly target, channel tick
-  damage (`tickDamage`), periodic auras (`aura.tick` with `heal` or
-  `damage`). Next, in order:
-  1. Define `CombatLogGetCurrentEventInfo` (return `unpack(currentEvent,
-     1, currentEvent.n)`) and the old entry API, in `install()`.
-  2. `scenarios/dummy`: give spells `damage`, `heal`, `tickDamage`,
-     `school`; give the dummy and party positions (offsets from the
-     player after `SetPlayerMapPosition`; the position line must move
-     above the units), add a hostile mob that can die (respawn), a
-     friendly NPC, and a direct heal spell.
-  3. Range in `IsSpellInRange` and `C_ActionBar.IsActionInRange` from
-     `distance`; Tab picks the nearest living hostile within 40 yards.
-  4. A test: cast at the mob until it dies, heal a party member, check
-     health, UNIT_HEALTH and the combat log; walk out of range.
-  5. The GUI: render units at their positions and the camera behind the
+  Criteria 2 to 5 (playable world), in progress. Done and tested
+  (`specs/combat.lua`, also the test `combat_in_the_world`): units in
+  `scenarios/dummy` stand at positions near the player (the dummy, a
+  hostile Tunnel Rat that dies and comes back after 10 s, a friendly
+  NPC Warden Halric, the two party members, who walk along 3 yards
+  behind the player: `follow = { north, west }`); Tab picks living hostile
+  units within 40 yards by distance and cycles; damage, healing (capped
+  at the maximum), heals over time, channel ticks, death, respawn,
+  UNIT_HEALTH; the combat log (COMBAT_LOG_EVENT_UNFILTERED, the filtered
+  COMBAT_LOG_EVENT, `C_CombatLog` and `C_CombatLogSecure`, and Blizzard's
+  combat log tab shows the lines); range from positions in
+  `IsSpellInRange`, `IsActionInRange` and casting (the error, and the hot
+  key turns red through ACTION_RANGE_CHECK_UPDATE); combat text for the
+  player (UNIT_COMBAT on the player frame, floating combat text through
+  COMBAT_TEXT_UPDATE). Event callbacks (`RegisterEventCallback`) and
+  CVAR_UPDATE from `SetCVar` now work. Finding: in this client
+  `CombatLogGetCurrentEventInfo` is nil for addons (the function moved
+  to the secure-only `C_CombatLogSecure`); the goal's wording names it,
+  so the sandbox follows the UI source and records the question for a
+  probe session (client-runtime.md, question 24). Next, in order:
+  1. Hostile units fight back: a unit in combat with the player hits it
+     every few seconds when in melee range (so the player's health,
+     combat text and death matter), and leaves combat when it dies.
+  2. Nameplates: NAME_PLATE_CREATED and NAME_PLATE_UNIT_ADDED for units
+     near the player (`State.SetExtraToken("nameplateN", u)`,
+     `C_NamePlate.GetNamePlates`), a click on a nameplate targets.
+  3. The GUI: render units at their positions and the camera behind the
      player from position and facing (`world.rs` Camera, `demo_scene`
      in `crates/gui`); a click in the 3D view targets the unit under the
-     mouse (shared projection); nameplates (NAME_PLATE_CREATED,
-     NAME_PLATE_UNIT_ADDED with `State.SetExtraToken`).
+     mouse (shared projection).
+  4. Criterion 5: a spec that plays 60 seconds (walking, Tab, casting)
+     and fails on any Lua error.
 - **Real addons goal: criteria done** (set by the user on 2026-11-25),
   on branch `client-state`: TomTom, Clique and WowLua must run without
   errors and work, and the player must be able to move so TomTom's

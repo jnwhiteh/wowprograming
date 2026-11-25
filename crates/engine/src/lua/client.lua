@@ -871,3 +871,60 @@ do
         return { { name = "Sandbox renderer", isLowPower = false, isExternal = false } }
     end
 end
+
+-- Event callbacks: functions (or function containers) called with the
+-- event's payload, after the frames registered for it. Global callbacks
+-- get a nil owner first; a frame's callback gets the frame. Blizzard's
+-- combat log hears COMBAT_LOG_EVENT this way (Event.RegisterCallback).
+local callbacks = {} -- event -> list of { owner, cb, unit }
+local function addCallback(event, owner, cb, unit)
+    local list = callbacks[event]
+    if not list then
+        list = {}
+        callbacks[event] = list
+    end
+    for _, e in ipairs(list) do
+        if e.owner == owner and (owner ~= nil or e.cb == cb) and e.unit == unit then
+            e.cb = cb
+            return true
+        end
+    end
+    list[#list + 1] = { owner = owner, cb = cb, unit = unit }
+    return true
+end
+local function removeCallback(event, owner, cb, unit)
+    local list = callbacks[event]
+    if not list then return end
+    for i = #list, 1, -1 do
+        local e = list[i]
+        if e.owner == owner and (cb == nil or e.cb == cb) and (unit == nil or e.unit == unit) then
+            table.remove(list, i)
+        end
+    end
+end
+function RegisterEventCallback(event, cb) return addCallback(event, nil, cb) end
+function UnregisterEventCallback(event, cb) removeCallback(event, nil, cb) end
+function RegisterUnitEventCallback(event, cb, unit) return addCallback(event, nil, cb, unit) end
+function UnregisterUnitEventCallback(event, cb, unit) removeCallback(event, nil, cb, unit) end
+
+local function dispatchCallbacks(event, ...)
+    local list = callbacks[event]
+    if not list then return end
+    local unit = ...
+    -- A copy: a callback may unregister itself.
+    local copy = {}
+    for i, e in ipairs(list) do copy[i] = e end
+    for _, e in ipairs(copy) do
+        if e.unit == nil or (type(unit) == "string" and unit:lower() == e.unit:lower()) then
+            local ok, err = pcall(e.cb, e.owner, ...)
+            if not ok then geterrorhandler()(err) end
+        end
+    end
+end
+
+return {
+    dispatchCallbacks = dispatchCallbacks,
+    hasCallbacks = function(event) local l = callbacks[event] return l ~= nil and #l > 0 end,
+    register = function(owner, event, cb, unit) return addCallback(event, owner, cb, unit) end,
+    unregister = function(owner, event, unit) removeCallback(event, owner, nil, unit) end,
+}

@@ -105,5 +105,7 @@ function debuglocals() return "" end
 function GetCurrentEnvironment() return _G end
 -- Taint is not tracked yet: compiling "untainted" is plain compiling.
 loadstring_untainted = loadstring
+-- fastrandom: the client's quicker random, with math.random's arguments.
+fastrandom = math.random
 
 return dispatch, callErrorHandler

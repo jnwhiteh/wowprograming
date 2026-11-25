@@ -434,11 +434,14 @@ local removeAura = removeAuraImpl
 -- player's continent; the player's position is the world model's.
 local function worldPlayer() return WowProgrammingWorld and WowProgrammingWorld.Player() end
 
+-- A unit with `follow = { north, west }` stays at that offset from the
+-- player (party members in the scenarios walk along).
 local function position(u)
-    if u == player() then
+    if u == player() or u.follow then
         local p = worldPlayer()
-        if p and p.continent then return p.x, p.y end
-        return nil
+        if not p or not p.continent then return nil end
+        if u.follow then return p.x + u.follow[1], p.y + u.follow[2] end
+        return p.x, p.y
     end
     return u.x, u.y
 end
@@ -448,6 +451,14 @@ local function distance(a, b)
     local bx, by = position(b)
     if not ax or not bx then return nil end
     return math.sqrt((ax - bx) ^ 2 + (ay - by) ^ 2)
+end
+-- In range of a spell: nil without a range or a unit, true when either
+-- has no position.
+local function inRange(s, u)
+    if not s or (s.range or 0) <= 0 or not u then return nil end
+    if u == player() then return true end
+    local d = distance(player(), u)
+    return d == nil or d <= s.range
 end
 State.Distance = function(unit) local u = resolveUnit(unit) return u and distance(player(), u) end
 
@@ -473,33 +484,172 @@ State.SetExtraToken = function(token, u) extraTokens[token] = u end
 
 local function hostile(u) return u ~= nil and u.canAttack == true end
 
--- The combat log: COMBAT_LOG_EVENT_UNFILTERED with the values of
--- CombatLogGetCurrentEventInfo, and a list for the old entry API.
+-- The combat log. Each entry fires COMBAT_LOG_EVENT_UNFILTERED, and
+-- COMBAT_LOG_EVENT when it passes the filters Blizzard's combat log set.
+-- The values come from C_CombatLogSecure.GetCurrentEventInfo; in this
+-- client that namespace is for Blizzard code only (Environment
+-- "SecureOnly"), and C_CombatLog has no GetCurrentEventInfo.
 local combatLog = {}
 local currentEvent
 local MAX_LOG = 500
--- Unit flags (COMBATLOG_OBJECT_*): the player (mine, friendly, player),
--- party members, hostile NPCs, friendly NPCs.
+local NONE = 0x80000000
+-- Unit flags (Enum.CombatLogObject): the player (mine, friendly, player),
+-- party members, hostile NPCs, friendly NPCs; None without a unit.
 local function logFlags(u)
-    if not u then return 0 end
+    if not u then return NONE end
     if u == player() then return 0x511 end
     if u.inParty then return 0x512 end
     if u.canAttack then return 0xa48 end
     return 0xa18
 end
+
+-- Filters from C_CombatLogSecure.AddEventFilter: { events = set or nil,
+-- src = flags or GUID or nil, dst = ... }.
+local logFilters = {}
+local filteredEnabled = true
+-- Flag groups: within a group a filter bit must match one of the unit's
+-- bits; every group the filter names must match (inferred).
+local FLAG_GROUPS = { 0x0000000F, 0x000000F0, 0x00000300, 0x0000FC00, 0x7FFF0000, NONE }
+local function flagsMatch(flags, filter)
+    if filter == nil then return true end
+    if type(filter) == "string" then return false end
+    local band = bit.band
+    local any = false
+    for _, g in ipairs(FLAG_GROUPS) do
+        local want = band(filter, g)
+        if want ~= 0 then
+            any = true
+            if band(flags or 0, want) == 0 then return false end
+        end
+    end
+    return any
+end
+local function sideMatches(guid, flags, filter)
+    if type(filter) == "string" then return guid == filter end
+    return flagsMatch(flags, filter)
+end
+local function entryShown(e)
+    if not filteredEnabled then return true end
+    for _, f in ipairs(logFilters) do
+        if (f.events == nil or f.events[e[2]])
+                and sideMatches(e[4], e[6], f.src) and sideMatches(e[8], e[10], f.dst) then
+            return true
+        end
+    end
+    return false
+end
+
 local function logEvent(sub, src, dst, ...)
-    local values = { n = 11 + select("#", ...), GetServerTime and GetServerTime() or now(), sub, false,
-        src and src.guid or "", src and src.name or "", logFlags(src), 0,
-        dst and dst.guid or "", dst and dst.name or "", logFlags(dst), 0, ... }
+    local time = (GetServerTime and GetServerTime() or 0) + now() % 1
+    local values = { n = 11 + select("#", ...), time, sub, false,
+        src and src.guid or "", src and src.name or nil, logFlags(src), 0,
+        dst and dst.guid or "", dst and dst.name or nil, logFlags(dst), 0, ... }
     combatLog[#combatLog + 1] = values
     if #combatLog > MAX_LOG then table.remove(combatLog, 1) end
     queueCall(function()
         currentEvent = values
         fireNow("COMBAT_LOG_EVENT_UNFILTERED")
-        fireNow("COMBAT_LOG_EVENT")
+        if entryShown(values) then fireNow("COMBAT_LOG_EVENT") end
     end)
 end
 State.CombatLog = combatLog
+
+-- Sets a client function (defined under "Client functions").
+local set
+
+-- The combat log API. The entry cursor walks back from the newest entry
+-- (refiltering when the filters change).
+local function installCombatLog()
+    local cursor -- index into combatLog
+    local messageLimit, retention = 300, 300
+    local function seek(from, ignoreFilter)
+        local i = from
+        while i >= 1 do
+            if ignoreFilter or entryShown(combatLog[i]) then
+                cursor = i
+                return true
+            end
+            i = i - 1
+        end
+        cursor = nil
+        -- nil, not false: Blizzard's refilter loop compares with nil.
+        return nil
+    end
+    set("C_CombatLog.ApplyFilterSettings", function(settings)
+        fireNow("COMBAT_LOG_APPLY_FILTER_SETTINGS", settings)
+    end)
+    set("C_CombatLog.RefilterEntries", function() fireNow("COMBAT_LOG_REFILTER_ENTRIES") end)
+    set("C_CombatLog.ClearEntries", function()
+        for i = #combatLog, 1, -1 do combatLog[i] = nil end
+        cursor = nil
+        fireNow("COMBAT_LOG_ENTRIES_CLEARED")
+    end)
+    set("C_CombatLog.DoesObjectMatchFilter", function(flags, mask) return flagsMatch(flags, mask) end)
+    set("C_CombatLog.GetMessageLimit", function() return messageLimit end)
+    set("C_CombatLog.SetMessageLimit", function(n)
+        messageLimit = n
+        fireNow("COMBAT_LOG_MESSAGE_LIMIT_CHANGED", n)
+    end)
+    set("C_CombatLog.GetEntryRetentionTime", function() return retention end)
+    set("C_CombatLog.SetEntryRetentionTime", function(n) retention = n end)
+    set("C_CombatLog.AreFilteredEventsEnabled", function() return filteredEnabled end)
+    set("C_CombatLog.SetFilteredEventsEnabled", function(on) filteredEnabled = on and true or false end)
+    set("C_CombatLog.IsCombatLogRestricted", function() return false end)
+
+    -- School masks to their names (Enum.Damageclass bits: physical 1,
+    -- holy 2, fire 4, nature 8, frost 16, shadow 32, arcane 64).
+    local SCHOOL_NAMES = {
+        [1] = "PHYSICAL", [2] = "HOLY", [4] = "FIRE", [8] = "NATURE", [16] = "FROST",
+        [32] = "SHADOW", [64] = "ARCANE", [3] = "HOLYSTRIKE", [5] = "FLAMESTRIKE",
+        [6] = "HOLYFIRE", [9] = "STORMSTRIKE", [10] = "HOLYSTORM", [12] = "FIRESTORM",
+        [17] = "FROSTSTRIKE", [18] = "HOLYFROST", [20] = "FROSTFIRE", [24] = "FROSTSTORM",
+        [28] = "ELEMENTAL", [33] = "SHADOWSTRIKE", [34] = "SHADOWHOLY", [36] = "SHADOWFLAME",
+        [40] = "SHADOWSTORM", [48] = "SHADOWFROST", [65] = "SPELLSTRIKE", [68] = "SPELLFIRE",
+        [72] = "SPELLSTORM", [80] = "SPELLFROST", [96] = "SPELLSHADOW", [124] = "CHROMATIC",
+        [126] = "MAGIC", [127] = "CHAOS",
+    }
+    set("C_Spell.GetSchoolString", function(mask)
+        local key = SCHOOL_NAMES[mask]
+        return key and _G["STRING_SCHOOL_" .. key] or STRING_SCHOOL_UNKNOWN
+    end)
+
+    set("C_CombatLogSecure.AddEventFilter", function(events, src, dst)
+        local set_
+        if type(events) == "string" and events ~= "" then
+            set_ = {}
+            for name in events:gmatch("[^,]+") do set_[name] = true end
+        end
+        logFilters[#logFilters + 1] = { events = set_, src = src, dst = dst }
+    end)
+    set("C_CombatLogSecure.ClearEventFilters", function() logFilters = {} end)
+    set("C_CombatLogSecure.GetCurrentEventInfo", function()
+        if currentEvent then return unpack(currentEvent, 1, currentEvent.n) end
+    end)
+    set("C_CombatLogSecure.GetCurrentEntryInfo", function()
+        local e = cursor and combatLog[cursor]
+        if e then return unpack(e, 1, e.n) end
+    end)
+    set("C_CombatLogSecure.GetEntryCount", function(ignoreFilter)
+        if ignoreFilter then return #combatLog end
+        local n = 0
+        for _, e in ipairs(combatLog) do
+            if entryShown(e) then n = n + 1 end
+        end
+        return n
+    end)
+    set("C_CombatLogSecure.SeekToNewestEntry", function(ignoreFilter) return seek(#combatLog, ignoreFilter) end)
+    set("C_CombatLogSecure.SeekToPreviousEntry", function(ignoreFilter)
+        if not cursor then return nil end
+        return seek(cursor - 1, ignoreFilter)
+    end)
+    set("C_CombatLogSecure.ShouldShowCurrentEntry", function()
+        local e = cursor and combatLog[cursor]
+        return e ~= nil and entryShown(e)
+    end)
+    set("C_CombatLogSecure.CreateCombatLogMessage", function(text, r, g, b, order)
+        fireNow("COMBAT_LOG_MESSAGE", text, r, g, b, order)
+    end)
+end
 
 
 local function die(u, killer)
@@ -507,6 +657,7 @@ local function die(u, killer)
     for _, a in ipairs(auras[u] or {}) do
         removeAura(u, a.auraInstanceID)
     end
+    if killer == player() or (killer and killer.inParty) then logEvent("PARTY_KILL", killer, u) end
     logEvent("UNIT_DIED", nil, u, "", false)
     if u.respawn then
         C_Timer.After(u.respawn, function()
@@ -527,13 +678,31 @@ local function school(s) return SCHOOL[s.school or ""] or 1 end
 
 -- Damage from a spell; overkill is -1 when the unit survives (as in the
 -- game's combat log).
+-- Floating combat text (Blizzard_CombatText) shows what happens to one
+-- unit, the player unless C_CombatText.SetActiveUnit names another:
+-- COMBAT_TEXT_UPDATE(type), and C_CombatText.GetCurrentEventInfo returns
+-- (data, arg3, arg4): the amount for damage; the healer's name and the
+-- amount for heals (CombatText.lua).
+local combatTextUnit = "player"
+local combatTextInfo = {}
+local function combatText(u, kind, data, arg3, arg4)
+    if resolveUnit(combatTextUnit) ~= u then return end
+    queueCall(function()
+        combatTextInfo = { data, arg3, arg4 }
+        fireNow("COMBAT_TEXT_UPDATE", kind)
+    end)
+end
+
 local function dealDamage(src, dst, s, amount, periodic)
     if dst.dead then return end
     local before = dst.health or dst.healthMax or 100
     setHealth(dst, before - amount)
+    -- UNIT_COMBAT drives the hit numbers on the player and pet frames.
+    fireUnit("UNIT_COMBAT", dst, "WOUND", "", amount, school(s))
+    combatText(dst, s.id ~= 0 and "SPELL_DAMAGE" or "DAMAGE", amount)
     local overkill = amount > before and amount - before or -1
     logEvent(periodic and "SPELL_PERIODIC_DAMAGE" or "SPELL_DAMAGE", src, dst,
-        s.id, s.name, school(s), amount, overkill, school(s), 0, 0, 0, false, false, false, false)
+        s.id, s.name, school(s), amount, overkill, school(s), nil, nil, nil, false, false, false, false)
     if src == player() or dst == player() then enterCombat() end
     if dst.health <= 0 then die(dst, src) end
 end
@@ -544,8 +713,10 @@ local function heal(src, dst, s, amount, periodic)
     local max = dst.healthMax or 100
     local actual = math.min(amount, max - before)
     setHealth(dst, before + actual)
+    fireUnit("UNIT_COMBAT", dst, "HEAL", "", amount, school(s))
+    combatText(dst, periodic and "PERIODIC_HEAL" or "HEAL", src and src.name or "", amount)
     logEvent(periodic and "SPELL_PERIODIC_HEAL" or "SPELL_HEAL", src, dst,
-        s.id, s.name, school(s), amount, amount - actual, 0, false)
+        s.id, s.name, school(s), amount, amount - actual, nil, false)
 end
 State.Damage = function(unit, amount)
     local u = resolveUnit(unit)
@@ -677,6 +848,9 @@ State.CastSpell = function(id, unit) return castSpell(findSpell(id), unit) end
 
 local regenTimer = 0
 local gcdWasActive = false
+-- Action slots with range checks on (C_ActionBar.EnableActionRangeCheck):
+-- slot -> { count, inRange, checks }.
+local rangeWatch = {}
 local function tick(elapsed)
     local t = now()
     if inCombat and t - lastHostile > COMBAT_TIMEOUT then leaveCombat() end
@@ -697,6 +871,17 @@ local function tick(elapsed)
                 if p.heal then heal(p.source, u, p.spell, p.heal, true) end
                 if p.damage then dealDamage(p.source, u, p.spell, p.damage, true) end
             end
+        end
+    end
+    -- Range of the action slots the bars watch: an event when it changes.
+    for slot, w in pairs(rangeWatch) do
+        local s = actionSpell(slot)
+        local u = s and (s.range or 0) > 0 and spellTarget(s)
+        local checks = u ~= nil and u ~= false and u ~= player()
+        local ok = checks and inRange(s, u) == true
+        if ok ~= w.inRange or checks ~= w.checks then
+            w.inRange, w.checks = ok, checks
+            fire("ACTION_RANGE_CHECK_UPDATE", slot, ok, checks)
         end
     end
     -- Cooldowns ending: the client sends SPELL_UPDATE_COOLDOWN (inferred).
@@ -915,7 +1100,7 @@ State.tooltipFunctions = {
 
 -- Client functions --------------------------------------------------------------
 
-local function set(path, fn)
+function set(path, fn)
     local container, key = _G, path
     local ns, name = path:match("^([^.]+)%.(.+)$")
     if ns then
@@ -974,7 +1159,9 @@ local function install()
         return s ~= nil and cast ~= nil and cast.spell == s
     end)
     set("C_Spell.SpellHasRange", function(id) local s = findSpell(id) return s ~= nil and (s.range or 0) > 0 end)
-    set("C_Spell.IsSpellInRange", function(id) local s = findSpell(id) if s and (s.range or 0) > 0 then return true end end)
+    set("C_Spell.IsSpellInRange", function(id, unit)
+        return inRange(findSpell(id), resolveUnit(unit or "target"))
+    end)
     set("C_Spell.IsSpellDataCached", function() return true end)
     set("C_Spell.RequestLoadSpellData", function() end)
     set("C_Spell.GetSpellLossOfControlCooldown", function() return 0, 0 end)
@@ -1162,12 +1349,26 @@ local function install()
         local s = actionSpell(slot)
         return s ~= nil and (s.range or 0) > 0
     end)
-    set("C_ActionBar.IsActionInRange", function(slot)
-        local s = actionSpell(slot)
-        if s and (s.range or 0) > 0 then
-            if s.harmful or (s.aura and s.aura.harmful) then return units.target ~= nil end
-            return true
+    set("C_ActionBar.EnableActionRangeCheck", function(slot, enable)
+        local w = rangeWatch[slot]
+        if enable then
+            if not w then
+                -- Nothing sent yet, so the first check reports the state.
+                w = { count = 0 }
+                rangeWatch[slot] = w
+            end
+            w.count = w.count + 1
+        elseif w then
+            w.count = w.count - 1
+            if w.count <= 0 then rangeWatch[slot] = nil end
         end
+    end)
+    set("C_ActionBar.IsActionInRange", function(slot, unit)
+        local s = actionSpell(slot)
+        if not s or (s.range or 0) <= 0 then return nil end
+        local u = unit and resolveUnit(unit) or spellTarget(s)
+        if not u then return nil end
+        return inRange(s, u)
     end)
     set("PickupAction", function(slot)
         local a = actions[slot]
@@ -1260,15 +1461,30 @@ local function install()
         setTarget(nil)
         return had
     end)
+    -- Tab: living hostile units within 40 yards, nearest first; pressing
+    -- again moves to the next one (units without a position come last).
+    local TAB_RANGE = 40
     local function nearestEnemy()
-        for _, list in ipairs({ hidden, units }) do
-            for key, u in pairs(list) do
-                if key ~= "target" and u.canAttack and u ~= units.target then
-                    setTarget(u)
-                    return
+        local list, seen = {}, {}
+        for _, group in ipairs({ hidden, units }) do
+            for _, u in pairs(group) do
+                if not seen[u] and hostile(u) and not u.dead then
+                    seen[u] = true
+                    local d = distance(player(), u) or math.huge
+                    if d <= TAB_RANGE or d == math.huge then list[#list + 1] = { u = u, d = d } end
                 end
             end
         end
+        table.sort(list, function(a, b)
+            if a.d ~= b.d then return a.d < b.d end
+            return (a.u.name or "") < (b.u.name or "")
+        end)
+        if #list == 0 then return end
+        local pick = 1
+        for i, e in ipairs(list) do
+            if e.u == units.target then pick = i % #list + 1 end
+        end
+        setTarget(list[pick].u)
     end
     set("TargetNearestEnemy", nearestEnemy)
     set("TargetNearest", nearestEnemy)
@@ -1366,6 +1582,12 @@ local function install()
         return inCombat and u ~= nil and (u == player() or u.canAttack == true)
     end)
 
+    installCombatLog()
+    set("C_CombatText.GetCurrentEventInfo", function()
+        return combatTextInfo[1], combatTextInfo[2], combatTextInfo[3]
+    end)
+    set("C_CombatText.SetActiveUnit", function(unit) combatTextUnit = unit or "player" end)
+
     -- Tooltips.
     for name, fn in pairs(State.tooltipFunctions) do set("C_TooltipInfo." .. name, fn) end
 
@@ -1453,6 +1675,13 @@ function State.AddHiddenUnit(key, data)
     data.token = key
     hidden[key] = data
     return data
+end
+
+-- State.PlaceUnit(unit, x, y): put a unit at a world position (yards on
+-- the player's continent, x north, y west, as WowProgrammingWorld).
+function State.PlaceUnit(unit, x, y)
+    local u = hidden[unit] or resolveUnit(unit)
+    if u then u.x, u.y = x, y end
 end
 
 -- State.ApplyAura(unit, spellID, aura) puts an aura on a unit, as a

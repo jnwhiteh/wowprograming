@@ -621,3 +621,23 @@ fn every_panel_opens_without_errors() {
         outcome.printed.join("\n")
     );
 }
+
+/// Combat in the world (specs/combat.lua): Tab by distance, damage,
+/// healing, death and respawn, the combat log and range from positions.
+#[test]
+fn combat_in_the_world() {
+    let wtf = tempfile::tempdir().unwrap();
+    let Some(mut e) = full_ui(wtf.path(), "dummy") else {
+        return;
+    };
+    let spec = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../specs/combat.lua");
+    let outcome = e.run_spec(&spec);
+    assert_eq!(
+        outcome.error,
+        None,
+        "combat spec:\n{}",
+        outcome.printed.join("\n")
+    );
+    let errs = errors(&mut e);
+    assert!(errs.is_empty(), "Lua errors:\n{}", errs.join("\n"));
+}

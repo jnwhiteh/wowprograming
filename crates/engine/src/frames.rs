@@ -743,6 +743,45 @@ pub fn dispatch_event(lua: &Lua, event: &str, args: MultiValue) {
             fire_script(lua, id, "OnEvent", call_args);
         }
     }
+    if let Ok(f) = lua.named_registry_value::<Function>(CALLBACK_DISPATCH_KEY) {
+        let mut call_args = args;
+        call_args.push_front(Value::String(lua.create_string(event).unwrap()));
+        safe_call(lua, &f, call_args);
+    }
+}
+
+/// Registry keys of the event callback functions from `lua/client.lua`.
+const CALLBACK_DISPATCH_KEY: &str = "wowprogramming.callbacks.dispatch";
+const CALLBACK_REGISTER_KEY: &str = "wowprogramming.callbacks.register";
+const CALLBACK_UNREGISTER_KEY: &str = "wowprogramming.callbacks.unregister";
+
+/// Keep the event callback functions that `lua/client.lua` returns.
+pub fn install_event_callbacks(lua: &Lua, t: &Table) -> Result<()> {
+    lua.set_named_registry_value(
+        CALLBACK_DISPATCH_KEY,
+        t.get::<Function>("dispatchCallbacks")?,
+    )?;
+    lua.set_named_registry_value(CALLBACK_REGISTER_KEY, t.get::<Function>("register")?)?;
+    lua.set_named_registry_value(CALLBACK_UNREGISTER_KEY, t.get::<Function>("unregister")?)?;
+    Ok(())
+}
+
+/// Register a frame's callback for an event (`frame:RegisterEventCallback`).
+pub fn register_event_callback(
+    lua: &Lua,
+    owner: Value,
+    event: &str,
+    cb: Value,
+    unit: Option<String>,
+) -> Result<bool> {
+    let f: Function = lua.named_registry_value(CALLBACK_REGISTER_KEY)?;
+    f.call((owner, event, cb, unit))
+}
+
+/// Remove a frame's callback for an event.
+pub fn unregister_event_callback(lua: &Lua, owner: Value, event: &str) -> Result<()> {
+    let f: Function = lua.named_registry_value(CALLBACK_UNREGISTER_KEY)?;
+    f.call((owner, event))
 }
 
 /// Run `OnUpdate` for every visible frame that has one, and advance
