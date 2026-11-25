@@ -8,7 +8,7 @@
 //! x (north is positive, so top is the larger x). From the assignment that
 //! covers most of a map, the sandbox extends the box to the whole map.
 
-use mlua::{Lua, Result, Table};
+use mlua::{Lua, Result, Table, Value};
 use wowprogramming_formats::db2;
 use wowprogramming_lua::mlua;
 
@@ -153,6 +153,21 @@ const UI_MAP_X_MAP_ART: u32 = 1957217;
 const UI_MAP_ART: u32 = 1957202;
 const UI_MAP_ART_STYLE_LAYER: u32 = 1957208;
 const UI_MAP_ART_TILE: u32 = 1957210;
+const WORLD_MAP_OVERLAY: u32 = 1134579;
+const WORLD_MAP_OVERLAY_TILE: u32 = 1957212;
+
+/// An explored area's overlay on a map's art (WorldMapOverlay).
+#[derive(Clone, Debug, Default)]
+pub struct Overlay {
+    pub width: u32,
+    pub height: u32,
+    pub offset_x: u32,
+    pub offset_y: u32,
+    /// Top, bottom, left, right.
+    pub hit_rect: [u32; 4],
+    /// Tile textures row by row.
+    pub tiles: Vec<u32>,
+}
 
 /// One layer of a map art style (UiMapArtStyleLayer).
 #[derive(Clone, Debug)]
@@ -183,6 +198,8 @@ pub struct MapArt {
     layers: std::collections::HashMap<u32, Vec<ArtLayer>>,
     /// (art ID, layer) -> tiles as (row, column, FileDataID).
     tiles: TileMap,
+    /// UiMapArt ID -> overlays of explored areas.
+    overlays: std::collections::HashMap<u32, Vec<Overlay>>,
 }
 
 impl MapArt {
@@ -235,7 +252,48 @@ impl MapArt {
                 tiles.sort();
             }
         }
+        if let (Some(t), Some(tiles)) = (read(WORLD_MAP_OVERLAY), read(WORLD_MAP_OVERLAY_TILE)) {
+            let mut by_overlay: std::collections::HashMap<u32, Vec<(u32, u32, u32)>> =
+                Default::default();
+            for r in &tiles.records {
+                // Layer 0 only: the overlay art of the base layer.
+                if field(r, 2, 0) == 0 {
+                    by_overlay.entry(field(r, 4, 0)).or_default().push((
+                        field(r, 0, 0),
+                        field(r, 1, 0),
+                        field(r, 3, 0),
+                    ));
+                }
+            }
+            for r in &t.records {
+                let mut list = by_overlay.remove(&r.id).unwrap_or_default();
+                list.sort();
+                art.overlays
+                    .entry(field(r, 1, 0))
+                    .or_default()
+                    .push(Overlay {
+                        width: field(r, 2, 0),
+                        height: field(r, 3, 0),
+                        offset_x: field(r, 4, 0),
+                        offset_y: field(r, 5, 0),
+                        hit_rect: [
+                            field(r, 6, 0),
+                            field(r, 7, 0),
+                            field(r, 8, 0),
+                            field(r, 9, 0),
+                        ],
+                        tiles: list.into_iter().map(|(_, _, f)| f).collect(),
+                    });
+            }
+        }
         art
+    }
+
+    pub fn overlays(&self, map: u32) -> &[Overlay] {
+        self.art_id(map)
+            .and_then(|a| self.overlays.get(&a))
+            .map(|v| v.as_slice())
+            .unwrap_or(&[])
     }
 
     pub fn art_id(&self, map: u32) -> Option<u32> {
@@ -298,6 +356,43 @@ pub fn install_art(lua: &Lua, c_map: &Table) -> Result<()> {
                     t.set("minScale", l.min_scale)?;
                     t.set("maxScale", l.max_scale)?;
                     t.set("additionalZoomSteps", l.additional_zoom_steps)?;
+                    out.set(i + 1, t)?;
+                }
+            }
+            Ok(out)
+        })?,
+    )?;
+    // Every area counts as explored (inferred: the sandbox has no
+    // exploration state). The meaning of WorldMapOverlay.Flags is not
+    // known, so no overlay is "shown by mouse over" or "on top".
+    let exploration = match lua.globals().get::<Value>("C_MapExplorationInfo")? {
+        Value::Table(t) => t,
+        _ => {
+            let t = lua.create_table()?;
+            lua.globals().set("C_MapExplorationInfo", t.clone())?;
+            t
+        }
+    };
+    exploration.set(
+        "GetExploredMapTextures",
+        lua.create_function(|lua, map: u32| {
+            let out = lua.create_table()?;
+            if let Some(a) = art(lua) {
+                for (i, o) in a.overlays(map).iter().enumerate() {
+                    let t = lua.create_table()?;
+                    t.set("textureWidth", o.width)?;
+                    t.set("textureHeight", o.height)?;
+                    t.set("offsetX", o.offset_x)?;
+                    t.set("offsetY", o.offset_y)?;
+                    t.set("isShownByMouseOver", false)?;
+                    t.set("isDrawOnTopLayer", false)?;
+                    t.set("fileDataIDs", lua.create_sequence_from(o.tiles.clone())?)?;
+                    let hit = lua.create_table()?;
+                    hit.set("top", o.hit_rect[0])?;
+                    hit.set("bottom", o.hit_rect[1])?;
+                    hit.set("left", o.hit_rect[2])?;
+                    hit.set("right", o.hit_rect[3])?;
+                    t.set("hitRect", hit)?;
                     out.set(i + 1, t)?;
                 }
             }

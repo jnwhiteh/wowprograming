@@ -588,8 +588,13 @@ WoWDBDefs layouts, Bindings_Standard.xml (B); the rest is inferred.
   layer and tile sizes and zoom range, UiMapArtTile (1957210) the tile
   textures by row and column (U). `GetMapArtLayerTextures(map, layer)`
   counts layers from 1 (Blizzard_MapCanvasDetailLayer) and returns the
-  tiles row by row. Exploration overlays are not read yet: the world
-  map shows the base art only.
+  tiles row by row.
+- Explored areas: WorldMapOverlay (1134579: art ID, texture size,
+  offset, hit rectangle top, bottom, left, right) and WorldMapOverlayTile
+  (1957212: row, column, layer, FileDataID) give
+  `C_MapExplorationInfo.GetExploredMapTextures`. Every area counts as
+  explored; the Flags column's meaning is unknown, so no overlay is
+  "shown by mouse over" or "drawn on top" (inferred).
 - `UnitPositionFrame` (the player arrow) is drawn by the client. The
   sandbox draws each added unit as a texture on the frame at its map
   position, turned to the player's facing, and moves it every frame.

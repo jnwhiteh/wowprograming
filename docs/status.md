@@ -156,7 +156,8 @@ Last updated: 2026-11-25 (real addons work; world map, modifiers, hover casting,
 - Clique's options window (`/clique`, with the action catalog of the
   model's spells and macros) and TomTom's test addon window (`/tttest`,
   `--addon TomTomTest`) open without errors. `GetInventorySlotInfo`.
-- World map (M): map art tiles from the UiMapArt tables, TomTom's
+- World map (M): map art tiles from the UiMapArt tables, explored area
+  overlays from WorldMapOverlay (all areas explored), TomTom's
   pins, the player arrow (`lua/unitposition.lua`). Addons' own BLP and
   TGA textures load from the addons folder (`formats/tga.rs`).
 - Maps and movement (`lua/maps.lua`, `maps.rs`): `C_Map` from the
@@ -410,10 +411,8 @@ the headless runs only cover loading and idle play).
 Real addons goal (scope.md): the done criteria hold. To make the
 simulator more complete, in order:
 
-1. The world map works (M): map art, TomTom's waypoint pin, the player
-   arrow. Still missing: exploration overlays
-   (`C_MapExplorationInfo.GetExploredMapTextures`, from the
-   WorldMapOverlay tables), the minimap (TomTom's minimap pins are placed
+1. The world map works (M): map art with every area explored, TomTom's
+   waypoint pin, the player arrow. Still missing: the minimap (TomTom's minimap pins are placed
    but the Minimap widget draws no terrain), zooming the map with the
    mouse wheel (try it).
 2. Clique: done for the player frame and party frames
