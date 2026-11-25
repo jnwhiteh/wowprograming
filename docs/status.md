@@ -191,6 +191,11 @@ Last updated: 2026-11-25 (real addons work; world map, modifiers, hover casting,
   `clientstate.lua`) for spellbook items, actions, buffs, debuffs and
   units; Blizzard's `TooltipDataProcessor` draws them. A hidden tooltip
   has no owner. `|4singular:plural;` text escapes are resolved.
+- Combat: a hostile cast enters combat; it ends 6 s after the last
+  hostile action. `InCombatLockdown`, `UnitAffectingCombat`,
+  PLAYER_REGEN_DISABLED and PLAYER_REGEN_ENABLED follow;
+  `WowProgrammingState.EnterCombat()` and `LeaveCombat()` for specs.
+  Nothing is blocked in combat yet (the security model goal).
 - Right-click on a buff cancels it; `State.ApplyAura` puts a debuff from
   another source on the player (the dummy scenario's magic curse).
 - Escape runs Blizzard's `ToggleGameMenu`: stop a cast, close windows,
@@ -428,8 +433,9 @@ simulator more complete, in order:
    2026-11-25: 49 passed, 31 failed, 4 skipped (they reload), 13 not for
    this client. Most failures need a hand step the spec does not do
    (walk to a point, right-click menus, Alt-right-click on the map,
-   pasting text). Some need sandbox features: combat state (HC-1,
-   ST-14: `InCombatLockdown` and PLAYER_REGEN events), pet battles
+   pasting text). Some need sandbox features: combat now exists (a
+   hostile cast, or `WowProgrammingState.EnterCombat()` from a spec), so
+   HC-1 and ST-14 need only their hand steps; pet battles
    (PB-1), quest data (QO-*), corpse (CO-1), the TomTom coordinate block
    on the world map (MC-1). Teach the spec the hand steps per test, or
    add these features; then handle the reload tests.

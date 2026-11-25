@@ -545,6 +545,12 @@ from Blizzard code and the API documentation unless a source is named:
   argument asks for an exact match (inferred; `/target Straw`).
 - `UnitCanAttack(a, b)`: described units have one `canAttack` flag; two
   different units can attack each other when either has it.
+- Combat: a harmful spell enters combat; combat ends 6 s after the last
+  hostile action (inferred; the game uses threat). PLAYER_REGEN_DISABLED
+  fires before `InCombatLockdown()` turns true, and PLAYER_REGEN_ENABLED
+  after it turns false (inferred from how addons use the events: they
+  set up protected frames in the first and apply deferred changes in the
+  second).
 - Power comes back at 5% of the maximum every half second outside a cast.
   This is a simple rule, not the game's.
 - `Blizzard_EnvironmentCleanup` removes globals from the global

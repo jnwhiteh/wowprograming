@@ -456,6 +456,11 @@ fn training_dummy_session() {
         .eval("local _, d = ActionButton2.cooldown:GetCooldownTimes() return C_UnitAuras.GetAuraDataByIndex('target', 1, 'HARMFUL').name, d")
         .unwrap();
     assert_eq!((debuff.as_str(), cd), ("Frostbind", 12000.0));
+    // A hostile spell puts the player in combat.
+    let (lockdown, combat): (bool, bool) = e
+        .eval("return InCombatLockdown(), UnitAffectingCombat('player')")
+        .unwrap();
+    assert_eq!((lockdown, combat), (true, true));
     let shown: bool = e
         .eval(
             "local icon = C_Spell.GetSpellTexture(1900002)

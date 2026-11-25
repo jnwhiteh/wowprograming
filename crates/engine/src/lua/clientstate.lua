@@ -14,6 +14,8 @@ local type, pairs, ipairs, select, tostring, tonumber, unpack, math, table, stri
 
 local State = {}
 S.State = State
+-- Specs and tests reach the model through this global.
+WowProgrammingState = State
 
 local spells = {}      -- spell ID -> spell
 local spellByName = {} -- lower-case name -> spell
@@ -29,6 +31,8 @@ local cooldowns = {}   -- spell ID -> { start, duration }
 local auras = {}       -- unit data -> list of auras
 local macros = {}      -- macro index -> { name, icon, body }
 local nextAuraID, nextCastID = 1, 1
+local inCombat, lockdown, lastHostile = false, false, 0
+local COMBAT_TIMEOUT = 6 -- seconds without a hostile action (inferred)
 local enabled = false
 
 State.spells = spells
@@ -387,6 +391,26 @@ local function removeAura(u, instanceID)
     return false
 end
 
+-- Combat ----------------------------------------------------------------------
+
+-- Entering combat: PLAYER_REGEN_DISABLED arrives while protected frames
+-- can still change; the lockdown starts after it (inferred from how
+-- addons use the event). Leaving: the lockdown ends, then
+-- PLAYER_REGEN_ENABLED.
+local function enterCombat()
+    lastHostile = GetTime()
+    if inCombat then return end
+    inCombat = true
+    fire("PLAYER_REGEN_DISABLED")
+    C_Timer.After(0, function() if inCombat then lockdown = true end end)
+end
+
+local function leaveCombat()
+    if not inCombat then return end
+    inCombat, lockdown = false, false
+    fire("PLAYER_REGEN_ENABLED")
+end
+
 -- Casting ---------------------------------------------------------------------
 
 local function castGUID()
@@ -469,6 +493,7 @@ local function castSpell(s, unit)
     end
     local u = player()
     local guid = castGUID()
+    if s.harmful or (s.aura and s.aura.harmful) then enterCombat() end
     fire("UNIT_SPELLCAST_SENT", "player", target and target.name or "", guid, s.id)
     if s.cost then setPower(u, (u.power or 0) - s.cost) end
     startCooldowns(s)
@@ -496,6 +521,7 @@ local regenTimer = 0
 local gcdWasActive = false
 local function tick(elapsed)
     local t = now()
+    if inCombat and t - lastHostile > COMBAT_TIMEOUT then leaveCombat() end
     if cast and t >= cast.finish then finishCast(true) end
     -- Cooldowns ending: the client sends SPELL_UPDATE_COOLDOWN (inferred).
     local gcdActive = gcdStart + gcdDuration > t
@@ -1157,6 +1183,13 @@ local function install()
         end
     end)
 
+    -- Combat.
+    set("InCombatLockdown", function() return lockdown end)
+    set("UnitAffectingCombat", function(unit)
+        local u = resolveUnit(unit)
+        return inCombat and u ~= nil and (u == player() or u.canAttack == true)
+    end)
+
     -- Tooltips.
     for name, fn in pairs(State.tooltipFunctions) do set("C_TooltipInfo." .. name, fn) end
 
@@ -1253,6 +1286,13 @@ function State.ApplyAura(unit, id, def)
     local s = findSpell(id) or { id = id, name = def.name or ("Spell " .. id), icon = iconID(def.icon) }
     if u then return applyAura(u, s, def) end
 end
+
+-- State.EnterCombat() and State.LeaveCombat(), for scenarios and specs.
+-- Combat entered this way still ends after COMBAT_TIMEOUT seconds without
+-- a hostile action unless State.EnterCombat is called again.
+function State.EnterCombat() enterCombat() end
+function State.LeaveCombat() leaveCombat() end
+function State.InCombat() return inCombat end
 
 function State.Cursor() return cursor end
 function State.Casting() return cast end
