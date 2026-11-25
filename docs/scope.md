@@ -356,9 +356,13 @@ Progress (2026-11-25): criteria 1 to 6 hold, tested by
 player stands in Goldshire (`scenarios/dummy`) and walks with the
 movement keys; TomTom's arrow counts down to a `/way` waypoint and
 clears it on arrival; Clique casts a spell from a middle click on the
-player frame; WowLua runs typed code. Next: the world map and minimap
-with TomTom's pins, Clique's options window and party frames, WowLua's
-other buttons, and TomTom's own in-game test addon (`TomTomTest`).
+player frame; WowLua runs typed code. Also done: the world map (art,
+explored areas, TomTom's pins, the player arrow), Clique on party
+frames with modifier clicks and hover casting, Clique's options window,
+WowLua pages across `/reload`, combat state, saved key bindings, and
+TomTom's in-game checks run as a spec (49 of 84 pass without a person).
+Next: the minimap, the hand steps of TomTom's checks, quest and pet
+battle data, then the security model.
 
 **Client state: a training dummy session (next goal after the frame
 runtime).** The user's character stands in front of a training dummy,
