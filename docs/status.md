@@ -67,13 +67,13 @@ Last updated: 2026-11-25 (playable world: positions, damage, healing, death, the
   player arrow, Clique on party frames with modifier clicks and hover
   casting, WowLua pages across `/reload`. Tools for addon authors
   started too: `--watch` (reload on change) and `wowprogramming test`
-  (interaction specs, `specs/`). All on `client-state`, committed, not
-  merged, not pushed. See "Next steps".
+  (interaction specs, `specs/`). All on `client-state`, merged into
+  `main` by the user's request on 2026-11-25 (fast-forward, not pushed). See "Next steps".
 - **Client state goal: criteria 1 to 6 done** on branch `client-state`
   (2026-11-25): unit-frame clicks, buff removal, a player debuff,
   tooltips from the model, slash commands and macros. Criterion 7
-  (Clique) is now part of the real addons goal. The branch is not
-  merged and not pushed. The model (`lua/clientstate.lua`) works with
+  (Clique) is now part of the real addons goal. Merged into `main` with
+  `client-state` on 2026-11-25 (not pushed). The model (`lua/clientstate.lua`) works with
   an invented character in `scenarios/dummy`; where real data is
   needed is listed in [client-runtime.md](client-runtime.md), "Client
   state: invented data and where real data is needed".
@@ -133,7 +133,10 @@ Last updated: 2026-11-25 (playable world: positions, damage, healing, death, the
   frame runtime goal is on `frame-runtime`, from `character-select`
   (so merging it also brings the character select work into `main`).
   `character-select` (paused, all parts working) is not merged into
-  `main` yet. Commit each tested step on the goal's branch without
+  `main` yet. `client-state` (client state, real addons, and the full
+  UI and playable world goal so far) was merged into `main` on
+  2026-11-25 at the user's request, before that goal was done; later
+  work on the goal can continue on `client-state` or `main`. Commit each tested step on the goal's branch without
   asking; still ask before pushing or merging.
 - **Earlier goals on hold:** spellbook (functionally complete) and HUD
   (player, target, party frames, action bars). See "Next steps".
