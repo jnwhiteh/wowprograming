@@ -559,6 +559,37 @@ fn training_dummy_session() {
         .unwrap();
     assert_eq!(left, 0);
 
+    // 6. Slash commands go through Blizzard's chat parser.
+    e.run_command("/target Straw");
+    e.tick(0.1);
+    let name: String = e.eval("return UnitName('target')").unwrap();
+    assert_eq!(name, "Straw Sentinel");
+    e.run_command("/cast Emberlance");
+    e.tick(0.5);
+    let casting: Option<String> = e.eval("return UnitCastingInfo('player')").unwrap();
+    assert_eq!(casting.as_deref(), Some("Emberlance"));
+    e.run_command("/stopcasting");
+    e.tick(0.1);
+    let casting: Option<String> = e.eval("return UnitCastingInfo('player')").unwrap();
+    assert_eq!(casting, None);
+    e.tick(1.5);
+
+    // A macro on button 6: Frostbind on the hostile target, then
+    // Blinkstep. The button shows the macro's name.
+    let label: String = e.eval("return ActionButton6.Name:GetText()").unwrap();
+    assert_eq!(label, "Bind & Blink");
+    press(&mut e, "6");
+    e.tick(0.1);
+    let (debuff, blink): (String, f64) = e
+        .eval("return C_UnitAuras.GetAuraDataByIndex('target', 1, 'HARMFUL').name, C_Spell.GetSpellCooldown(1900005).duration")
+        .unwrap();
+    assert_eq!((debuff.as_str(), blink), ("Frostbind", 15.0));
+    let lines = tooltip(&mut e, "ActionButton6");
+    assert_eq!(lines[1], "Frostbind | ", "{lines:?}");
+
+    e.run_command("/logout");
+    assert!(e.take_logout(), "/logout did not ask to log out");
+
     // The arranged bar is still there after /reload.
     e.reload();
     e.tick(0.1);

@@ -248,6 +248,9 @@ pub fn install(lua: &Lua) -> Result<()> {
     lua.load(include_str!("lua/client.lua"))
         .set_name("=[C]")
         .call::<()>(fire)?;
+    lua.load(include_str!("lua/macros.lua"))
+        .set_name("=[C]")
+        .call::<()>(())?;
     // Undocumented client functions the UI calls at load time.
     g.set(
         "RegisterStaticConstants",

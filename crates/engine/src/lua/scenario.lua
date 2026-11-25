@@ -448,7 +448,13 @@ local function wrapUnitFunctions()
     unitFunction("UnitIsDead", function(u) return u.dead == true end)
     unitFunction("UnitIsGhost", function(u) return u.ghost == true end)
     unitFunction("UnitIsDeadOrGhost", function(u) return u.dead == true or u.ghost == true end)
-    unitFunction("UnitCanAttack", function(u) return u.canAttack == true end)
+    -- UnitCanAttack(a, b): whether a can attack b. Described units have
+    -- one flag: a hostile unit and the player can attack each other.
+    unitFunction("UnitCanAttack", function(u, other)
+        local o = other and unitData(other)
+        if not o then return u.canAttack == true end
+        return u ~= o and (u.canAttack == true or o.canAttack == true)
+    end)
     unitFunction("UnitIsEnemy", function(u) return (u.reaction or 4) <= 2 end)
     unitFunction("UnitIsFriend", function(u) return (u.reaction or 4) >= 5 end)
     unitFunction("UnitIsTapDenied", function(u) return u.tapDenied == true end)

@@ -516,6 +516,35 @@ from Blizzard code and the API documentation unless a source is named:
 - Text: `|4singular:plural;` picks the singular after the number 1
   (`SPELL_TIME_REMAINING_MIN`). It is resolved when drawn; `GetText`
   returns the escape.
+- Macros and slash commands (`lua/macros.lua`): the client runs every
+  macro line through the callback that `Blizzard_ChatFrameBase` gives
+  `C_Macro.SetMacroExecuteLineCallback` (B: MacroExecutionManager.lua);
+  it sends the line from a private edit box, so Blizzard's parser runs
+  secure commands (kept in the addon's private `SecureCmdList`: `/cast`,
+  `/target`, `/stopcasting`, `/logout`) and `SlashCmdList` alike.
+  `RunMacroText` skips `#` lines. The sandbox console sends a slash
+  command it does not handle itself (`/run`, `/dump`, `/reload`,
+  `/stubs`) to the same callback when `hash_ChatTypeInfoList` (which
+  Blizzard fills with every command, secure ones too) knows it.
+  `ImportListToHash` moves registered commands into a hidden proxy table,
+  so `pairs(SlashCmdList)` lists almost nothing; do not search it.
+- `SecureCmdOptionParse`: clauses split by `;`, bracket groups OR'ed,
+  conditions in a group AND'ed, `@unit` or `target=unit` sets the unit
+  for `exists`, `help`, `harm`, `dead`. Also `combat`, `mod`, `button`,
+  `channeling`, `known`, `group`, `pet`, `form:0`; the player is
+  outdoors, unmounted and not stealthed. Unknown conditions are false,
+  and true with `no` in front (inferred). The click button is always 1.
+- Macros: `State.AddMacro`; account macros take indices 1 to 120,
+  character macros 121 and up. A macro shows the spell named by
+  `#showtooltip`, else the first `/cast` or `/use` whose options hold
+  (inferred): its icon (without one of its own), cooldown, usability and
+  tooltip. A macro tooltip is a NestedBlock line and then the spell's
+  lines (data type Macro), as in the Monk capture. The button shows the
+  macro's name (`UsesActionText`).
+- `TargetUnit(name)` matches the start of a name unless the second
+  argument asks for an exact match (inferred; `/target Straw`).
+- `UnitCanAttack(a, b)`: described units have one `canAttack` flag; two
+  different units can attack each other when either has it.
 - Power comes back at 5% of the maximum every half second outside a cast.
   This is a simple rule, not the game's.
 - `Blizzard_EnvironmentCleanup` removes globals from the global
@@ -552,7 +581,9 @@ Where the invented data stops being good enough, in order of need:
    data in the API documentation, no capture).
 7. **Macros, bindings and click bindings** come from the character's WTF
    files (`macros-cache.txt`, `bindings-cache.wtf`,
-   `click-bindings-cache.txt`), read only. No capture needed.
+   `click-bindings-cache.txt`), read only. No capture needed. The model
+   can hold macros and the default click bindings already; nothing reads
+   these files yet.
 
 ## Open questions for a probe session
 

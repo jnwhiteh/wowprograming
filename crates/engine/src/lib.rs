@@ -773,7 +773,17 @@ impl Engine {
                 )));
             }
             _ => {
-                if !run_slash_command(self.runtime.lua(), &command, &rest) {
+                // Blizzard's chat parser first (secure commands such as
+                // /cast live only there), then SlashCmdList for UIs
+                // without the chat frame.
+                let parsed = self
+                    .runtime
+                    .lua()
+                    .globals()
+                    .get::<Function>("WowProgramming_ExecuteChatLine")
+                    .and_then(|f| f.call::<bool>(line))
+                    .unwrap_or(false);
+                if !parsed && !run_slash_command(self.runtime.lua(), &command, &rest) {
                     state(self.runtime.lua())
                         .output
                         .push(Output::Print(format!("Unknown command: /{command}")));

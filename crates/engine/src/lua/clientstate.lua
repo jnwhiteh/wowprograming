@@ -27,6 +27,7 @@ local cast             -- the cast in progress
 local gcdStart, gcdDuration = 0, 0
 local cooldowns = {}   -- spell ID -> { start, duration }
 local auras = {}       -- unit data -> list of auras
+local macros = {}      -- macro index -> { name, icon, body }
 local nextAuraID, nextCastID = 1, 1
 local enabled = false
 
@@ -178,9 +179,58 @@ end
 
 -- Action slots ----------------------------------------------------------------
 
+-- Macros ----------------------------------------------------------------------
+
+-- Character macros start at 121, after the 120 account-wide ones.
+local MAX_ACCOUNT_MACROS = 120
+
+local function findMacro(id)
+    if type(id) == "number" then return macros[id], id end
+    if type(id) == "string" then
+        local n = tonumber(id)
+        if n then return macros[n], n end
+        for i, m in pairs(macros) do
+            if m.name:lower() == id:lower() then return m, i end
+        end
+    end
+end
+
+-- The spell a macro shows: "#showtooltip Spell", else the first /cast
+-- or /use whose options hold (inferred from how macros look in game).
+local function macroSpell(m)
+    if not m then return nil end
+    local fallback
+    for raw in (m.body .. "\n"):gmatch("([^\r\n]*)\r?\n") do
+        local cmd, rest = raw:match("^%s*([#/]%S+)%s*(.-)%s*$")
+        cmd = cmd and cmd:lower()
+        if cmd == "#showtooltip" and rest ~= "" then
+            local action = SecureCmdOptionParse(rest)
+            return action and findSpell(action)
+        elseif (cmd == "/cast" or cmd == "/use") and not fallback then
+            local action = SecureCmdOptionParse(rest)
+            fallback = action and findSpell(action)
+        end
+    end
+    return fallback
+end
+
+local function macroIcon(m)
+    if m.icon then return m.icon end
+    local s = macroSpell(m)
+    return s and s.icon or 134400
+end
+
+local function actionMacro(slot)
+    local a = actions and actions[slot]
+    if a and a.type == "macro" then return macros[a.id] end
+end
+
+-- The spell behind an action: the spell itself, or the one its macro shows.
 local function actionSpell(slot)
     local a = actions and actions[slot]
-    if a and a.type == "spell" then return spells[a.id] end
+    if not a then return nil end
+    if a.type == "spell" then return spells[a.id] end
+    if a.type == "macro" then return macroSpell(macros[a.id]) end
 end
 
 local function setAction(slot, a)
@@ -214,7 +264,7 @@ local function setTarget(u)
 end
 
 -- Find a unit by token, or by name among described and hidden units.
-local function resolveUnit(name)
+local function resolveUnit(name, exact)
     if name == nil then return nil end
     local u = unitData(name)
     if u then return u end
@@ -222,6 +272,15 @@ local function resolveUnit(name)
     for _, list in ipairs({ units, hidden }) do
         for _, x in pairs(list) do
             if x.name and x.name:lower() == lower then return x end
+        end
+    end
+    -- "/target Straw" finds the Straw Sentinel: names match by their start
+    -- unless an exact match is asked for (inferred).
+    if not exact then
+        for _, list in ipairs({ units, hidden }) do
+            for _, x in pairs(list) do
+                if x.name and x.name:lower():sub(1, #lower) == lower then return x end
+            end
         end
     end
 end
@@ -480,9 +539,9 @@ end
 -- with an empty grey right text), cost and range, cast time and cooldown
 -- (or a SpellPassive line), then the description in gold, wrapped. Aura
 -- and unit tooltips have no capture yet; their lines are inferred.
-local LINE = { None = 0, UnitName = 2, SpellName = 13, SpellPassive = 33,
+local LINE = { None = 0, UnitName = 2, SpellName = 13, NestedBlock = 19, SpellPassive = 33,
                SpellDescription = 34, UnitLevel = 47 } -- Enum.TooltipDataLineType
-local DATA = { Spell = 1, Unit = 2, UnitAura = 7 }    -- Enum.TooltipDataType
+local DATA = { Spell = 1, Unit = 2, UnitAura = 7, Macro = 25 } -- Enum.TooltipDataType
 local nextDataID = 1
 
 local function rgb(r, g, b) return CreateColor(r, g, b, 1) end
@@ -624,7 +683,21 @@ end
 State.tooltipFunctions = {
     GetSpellByID = function(id) return spellTooltip(findSpell(id)) end,
     GetSpellBookItem = function(slot, bank) return spellTooltip(bookSpell(slot, bank)) end,
-    GetAction = function(slot) return spellTooltip(actionSpell(slot)) end,
+    GetAction = function(slot)
+        local m = actionMacro(slot)
+        if not m then return spellTooltip(actionSpell(slot)) end
+        -- As in the Monk capture: a Macro tooltip is a NestedBlock line,
+        -- then the shown spell's lines; without a spell, the name.
+        local a = actions[slot]
+        local d = spellTooltip(macroSpell(m))
+        if d then
+            table.insert(d.lines, 1, line(LINE.NestedBlock, "", gold()))
+        else
+            d = tooltipData(DATA.Macro, a.id, { line(LINE.None, m.name) })
+        end
+        d.type, d.id = DATA.Macro, a.id
+        return d
+    end,
     GetUnit = function(unit) return unitTooltip(unit) end,
     GetUnitAura = function(unit, index, filter) return auraTooltip(auraAt(unit, index, filter)) end,
     GetUnitBuff = function(unit, index, filter)
@@ -831,14 +904,25 @@ local function install()
         if a then return a.type, a.id, a.type == "spell" and "spell" or nil end
     end)
     set("C_ActionBar.GetActionTexture", function(slot)
+        local m = actionMacro(slot)
+        if m then return macroIcon(m) end
         local s = actionSpell(slot)
         return s and s.icon
     end)
     set("GetActionTexture", C_ActionBar.GetActionTexture)
-    set("C_ActionBar.GetActionText", function() return nil end)
+    -- A macro's name shows on its button.
+    set("C_ActionBar.GetActionText", function(slot)
+        local m = actionMacro(slot)
+        return m and m.name
+    end)
+    set("GetActionText", C_ActionBar.GetActionText)
+    set("C_ActionBar.UsesActionText", function(slot) return actionMacro(slot) ~= nil end)
     set("C_ActionBar.GetActionDisplayCount", function() return "" end)
     set("C_ActionBar.GetActionUseCount", function() return 0 end)
-    set("C_ActionBar.IsUsableAction", function(slot) return usable(actionSpell(slot)) end)
+    set("C_ActionBar.IsUsableAction", function(slot)
+        if actionMacro(slot) and not actionSpell(slot) then return true, false end
+        return usable(actionSpell(slot))
+    end)
     set("C_ActionBar.GetActionCooldown", function(slot)
         local s = actionSpell(slot)
         return s and spellCooldown(s) or cooldownInfo(0, 0)
@@ -899,8 +983,41 @@ local function install()
     set("C_ActionBar.PutActionInSlot", placeAction)
     set("UseAction", function(slot, unit)
         if cursor then return placeAction(slot) end
+        local a = actions[slot]
+        if a and a.type == "macro" then return RunMacro(a.id) end
         local s = actionSpell(slot)
         if s then castSpell(s, unit) end
+    end)
+
+    -- Macros.
+    set("GetNumMacros", function()
+        local account, character = 0, 0
+        for i in pairs(macros) do
+            if i > MAX_ACCOUNT_MACROS then character = character + 1 else account = account + 1 end
+        end
+        return account, character
+    end)
+    set("GetMacroInfo", function(id)
+        local m = findMacro(id)
+        if m then return m.name, macroIcon(m), m.body end
+    end)
+    set("GetMacroIndexByName", function(name)
+        local _, i = findMacro(name)
+        return i or 0
+    end)
+    set("GetMacroBody", function(id) local m = findMacro(id) return m and m.body end)
+    set("GetMacroSpell", function(id)
+        local s = macroSpell((findMacro(id)))
+        return s and s.id
+    end)
+    set("GetMacroItem", function() return nil end)
+    set("RunMacro", function(id)
+        local m = findMacro(id)
+        if m then RunMacroText(m.body) end
+    end)
+    set("PickupMacro", function(id)
+        local m, i = findMacro(id)
+        if m then setCursor({ type = "macro", id = i }) end
     end)
 
     -- Casting.
@@ -932,8 +1049,8 @@ local function install()
     set("UnitChannelInfo", channelInfo)
 
     -- Target.
-    set("TargetUnit", function(name)
-        local u = resolveUnit(name)
+    set("TargetUnit", function(name, exact)
+        local u = resolveUnit(name, exact)
         if u then setTarget(u) end
     end)
     set("ClearTarget", function()
@@ -1085,12 +1202,19 @@ function State.AddSkillLine(def)
     rebuildBook()
 end
 
--- State.SetDefaultActions{ [slot] = spell ID, ... }: the bar a new
+-- State.SetDefaultActions{ [slot] = spell ID or { macro = name }, ... }: the bar a new
 -- character starts with. Slots the player changed are kept instead.
 function State.SetDefaultActions(list)
     enable()
     local saved = _G[SAVED]
-    for slot, id in pairs(list) do actions[slot] = { type = "spell", id = id } end
+    for slot, id in pairs(list) do
+        if type(id) == "table" and id.macro then
+            local _, i = findMacro(id.macro)
+            if i then actions[slot] = { type = "macro", id = i } end
+        else
+            actions[slot] = { type = "spell", id = id }
+        end
+    end
     if type(saved) == "table" then
         for slot, a in pairs(saved) do
             if a == false then
@@ -1100,6 +1224,17 @@ function State.SetDefaultActions(list)
             end
         end
     end
+end
+
+-- State.AddMacro{ name, body, icon, perCharacter } adds a macro and
+-- returns its index. Without an icon, the macro shows its spell's icon.
+function State.AddMacro(def)
+    enable()
+    local first = def.perCharacter and MAX_ACCOUNT_MACROS + 1 or 1
+    local i = first
+    while macros[i] do i = i + 1 end
+    macros[i] = { name = def.name, body = def.body or "", icon = def.icon and iconID(def.icon) }
+    return i
 end
 
 -- State.AddHiddenUnit(key, data): a unit near the player that has no unit

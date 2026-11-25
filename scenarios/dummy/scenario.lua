@@ -72,8 +72,16 @@ State.AddSkillLine({
     },
 })
 
+-- A macro: Frostbind on a hostile target, then Blinkstep (off the
+-- global cooldown, so both go off from one press).
+State.AddMacro({
+    name = "Bind & Blink", perCharacter = true,
+    body = "#showtooltip Frostbind\n/cast [@target,harm] Frostbind\n/cast Blinkstep",
+})
+
 State.SetDefaultActions({
     [1] = 1900001, [2] = 1900002, [3] = 1900003, [4] = 1900004,
+    [6] = { macro = "Bind & Blink" },
 })
 
 State.AddHiddenUnit("dummy", {

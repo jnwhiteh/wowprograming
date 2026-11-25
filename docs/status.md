@@ -6,7 +6,7 @@ work (see "Keeping this file current" below).
 
 For goals, design and the full roadmap, see [scope.md](scope.md).
 
-Last updated: 2026-11-25 (client state: milestones 1 and 2, unit-frame clicks and tooltips from the model).
+Last updated: 2026-11-25 (client state: milestones 1 to 3 done; unit-frame clicks, tooltips, slash commands and macros).
 
 ## Current state
 
@@ -25,7 +25,9 @@ Last updated: 2026-11-25 (client state: milestones 1 and 2, unit-frame clicks an
      auras and units: **done** (spell and action layout from the Monk
      capture; aura and unit layout inferred).
   3. Criterion 6, slash commands (`/cast`, `/target`, `/stopcasting`,
-     `/reload`, `/logout`) and a macro on an action bar: next.
+     `/reload`, `/logout`) and a macro on an action bar: **done**.
+  All three milestones are committed on `client-state`, not merged and
+  not pushed. Criterion 7 (Clique) is what is left of the goal.
   The model (`lua/clientstate.lua`) works with an invented character in
   `scenarios/dummy`. The user asked to invent fantasy data where needed
   and to list where real data or templates are needed: see
@@ -129,6 +131,13 @@ Last updated: 2026-11-25 (client state: milestones 1 and 2, unit-frame clicks an
   `C_ClickBindings` has the client's default profile (left click
   targets, right click opens the menu), so secure unit frames target on
   a click.
+- Slash commands and macros (`lua/macros.lua`): the console sends slash
+  commands to Blizzard's chat parser through the client's macro line
+  callback, so `/cast`, `/target`, `/stopcasting` and `/logout` work in
+  the console and in macros. `SecureCmdOptionParse` evaluates macro
+  options. `State.AddMacro` adds macros; a macro on a bar shows its
+  name, its spell's icon and tooltip, and runs on a key press
+  (`scenarios/dummy` button 6, "Bind & Blink").
 - Tooltips from the model (`State.tooltipFunctions` in
   `clientstate.lua`) for spellbook items, actions, buffs, debuffs and
   units; Blizzard's `TooltipDataProcessor` draws them. A hidden tooltip
@@ -341,8 +350,9 @@ Last updated: 2026-11-25 (client state: milestones 1 and 2, unit-frame clicks an
 - Compact raid frames are not tried yet (`scenarios/hud` is a party with
   classic party frames).
 - Taint and secret values.
-- Client state: no macros or slash commands such
-  as `/cast`, no Clique, no icon at the mouse pointer while a spell is
+- Client state: no Clique, no macro frame tried (`/macro`, dragging a
+  macro from the macro window), macros and bindings not read from the
+  character's WTF files, no icon at the mouse pointer while a spell is
   held, no spell data from DB2 (only invented spells). Modifier keys
   always read as up (`IsShiftKeyDown` is a stub), so modified clicks and
   click bindings with modifiers cannot be tried.
@@ -353,18 +363,32 @@ Console errors: ask the user to run the GUI again and report any error
 that is left (interactions such as opening panels can still raise some;
 the headless runs only cover loading and idle play).
 
-Client state goal: continue the three milestones listed under "Current
-state" with `scenarios/dummy`, and extend `training_dummy_session` in
-`crates/engine/tests/full_ui.rs` for each step. Milestone 3: find why
-the chat frame's slash commands do not load (`/logout` is unknown), then
-`/cast`, `/target`, `/stopcasting`, `/reload`, `/logout`, and a macro on
-an action bar (the dummy scenario can define it; reading the
-character's `macros-cache.txt` can come later). Criterion 7 (Clique) comes after.
-Also worth doing: draw the held spell's icon at the mouse pointer in the
-GUI. Real spell data from DB2 can come later, when a captured character
+Client state goal: the three milestones of 2026-11-25 are done (see
+"Current state"). Ask the user whether to merge `client-state` into
+`main`. What is left, in order:
+
+1. Criterion 7, Clique: load Clique with `--addon Clique` in the dummy
+   scenario (or a party scenario such as `scenarios/hud`), bind a spell
+   to a click on a party frame, and check that the spell is cast on
+   that party member. Clique uses secure attributes on unit frames
+   (`type1 = spell`), so `SECURE_ACTIONS.spell` must reach
+   `CastSpellByName(spell, unit)`; check `SecureButton_GetModifiedUnit`
+   and the click binding path in `SecureUnitButton_OnClick`. Blizzard's
+   own click casting (`C_ClickBindings.SetProfileByInfo` with a Spell
+   binding) is a smaller first step: `ExecuteBinding` already casts.
+2. Read the character's `macros-cache.txt` and
+   `click-bindings-cache.txt` (read only) when a scenario names a
+   character.
+3. Try the macro window (`/macro`, `Blizzard_MacroUI`) with the model's
+   macros; `CreateMacro`, `EditMacro` and `DeleteMacro` are not
+   implemented.
+4. Draw the held spell's icon at the mouse pointer in the GUI.
+
+Real spell data from DB2 can come later, when a captured character
 should use the model; find the tables' FileDataIDs first (the CASC
 lookup by `DBFilesClient/<name>.db2` path finds nothing). Ask the user
-to try `gui --scenario scenarios/dummy` on the desktop.
+to try `gui --scenario scenarios/dummy` on the desktop (keys 1 to 6,
+Tab, P, `/cast` in the F12 console).
 
 Desktop feedback (merged). Not reproduced: buff tooltips "adding lines until full"
 (with the fixes, buff tooltips show the aura name, description and time
@@ -453,7 +477,8 @@ Decisions already made with the user. Do not reopen them without a reason.
 | `scenarios/dummy` | Training dummy session with an invented character and spells |
 | `scenarios/charselect`, `scenarios/world` | Character select from account data; any character without its own scenario |
 | `tools/capture/!WowProgrammingTrace` | In-game addon that records login and zone change events |
-| `crates/engine/src/lua/client.lua` | Client functions written in Lua (quality colors, placeholder enums) |
+| `crates/engine/src/lua/client.lua` | Client functions written in Lua (quality colors, placeholder enums, click bindings) |
+| `crates/engine/src/lua/macros.lua` | Macro line execution through Blizzard's chat parser, `SecureCmdOptionParse`, `RunMacroText` |
 | `crates/engine/src/lua/scenario.lua` | Scenario helpers (`S.LoadStandardCapture`, `S.Replay`, ...) |
 | `crates/engine/src/data/cvar_defaults.txt` | CVar defaults for runs without a CVar capture |
 | `tools/capture/WowProgrammingCapture` | In-game capture addon |
@@ -597,6 +622,13 @@ Things that cost time once and should not cost it again.
   (except tabard and cape) works for all models tried.
 - The commit command must not run after a failed check: use
   `if checks; then git commit ...; fi`, not `checks; git commit`.
+- Commands Blizzard registers are moved out of `SlashCmdList` into a
+  hidden proxy table, and secure ones (`/cast`) never enter it. Run
+  slash commands through the client's macro line callback, not by
+  searching `SlashCmdList`.
+- Scenario unit functions answer from their first unit. Functions that
+  compare two units (`UnitCanAttack("player", "target")`) need their own
+  rule, or macro conditions such as `[harm]` silently fail.
 - Never run `git stash` to compare against the old state: all work was
   uncommitted, and stashing hid it (it was restored at once).
 

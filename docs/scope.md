@@ -364,14 +364,14 @@ Done when these work in the full UI, each with a headless test:
 
 Progress (2026-11-25): the model is `crates/engine/src/lua/clientstate.lua`,
 tested with invented data in `scenarios/dummy` (test
-`training_dummy_session`). Criteria 1 to 4 work, except `/stopcasting`
-(Escape works), which needs the chat frame's slash commands (criterion
-6). A click on the player frame targets the player; the dummy has no
-frame of its own (no nameplates), so Tab targets it. Criterion 5 works:
-spellbook, action, buff, debuff and unit tooltips come from the model
-(aura and unit layouts inferred). Criteria 6 and 7 are not started. The data each step still needs is listed in
-[client-runtime.md](client-runtime.md) ("Client state: invented data
-and where real data is needed").
+`training_dummy_session`). Criteria 1 to 6 work. A click on the player
+frame targets the player; the dummy has no frame of its own (no
+nameplates), so Tab or `/target` targets it. Tooltips come from the
+model (aura and unit layouts inferred). Slash commands run through
+Blizzard's chat parser (`lua/macros.lua`), and a scenario macro on a bar
+casts two spells. Criterion 7 (Clique) is not started. The data each
+step still needs is listed in [client-runtime.md](client-runtime.md)
+("Client state: invented data and where real data is needed").
 
 Unknown behavior is handled as in the frame runtime goal: a best guess
 marked "inferred", and a question for the probe list. Some questions
