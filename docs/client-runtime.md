@@ -631,6 +631,33 @@ from Blizzard code and the API documentation unless a source is named:
   RECOVER_CORPSE; `RetrieveCorpse` brings the player back at half health
   (inferred) and fires PLAYER_UNGHOST. `C_DeathInfo.GetCorpseMapPosition`
   answers while dead or a ghost.
+- Nameplates (`Blizzard_NamePlates`, API documentation): the client
+  makes the base frames ("NamePlateN", NAME_PLATE_CREATED once each;
+  Blizzard mixes in `NamePlateBaseMixin` and adds the unit frame), gives
+  a unit the token nameplateN (NAME_PLATE_UNIT_ADDED) and takes it away
+  (NAME_PLATE_UNIT_REMOVED, during which `GetNamePlateForUnit(token)`
+  still answers). `C_NamePlate.SetNamePlateSize` tells the client the
+  size. The native frame has `SetHitTestPoints` and friends; Blizzard
+  sets the clickable region from the name and health bar. Inferred: a
+  plate for each living unit within `nameplateMaxDistance` (60 in the
+  captured settings) that the settings show (`nameplateShowEnemies`,
+  `nameplateShowFriends` for players, `nameplateShowFriendlyNPCs`); the
+  frame stands over the unit's head (2.6 yards, one height for all); a
+  unit behind the camera keeps its plate but the frame hides
+  (`C_NamePlateManager.IsNamePlateUnitBehindCamera`). Plates are
+  numbered nearest first. `UnitShouldDisplayName` follows the
+  `UnitName*` settings (`UnitNameHostleNPC` for hostile NPCs, and so on;
+  inferred mapping).
+- The camera and clicks in the world: the camera stands 6.5 yards
+  behind and 3.4 above the player, looking along its facing
+  (`world::Camera::behind`, fov 0.95). The 3D view and
+  `WowProgrammingWorld.ProjectToScreen` use the same projection. A click
+  that no frame takes goes to the world (`WowProgramming_WorldClick`):
+  a nameplate's hit region, else the unit whose body is within 30 screen
+  units of the mouse, becomes the target; a left click on nothing
+  clears the target unless sticky targeting is on (`deselectOnClick`
+  "0", the captured setting). The client really picks units by their
+  models; this is a stand-in.
 - Event callbacks (`RegisterEventCallback`, `RegisterUnitEventCallback`,
   `frame:RegisterEventCallback`): called after the frames registered for
   the event, with the owner (nil for global callbacks, the frame for a
@@ -834,6 +861,15 @@ justify one session. Each question names what the probe measures.
     and one SPELL_HEAL (nil or 0 for resisted, blocked, absorbed).
 25. Tab targeting: the order for three hostile units at different
     distances, in front and behind; does it skip units out of view?
+26. Negated settings: after `SetCVar("deselectOnClick", "1")` from a
+    script, what does `GetCVar("deselectOnClick")` return? Blizzard's
+    `SettingsPanelMixin:OnCVarChanged` converts the new value without
+    the setting's negation and writes it back, which turns it to "0" in
+    the sandbox. Does CVAR_UPDATE fire for script changes, and with the
+    CVar's name?
+27. Nameplates: the distance at which NAME_PLATE_UNIT_ADDED fires, the
+    order of the plate numbers, and whether a unit behind the camera
+    keeps its plate.
 
 ## Later layers (not part of the current goal)
 

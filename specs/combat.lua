@@ -1,7 +1,8 @@
 -- Combat in the world (scenarios/dummy): Tab picks hostile units by
 -- distance, spells damage and heal, a unit dies and comes back, the
 -- combat log records it, and range comes from positions.
--- The test combat_in_the_world runs this spec.
+-- The test combat_in_the_world runs this spec. It expects a fresh
+-- session (the player where the scenario puts it).
 
 local logged, errors, health = {}, {}, {}
 local watcher = CreateFrame("Frame")

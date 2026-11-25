@@ -14,7 +14,7 @@
 -- the position changes over time at the client's base speeds. There is
 -- no terrain, collision, falling or flying. Rules marked "inferred" in
 -- docs/client-runtime.md.
-local mapData, fire = ...
+local mapData, fire, project = ...
 local type, pairs, ipairs, math, table, tostring = type, pairs, ipairs, math, table, tostring
 
 local World = {}
@@ -342,6 +342,14 @@ end
 
 function World.Player() return player end
 function World.SetFrozen(on) frozen = on and true or false end
+
+-- Where a world point (z up, yards) appears on the screen, seen from the
+-- camera behind the player: UI units from the bottom left, or nil when it
+-- is behind the camera. The 3D view uses the same camera and projection.
+function World.ProjectToScreen(x, y, z)
+    if not player.continent then return nil end
+    return project(player.x, player.y, player.z or 0, player.facing, x, y, z or 0)
+end
 function World.Step(elapsed) step(elapsed) end
 
 local driver = CreateFrame("Frame")

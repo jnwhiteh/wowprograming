@@ -32,20 +32,23 @@ Last updated: 2026-11-25 (playable world: positions, damage, healing, death, the
   player (UNIT_COMBAT on the player frame, floating combat text through
   COMBAT_TEXT_UPDATE); the rat fights back (runs to melee range, bites,
   leashes at 60 yards); the player can die, release as a ghost, walk to
-  the corpse and recover it. Event callbacks (`RegisterEventCallback`) and
+  the corpse and recover it; nameplates for enemies near the player
+  (`specs/nameplates.lua`, test `nameplates_and_world_clicks`) over
+  their heads, from one camera and projection shared with the 3D view,
+  with health and names; a click on a plate or a unit in the world
+  targets it. Event callbacks (`RegisterEventCallback`) and
   CVAR_UPDATE from `SetCVar` now work. Finding: in this client
   `CombatLogGetCurrentEventInfo` is nil for addons (the function moved
   to the secure-only `C_CombatLogSecure`); the goal's wording names it,
   so the sandbox follows the UI source and records the question for a
   probe session (client-runtime.md, question 24). Next, in order:
-  1. Nameplates: NAME_PLATE_CREATED and NAME_PLATE_UNIT_ADDED for units
-     near the player (`State.SetExtraToken("nameplateN", u)`,
-     `C_NamePlate.GetNamePlates`), a click on a nameplate targets.
-  2. The GUI: render units at their positions and the camera behind the
-     player from position and facing (`world.rs` Camera, `demo_scene`
-     in `crates/gui`); a click in the 3D view targets the unit under the
-     mouse (shared projection).
-  3. Criterion 5: a spec that plays 60 seconds (walking, Tab, casting)
+  1. The GUI: draw the player and the units at their positions with
+     `Camera::behind` from the player's position and facing (today
+     `demo_scene` in `world.rs` is static around the origin; anchor it at
+     the player's first position and move instances each frame). The
+     projection and world clicks already match (`ProjectToScreen`).
+     Then try it on the desktop.
+  2. Criterion 5: a spec that plays 60 seconds (walking, Tab, casting)
      and fails on any Lua error.
 - **Real addons goal: criteria done** (set by the user on 2026-11-25),
   on branch `client-state`: TomTom, Clique and WowLua must run without

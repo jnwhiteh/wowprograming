@@ -480,7 +480,12 @@ local function fireUnit(event, u, ...)
     for _, t in ipairs(tokensOf(u)) do fire(event, t, ...) end
 end
 State.TokensOf = tokensOf
-State.SetExtraToken = function(token, u) extraTokens[token] = u end
+-- Extra tokens (nameplateN) name units like the others: every unit
+-- function answers for them.
+State.SetExtraToken = function(token, u)
+    extraTokens[token] = u
+    units[token] = u
+end
 
 local function hostile(u) return u ~= nil and u.canAttack == true end
 
@@ -978,6 +983,251 @@ local function corpseMapPosition(mapID)
     return pos
 end
 
+-- Nameplates -------------------------------------------------------------------
+
+-- The client gives a nameplate to each unit near the player that the
+-- settings show (nameplateShowEnemies, nameplateShowFriends for players,
+-- nameplateShowFriendlyNPCs), within nameplateMaxDistance yards. Each
+-- plate is a frame the client makes ("NamePlateN", NAME_PLATE_CREATED
+-- once), then a unit token nameplateN (NAME_PLATE_UNIT_ADDED, and
+-- NAME_PLATE_UNIT_REMOVED when it goes). The client moves the frame over
+-- the unit's head every frame; a unit behind the camera keeps its plate,
+-- hidden (C_NamePlateManager.IsNamePlateUnitBehindCamera).
+local HEAD_HEIGHT = 2.6 -- yards; one height for every unit (invented)
+local plates, plateUnit, plateOf = {}, {}, {}
+local plateWidth, plateHeight = 110, 45
+
+local function cvarOn(name, default)
+    local v = GetCVar and GetCVar(name)
+    if v == nil then return default end
+    return v == "1"
+end
+
+local function wantsPlate(u, me)
+    if u == me or u.dead or u.ghost then return false end
+    local d = distance(me, u)
+    if not d or d > (tonumber(GetCVar and GetCVar("nameplateMaxDistance")) or 41) then return false end
+    if hostile(u) then return cvarOn("nameplateShowEnemies", true) end
+    if u.isPlayer then return cvarOn("nameplateShowFriends", false) end
+    return cvarOn("nameplateShowFriendlyNPCs", false)
+end
+
+-- Native NamePlate frame methods: the hit-test region is a list of
+-- anchor points (Blizzard_NamePlateUnitFrame.lua sets it from the name
+-- and the health bar).
+local function addPlateMethods(f)
+    f.hitTestPoints = {}
+    function f:SetHitTestPoints(points) self.hitTestPoints = points or {} end
+    function f:ClearAllHitTestPoints() self.hitTestPoints = {} end
+    function f:GetHitTestPoints() return self.hitTestPoints end
+    function f:SetAllHitTestPoints(relativeTo)
+        self.hitTestPoints = {
+            { point = "TOPLEFT", relativeTo = relativeTo or self, relativePoint = "TOPLEFT" },
+            { point = "BOTTOMRIGHT", relativeTo = relativeTo or self, relativePoint = "BOTTOMRIGHT" },
+        }
+    end
+    function f:CanChangeHitTestPoints() return true end
+    function f:SetStackingBoundsFrame() end
+end
+
+local function addPlate(u)
+    local i = 1
+    while plateUnit[i] do i = i + 1 end
+    local f = plates[i]
+    if not f then
+        f = CreateFrame("Frame", "NamePlate" .. i, WorldFrame)
+        f:SetSize(plateWidth, plateHeight)
+        addPlateMethods(f)
+        plates[i] = f
+        fire("NAME_PLATE_CREATED", f)
+    end
+    local token = "nameplate" .. i
+    plateUnit[i], plateOf[u] = u, i
+    f.namePlateUnitToken = token
+    State.SetExtraToken(token, u)
+    fire("NAME_PLATE_UNIT_ADDED", token)
+end
+
+local function removePlate(i)
+    local u, f = plateUnit[i], plates[i]
+    local token = "nameplate" .. i
+    plateUnit[i], plateOf[u] = nil, nil
+    f:Hide()
+    queueCall(function()
+        fireNow("NAME_PLATE_UNIT_REMOVED", token)
+        -- Unless the index went to another unit meanwhile.
+        if not plateUnit[i] then State.SetExtraToken(token, nil) end
+    end)
+end
+
+local function headOnScreen(u)
+    local x, y = position(u)
+    if not x then return nil end
+    return WowProgrammingWorld.ProjectToScreen(x, y, HEAD_HEIGHT)
+end
+
+local function updatePlates()
+    local me = player()
+    if not WorldFrame or not WowProgrammingWorld then return end
+    local want, list = {}, {}
+    for _, group in ipairs({ hidden, units }) do
+        for _, u in pairs(group) do
+            if not want[u] and wantsPlate(u, me) then
+                want[u] = true
+                list[#list + 1] = u
+            end
+        end
+    end
+    for u, i in pairs(plateOf) do
+        if not want[u] then removePlate(i) end
+    end
+    -- Nearest first, so the numbers do not depend on table order.
+    table.sort(list, function(a, b) return distance(me, a) < distance(me, b) end)
+    for _, u in ipairs(list) do
+        if not plateOf[u] then addPlate(u) end
+    end
+    for i, u in pairs(plateUnit) do
+        local f = plates[i]
+        local sx, sy = headOnScreen(u)
+        if sx then
+            f:ClearAllPoints()
+            f:SetPoint("BOTTOM", WorldFrame, "BOTTOMLEFT", sx, sy)
+            f:Show()
+        else
+            f:Hide()
+        end
+    end
+end
+
+-- A point of a frame in screen units.
+local function framePoint(frame, point)
+    local l, b, w, h = frame:GetRect()
+    if not l then return nil end
+    local s = frame:GetEffectiveScale()
+    local x = point:find("LEFT") and l or point:find("RIGHT") and l + w or l + w / 2
+    local y = point:find("TOP") and b + h or point:find("BOTTOM") and b or b + h / 2
+    return x * s, y * s
+end
+
+local function plateContains(f, x, y)
+    if not f:IsVisible() then return false end
+    local pts = f.hitTestPoints
+    local l, t, r, b
+    if pts and #pts >= 2 then
+        for _, p in ipairs(pts) do
+            local px, py = framePoint(p.relativeTo or f, p.relativePoint or p.point)
+            if not px then return false end
+            px, py = px + (p.offsetX or 0), py + (p.offsetY or 0)
+            if p.point:find("LEFT") then l = px elseif p.point:find("RIGHT") then r = px end
+            if p.point:find("TOP") then t = py elseif p.point:find("BOTTOM") then b = py end
+        end
+    else
+        l, t = framePoint(f, "TOPLEFT")
+        r, b = framePoint(f, "BOTTOMRIGHT")
+    end
+    return l and r and t and b and x >= l and x <= r and y >= b and y <= t
+end
+
+-- A click in the 3D world (the engine calls this when no frame takes
+-- it): a nameplate under the mouse, else the unit whose body (from the
+-- ground to its head) is nearest the mouse within 30 screen units, gets
+-- targeted. A left click on nothing clears the target unless sticky
+-- targeting is on (deselectOnClick "0").
+local PICK_RADIUS = 30
+function WowProgramming_WorldClick(button, x, y)
+    for i, u in pairs(plateUnit) do
+        if plateContains(plates[i], x, y) then
+            setTarget(u)
+            return
+        end
+    end
+    local best, bestD
+    for _, group in ipairs({ hidden, units }) do
+        for _, u in pairs(group) do
+            local ux, uy = position(u)
+            if u ~= player() and ux then
+                for _, z in ipairs({ 0.3, 1.2, 2.1 }) do
+                    local sx, sy = WowProgrammingWorld.ProjectToScreen(ux, uy, z)
+                    if sx then
+                        local d = math.sqrt((sx - x) ^ 2 + (sy - y) ^ 2)
+                        if d <= PICK_RADIUS and (not bestD or d < bestD) then best, bestD = u, d end
+                    end
+                end
+            end
+        end
+    end
+    if best then
+        setTarget(best)
+    elseif button == "LeftButton" and cvarOn("deselectOnClick", true) then
+        setTarget(nil)
+    end
+end
+State.HeadOnScreen = function(unit)
+    local u = hidden[unit] or resolveUnit(unit)
+    if u then return headOnScreen(u) end
+end
+-- Where a unit appears on the screen at a height (yards, default 1.2:
+-- the middle of its body), for specs that click units in the world.
+State.BodyOnScreen = function(unit, height)
+    local u = hidden[unit] or resolveUnit(unit)
+    if not u then return nil end
+    local x, y = position(u)
+    if x then return WowProgrammingWorld.ProjectToScreen(x, y, height or 1.2) end
+end
+
+-- Client functions for death and nameplates (kept out of install(),
+-- which would pass Lua 5.1's limit of 60 upvalues).
+local function installWorld()
+    set("C_NamePlate.GetNamePlateForUnit", function(unit)
+        -- A nameplate token keeps its frame until NAME_PLATE_UNIT_REMOVED
+        -- has been handled.
+        local n = type(unit) == "string" and tonumber(unit:lower():match("^nameplate(%d+)$"))
+        if n then return extraTokens["nameplate" .. n] and plates[n] or nil end
+        local u = resolveUnit(unit)
+        local i = u and plateOf[u]
+        return i and plates[i] or nil
+    end)
+    set("C_NamePlate.GetNamePlates", function()
+        local out = {}
+        for i in pairs(plateUnit) do out[#out + 1] = plates[i] end
+        return out
+    end)
+    set("C_NamePlate.SetNamePlateSize", function(w, h)
+        plateWidth, plateHeight = w, h
+        for _, f in pairs(plates) do f:SetSize(w, h) end
+    end)
+    set("C_NamePlateManager.IsNamePlateUnitBehindCamera", function(unit)
+        local u = resolveUnit(unit)
+        return u ~= nil and headOnScreen(u) == nil
+    end)
+    set("C_NamePlateManager.SetNamePlateSimplified", function() end)
+    -- Whether the client shows a unit's name (over its head and on its
+    -- nameplate), from the unit name settings (inferred mapping).
+    set("UnitShouldDisplayName", function(unit)
+        local u = resolveUnit(unit)
+        if not u then return false end
+        if u == player() then return cvarOn("UnitNameOwn", false) end
+        if u.isPlayer then
+            if hostile(u) then return cvarOn("UnitNameEnemyPlayerName", true) end
+            return cvarOn("UnitNameFriendlyPlayerName", true)
+        end
+        if hostile(u) then return cvarOn("UnitNameHostleNPC", true) end
+        return cvarOn("UnitNameNPC", false) or cvarOn("UnitNameFriendlySpecialNPCName", true)
+    end)
+    set("RepopMe", repop)
+    set("RetrieveCorpse", retrieveCorpse)
+    set("GetReleaseTimeRemaining", function()
+        if not player().dead or not deathTime then return 0 end
+        return math.max(0, RELEASE_TIME - (now() - deathTime))
+    end)
+    set("GetCorpseRecoveryDelay", function() return 0 end)
+    set("CannotBeResurrected", function() return false end)
+    set("C_DeathInfo.GetCorpseMapPosition", function(mapID)
+        local me = player()
+        if me.dead or me.ghost then return corpseMapPosition(mapID) end
+    end)
+end
+
 local gcdWasActive = false
 -- Action slots with range checks on (C_ActionBar.EnableActionRangeCheck):
 -- slot -> { count, inRange, checks }.
@@ -995,6 +1245,7 @@ local function tick(elapsed)
     if cast and t >= cast.finish then finishCast(true) end
     fightBack(t, elapsed)
     watchCorpse()
+    updatePlates()
     -- Auras that heal or hurt every few seconds.
     for u, list in pairs(auras) do
         for _, a in ipairs(list) do
@@ -1706,6 +1957,9 @@ local function install()
             local u = units[token]
             if u and u.guid == guid then return token end
         end
+        for token, u in pairs(extraTokens) do
+            if u.guid == guid then return token end
+        end
     end)
 
     -- Combat.
@@ -1716,18 +1970,7 @@ local function install()
     end)
 
     installCombatLog()
-    set("RepopMe", repop)
-    set("RetrieveCorpse", retrieveCorpse)
-    set("GetReleaseTimeRemaining", function()
-        if not player().dead or not deathTime then return 0 end
-        return math.max(0, RELEASE_TIME - (now() - deathTime))
-    end)
-    set("GetCorpseRecoveryDelay", function() return 0 end)
-    set("CannotBeResurrected", function() return false end)
-    set("C_DeathInfo.GetCorpseMapPosition", function(mapID)
-        local me = player()
-        if me.dead or me.ghost then return corpseMapPosition(mapID) end
-    end)
+    installWorld()
     set("C_CombatText.GetCurrentEventInfo", function()
         return combatTextInfo[1], combatTextInfo[2], combatTextInfo[3]
     end)

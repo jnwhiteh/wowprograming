@@ -297,9 +297,22 @@ pub fn install(lua: &Lua) -> Result<()> {
         }
         Ok(())
     })?;
+    // Project a world point to the screen, seen from the camera behind
+    // the player: UI units from the bottom left, or nothing behind the
+    // camera (nameplates and clicks in the world use it).
+    let project = lua.create_function(
+        |lua, (px, py, pz, facing, x, y, z): (f32, f32, f32, f32, f32, f32, f32)| {
+            let (w, h) = state(lua).screen;
+            let cam = crate::world::Camera::behind([px, py, pz], facing, 0.0);
+            Ok(match cam.project([x, y, z], w as f32, h as f32) {
+                Some((sx, sy)) => (Some(sx as f64), Some(h - sy as f64)),
+                None => (None, None),
+            })
+        },
+    )?;
     lua.load(include_str!("lua/maps.lua"))
         .set_name("=[C]")
-        .call::<()>((map_data, fire_map))?;
+        .call::<()>((map_data, fire_map, project))?;
     crate::maps::install_art(lua, &namespace(lua, "C_Map")?)?;
     // Undocumented client functions the UI calls at load time.
     g.set(

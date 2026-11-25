@@ -17,6 +17,7 @@ as `Sandbox.Name`):
 |---|---|
 | `Wait(seconds)` | lets game time pass |
 | `Click(frame [, button])` | moves the mouse to a frame and clicks it |
+| `ClickAt(x, y [, button])` | clicks at a screen position (UI units from the bottom left), such as a unit in the 3D world |
 | `Hover(frame)` | moves the mouse to a frame |
 | `Press(key)` | presses and releases a key (`"W"`, `"SHIFT-P"`, `"LSHIFT"`) |
 | `Hold(key, seconds)` | holds a key while game time passes |

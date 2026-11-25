@@ -641,3 +641,25 @@ fn combat_in_the_world() {
     let errs = errors(&mut e);
     assert!(errs.is_empty(), "Lua errors:\n{}", errs.join("\n"));
 }
+
+/// Nameplates and clicks in the world (specs/nameplates.lua).
+#[test]
+fn nameplates_and_world_clicks() {
+    let wtf = tempfile::tempdir().unwrap();
+    let Some(mut e) = full_ui(wtf.path(), "dummy") else {
+        return;
+    };
+    // The fixture window stands in the middle of the screen, over the
+    // dummy; clicks in the world need it out of the way.
+    e.exec("MovableWindowFrame:Hide()");
+    let spec = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../specs/nameplates.lua");
+    let outcome = e.run_spec(&spec);
+    assert_eq!(
+        outcome.error,
+        None,
+        "nameplates spec:\n{}",
+        outcome.printed.join("\n")
+    );
+    let errs = errors(&mut e);
+    assert!(errs.is_empty(), "Lua errors:\n{}", errs.join("\n"));
+}

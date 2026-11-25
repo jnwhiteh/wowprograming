@@ -6,6 +6,8 @@
 -- Helpers (also as Sandbox.Name):
 --   Wait(seconds)            let game time pass
 --   Click(frame [, button])  move the mouse to a frame and click it
+--   ClickAt(x, y [, button]) click at a screen position (UI units from
+--                            the bottom left), such as a unit in the world
 --   Hover(frame)             move the mouse to a frame
 --   Press(key)               press and release a key ("W", "SHIFT-P")
 --   Hold(key, seconds)       hold a key while game time passes
@@ -45,6 +47,12 @@ end
 
 function T.Click(f, button)
     T.Hover(f)
+    natives.down(button or "LeftButton")
+    natives.up(button or "LeftButton")
+end
+
+function T.ClickAt(x, y, button)
+    natives.move(x, y)
     natives.down(button or "LeftButton")
     natives.up(button or "LeftButton")
 end

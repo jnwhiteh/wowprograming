@@ -221,6 +221,15 @@ pub fn mouse_down(lua: &Lua, button: &str) {
         if let Some(f) = focus {
             fire_script(lua, f, "OnEditFocusLost", ());
         }
+        // The click goes to the 3D world: the client targets the unit
+        // under the mouse or its nameplate (the client state model,
+        // lua/clientstate.lua, answers).
+        if let Ok(f) = lua
+            .globals()
+            .get::<mlua::Function>("WowProgramming_WorldClick")
+        {
+            crate::natives::safe_call(lua, &f, (button, x, y));
+        }
         return;
     };
     let is_edit = {

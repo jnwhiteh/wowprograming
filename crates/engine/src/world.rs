@@ -227,6 +227,43 @@ pub struct Camera {
     pub fov: f32,
 }
 
+impl Camera {
+    /// The game's default camera behind the player: about 6.5 yards back
+    /// and 3.4 up, looking past the player along its facing (radians,
+    /// 0 is north). `extra` moves it out for tall models.
+    pub fn behind(pos: [f32; 3], facing: f32, extra: f32) -> Camera {
+        let (dx, dy) = (facing.cos(), facing.sin());
+        let back = 6.5 + extra;
+        Camera {
+            pos: [
+                pos[0] - dx * back,
+                pos[1] - dy * back,
+                pos[2] + 3.4 + extra * 0.3,
+            ],
+            target: [
+                pos[0] + dx * 3.0,
+                pos[1] + dy * 3.0,
+                pos[2] + 1.2 + extra * 0.2,
+            ],
+            fov: 0.95,
+        }
+    }
+
+    /// Where a world point appears on a `width` x `height` screen (x
+    /// right, y down from the top left), or None behind the camera. The
+    /// renderer uses the same projection, so nameplates and clicks line
+    /// up with the drawn world.
+    pub fn project(&self, p: [f32; 3], width: f32, height: f32) -> Option<(f32, f32)> {
+        let proj = Projector::new(self, width, height);
+        let v = proj.view(p);
+        if v[2] < NEAR {
+            return None;
+        }
+        let s = proj.screen(v);
+        Some((s[0], s[1]))
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct World {
     pub instances: Vec<Instance>,
@@ -320,6 +357,20 @@ struct Projector {
 const NEAR: f32 = 0.1;
 
 impl Projector {
+    fn new(cam: &Camera, w: f32, h: f32) -> Projector {
+        let forward = normalize(sub(cam.target, cam.pos));
+        let right = normalize(cross(forward, [0.0, 0.0, 1.0]));
+        let up = cross(right, forward);
+        Projector {
+            right,
+            up,
+            forward,
+            eye: cam.pos,
+            focal: (h / 2.0) / (cam.fov / 2.0).tan(),
+            cx: w / 2.0,
+            cy: h / 2.0,
+        }
+    }
     fn view(&self, p: [f32; 3]) -> [f32; 3] {
         let d = sub(p, self.eye);
         [dot(d, self.right), dot(d, self.up), dot(d, self.forward)]
@@ -395,19 +446,7 @@ impl World {
     /// Draw the world at `width` x `height` pixels.
     pub fn render(&self, gd: &GameData, width: usize, height: usize) -> Rgba {
         let (w, h) = (width as f32, height as f32);
-        let cam = self.camera;
-        let forward = normalize(sub(cam.target, cam.pos));
-        let right = normalize(cross(forward, [0.0, 0.0, 1.0]));
-        let up = cross(right, forward);
-        let proj = Projector {
-            right,
-            up,
-            forward,
-            eye: cam.pos,
-            focal: (h / 2.0) / (cam.fov / 2.0).tan(),
-            cx: w / 2.0,
-            cy: h / 2.0,
-        };
+        let proj = Projector::new(&self.camera, w, h);
 
         // Paints: index 0 is the ground.
         let mut paint_keys: Vec<Paint> = Vec::new();
@@ -886,11 +925,7 @@ pub fn demo_scene(gd: &GameData, race: u32, sex: u32, view: View) -> World {
         });
         world.camera = match view {
             // About the game's default camera distance, in yards.
-            View::Behind => Camera {
-                pos: [-6.5 - extra, 0.0, 3.4 + extra * 0.3],
-                target: [3.0, 0.0, 1.2 + extra * 0.2],
-                fov: 0.95,
-            },
+            View::Behind => Camera::behind([0.0, 0.0, 0.0], 0.0, extra),
             View::CharacterSelect => Camera {
                 pos: [4.2 + extra * 1.3, -0.8, 1.5 + extra * 0.3],
                 target: [0.0, 0.0, 1.0 + extra * 0.3],
