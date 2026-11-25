@@ -530,6 +530,42 @@ impl FrameData {
     }
 }
 
+/// Modifier keys held down, left and right apart.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Modifiers {
+    pub lshift: bool,
+    pub rshift: bool,
+    pub lctrl: bool,
+    pub rctrl: bool,
+    pub lalt: bool,
+    pub ralt: bool,
+}
+
+impl Modifiers {
+    pub fn shift(&self) -> bool {
+        self.lshift || self.rshift
+    }
+    pub fn ctrl(&self) -> bool {
+        self.lctrl || self.rctrl
+    }
+    pub fn alt(&self) -> bool {
+        self.lalt || self.ralt
+    }
+
+    /// The flag for a modifier key name (`LSHIFT`, `RCTRL`, ...).
+    pub fn key(&mut self, name: &str) -> Option<&mut bool> {
+        Some(match name.to_ascii_uppercase().as_str() {
+            "LSHIFT" | "SHIFT" => &mut self.lshift,
+            "RSHIFT" => &mut self.rshift,
+            "LCTRL" | "CTRL" => &mut self.lctrl,
+            "RCTRL" => &mut self.rctrl,
+            "LALT" | "ALT" => &mut self.lalt,
+            "RALT" => &mut self.ralt,
+            _ => return None,
+        })
+    }
+}
+
 /// A mouse button held down over a frame. The frame gets the release
 /// (mouse capture).
 #[derive(Clone, Debug)]
@@ -671,6 +707,8 @@ pub struct State {
     pub gamedata: Option<Rc<crate::gamedata::GameData>>,
     pub fonts: crate::text::FontCache,
     pub focus: Option<FrameId>,
+    /// Modifier keys held: left and right Shift, Ctrl, Alt.
+    pub modifiers: Modifiers,
     pub mouse_focus: Option<FrameId>,
     /// Mouse position in screen units.
     pub mouse: (f64, f64),

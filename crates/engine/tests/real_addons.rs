@@ -215,6 +215,26 @@ fn tomtom_clique_and_wowlua_work() {
         )
         .unwrap();
     assert_eq!(hot.as_deref(), Some("Renewing Bloom"));
+    // Shift-click casts on the second party member; a plain click still
+    // targets her (Clique's default left-click binding).
+    e.exec(
+        "Clique:AddBinding({ key = 'SHIFT-BUTTON1', type = 'spell', spell = 'Renewing Bloom', sets = { default = true } })",
+    );
+    run(&mut e, 1.6);
+    assert!(e.key_down("LSHIFT"));
+    click(&mut e, "PartyFrame.MemberFrame2", "LeftButton");
+    e.key_up("LSHIFT");
+    run(&mut e, 0.2);
+    let hot: Option<String> = e
+        .eval(
+            "local a = C_UnitAuras.GetAuraDataByIndex('party2', 1, 'HELPFUL') return a and a.name",
+        )
+        .unwrap();
+    assert_eq!(hot.as_deref(), Some("Renewing Bloom"));
+    click(&mut e, "PartyFrame.MemberFrame2", "LeftButton");
+    run(&mut e, 0.1);
+    let target: String = e.eval("return UnitName('target')").unwrap();
+    assert_eq!(target, "Seralyn");
 
     // 6. WowLua: open the window, type code, run it, see the output.
     e.run_command("/wowlua");

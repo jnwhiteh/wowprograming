@@ -413,7 +413,11 @@ impl App {
 
     fn handle_input(&mut self, ctx: &egui::Context, area: Rect, k: f32, input_has_focus: bool) {
         let screen_h = self.engine.screen_size().1;
-        let (pointer, events) = ctx.input(|i| (i.pointer.hover_pos(), i.events.clone()));
+        let (pointer, events, mods) =
+            ctx.input(|i| (i.pointer.hover_pos(), i.events.clone(), i.modifiers));
+        if !input_has_focus {
+            self.engine.set_modifiers(mods.shift, mods.ctrl, mods.alt);
+        }
         if let Some(p) = pointer
             && area.contains(p)
         {
@@ -465,11 +469,18 @@ impl App {
                             self.engine.key_down(name);
                             continue;
                         }
-                        let full = if modifiers.shift {
-                            format!("SHIFT-{name}")
-                        } else {
-                            name.to_string()
-                        };
+                        // Modifiers in the client's order: ALT-CTRL-SHIFT-key.
+                        let mut full = String::new();
+                        if modifiers.alt {
+                            full.push_str("ALT-");
+                        }
+                        if modifiers.ctrl {
+                            full.push_str("CTRL-");
+                        }
+                        if modifiers.shift {
+                            full.push_str("SHIFT-");
+                        }
+                        full.push_str(name);
                         if !self.engine.key_down(&full) && full != name {
                             self.engine.key_down(name);
                         }

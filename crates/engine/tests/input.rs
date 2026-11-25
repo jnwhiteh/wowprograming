@@ -854,3 +854,24 @@ fn clicks_pass_through_motion_only_frames() {
     );
     assert!(errors(&e).is_empty());
 }
+
+/// Modifier keys pressed alone change IsShiftKeyDown and friends and fire
+/// MODIFIER_STATE_CHANGED.
+#[test]
+fn modifier_keys_are_tracked() {
+    let wtf = tempfile::tempdir().unwrap();
+    let mut e = started(wtf.path());
+    e.exec(
+        "Log = {} local f = CreateFrame('Frame') f:RegisterEvent('MODIFIER_STATE_CHANGED')
+         f:SetScript('OnEvent', function(_, _, key, down) table.insert(Log, key .. down) end)",
+    );
+    assert!(e.key_down("RCTRL"));
+    let held: (bool, bool, bool) = e
+        .eval("return IsControlKeyDown(), IsRightControlKeyDown(), IsShiftKeyDown()")
+        .unwrap();
+    assert_eq!(held, (true, true, false));
+    e.key_up("RCTRL");
+    e.set_modifiers(true, false, false);
+    assert!(e.eval::<bool>("return IsShiftKeyDown()").unwrap());
+    assert_eq!(log(&e), "RCTRL1 RCTRL0 LSHIFT1");
+}

@@ -611,6 +611,14 @@ down and up as the button's click registrations ask. Binding changes
 fire UPDATE_BINDINGS on the next frame. Bindings are not saved and not
 read from the character's `bindings-cache.wtf` yet.
 
+Modifier keys: the sandbox keeps left and right Shift, Ctrl and Alt.
+Pressing one alone fires MODIFIER_STATE_CHANGED with its name and 1 or 0
+(`LSHIFT`, `RCTRL`); bound key names put modifiers in the order
+`ALT-CTRL-SHIFT-` (both from the API documentation and Blizzard code).
+Modifier keys pressed alone do not reach OnKeyDown yet. `MakeModifiers`
+returns 0: the bit values are unknown (click-bindings-cache.txt has 3
+and 48 for modified spell bindings, a probe question).
+
 ### Restricted environment
 
 Blizzard_RestrictedAddOnEnvironment runs secure handler snippets in Lua.

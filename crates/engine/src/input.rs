@@ -1,7 +1,7 @@
 //! Mouse input: hover (`OnEnter`/`OnLeave`), presses and clicks.
 //! Positions are in screen units with y pointing up.
 
-use mlua::Lua;
+use mlua::{IntoLuaMulti, Lua};
 use wowprogramming_lua::mlua;
 
 use crate::frames::{fire_script, is_visible};
@@ -352,6 +352,9 @@ pub fn base_key(key: &str) -> &str {
 /// keyboard-enabled frames get OnKeyDown from the top down until one
 /// does not propagate it; otherwise the key binding runs.
 pub fn key_down(lua: &Lua, key: &str) -> bool {
+    if set_modifier(lua, key, true) {
+        return true;
+    }
     let base = base_key(key).to_string();
     let focus = state(lua).focus;
     if let Some(id) = focus {
@@ -384,7 +387,40 @@ pub fn key_down(lua: &Lua, key: &str) -> bool {
 }
 
 /// A key release: OnKeyUp for the frame that took the press.
+/// Press or release a modifier key (`LSHIFT`, `RCTRL`, ...). Fires
+/// MODIFIER_STATE_CHANGED on a change. Returns false for other keys.
+pub fn set_modifier(lua: &Lua, key: &str, down: bool) -> bool {
+    let changed = {
+        let mut st = state(lua);
+        let Some(flag) = st.modifiers.key(key) else {
+            return false;
+        };
+        let changed = *flag != down;
+        *flag = down;
+        changed
+    };
+    if changed {
+        let name = match key.to_ascii_uppercase().as_str() {
+            "SHIFT" => "LSHIFT".to_string(),
+            "CTRL" => "LCTRL".to_string(),
+            "ALT" => "LALT".to_string(),
+            other => other.to_string(),
+        };
+        crate::frames::dispatch_event(
+            lua,
+            "MODIFIER_STATE_CHANGED",
+            (name, if down { 1 } else { 0 })
+                .into_lua_multi(lua)
+                .unwrap_or_default(),
+        );
+    }
+    true
+}
+
 pub fn key_up(lua: &Lua, key: &str) {
+    if set_modifier(lua, key, false) {
+        return;
+    }
     let target = state(lua).key_targets.remove(base_key(key));
     if let Some(id) = target {
         fire_script(lua, id, "OnKeyUp", base_key(key).to_string());

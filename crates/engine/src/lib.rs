@@ -741,6 +741,15 @@ impl Engine {
         input::key_down(self.runtime.lua(), key)
     }
 
+    /// The modifier keys held in the window (left keys stand for either
+    /// side). Fires MODIFIER_STATE_CHANGED for each change.
+    pub fn set_modifiers(&mut self, shift: bool, ctrl: bool, alt: bool) {
+        let lua = self.runtime.lua();
+        input::set_modifier(lua, "LSHIFT", shift);
+        input::set_modifier(lua, "LCTRL", ctrl);
+        input::set_modifier(lua, "LALT", alt);
+    }
+
     /// A key was released. The frame that took the press gets OnKeyUp.
     pub fn key_up(&mut self, key: &str) {
         input::key_up(self.runtime.lua(), key);
@@ -1010,6 +1019,7 @@ fn build_runtime(
         gamedata,
         fonts: Default::default(),
         focus: None,
+        modifiers: Default::default(),
         mouse_focus: None,
         mouse: (-1.0, -1.0),
         raise_counter: 0,

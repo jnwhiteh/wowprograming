@@ -137,17 +137,27 @@ pub fn install(lua: &Lua) -> Result<()> {
     )?;
 
     // Input state
+    // Modifier keys held (input.rs keeps them).
+    type Pick = fn(&crate::state::Modifiers) -> bool;
+    let modifier_functions: [(&str, Pick); 10] = [
+        ("IsShiftKeyDown", |m| m.shift()),
+        ("IsControlKeyDown", |m| m.ctrl()),
+        ("IsAltKeyDown", |m| m.alt()),
+        ("IsModifierKeyDown", |m| m.shift() || m.ctrl() || m.alt()),
+        ("IsLeftShiftKeyDown", |m| m.lshift),
+        ("IsRightShiftKeyDown", |m| m.rshift),
+        ("IsLeftControlKeyDown", |m| m.lctrl),
+        ("IsRightControlKeyDown", |m| m.rctrl),
+        ("IsLeftAltKeyDown", |m| m.lalt),
+        ("IsRightAltKeyDown", |m| m.ralt),
+    ];
+    for (name, pick) in modifier_functions {
+        g.set(
+            name,
+            lua.create_function(move |lua, _: MultiValue| Ok(pick(&state(lua).modifiers)))?,
+        )?;
+    }
     for name in [
-        "IsShiftKeyDown",
-        "IsControlKeyDown",
-        "IsAltKeyDown",
-        "IsModifierKeyDown",
-        "IsLeftShiftKeyDown",
-        "IsRightShiftKeyDown",
-        "IsLeftControlKeyDown",
-        "IsRightControlKeyDown",
-        "IsLeftAltKeyDown",
-        "IsRightAltKeyDown",
         "IsMetaKeyDown",
         "IsModifiedClick",
         "IsMouseButtonDown",

@@ -128,6 +128,10 @@ Last updated: 2026-11-25 (real addons: TomTom, Clique and WowLua work; maps, mov
   a click.
 - Real addons: TomTom, Clique and WowLua (from `addons_dir`, with
   `--addon`) load and work in the dummy scenario.
+- Modifier keys: `LSHIFT`, `RSHIFT`, `LCTRL`, `RCTRL`, `LALT`, `RALT`
+  pressed alone (or `Engine::set_modifiers`, which the GUI calls every
+  frame) drive `IsShiftKeyDown` and friends and fire
+  MODIFIER_STATE_CHANGED. The GUI sends keys as `ALT-CTRL-SHIFT-X`.
 - Reload on change: `--watch` (and `EngineConfig::watch`) reloads the
   UI when a file of a loaded third-party addon changes (`watch.rs`, a
   background thread scanning every 0.5 s).
@@ -381,9 +385,7 @@ Last updated: 2026-11-25 (real addons: TomTom, Clique and WowLua work; maps, mov
 - Client state: no Clique, no macro frame tried (`/macro`, dragging a
   macro from the macro window), macros and bindings not read from the
   character's WTF files, no icon at the mouse pointer while a spell is
-  held, no spell data from DB2 (only invented spells). Modifier keys
-  always read as up (`IsShiftKeyDown` is a stub), so modified clicks and
-  click bindings with modifiers cannot be tried.
+  held, no spell data from DB2 (only invented spells).
 
 ## Next steps
 
@@ -405,7 +407,8 @@ simulator more complete, in order:
    over time on the target). Not tried: the binding editor in the
    options window (click a spell, press a key or mouse button), modifier
    clicks (modifier keys always read as up), hover casting with key
-   bindings (Clique's override bindings on mouseover).
+   bindings (Clique's override bindings on mouseover). Modifier clicks
+   work (Shift-click casts on a party member in the test).
 3. TomTom's own in-game test addon `TomTomTest` (load it with
    `--addon TomTomTest`): run its suites and fix what fails.
 4. WowLua: the other toolbar buttons (pages, undo, lock), its saved
