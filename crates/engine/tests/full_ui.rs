@@ -82,10 +82,14 @@ fn center(e: &Engine, expr: &str) -> (f64, f64) {
 }
 
 fn click(e: &mut Engine, expr: &str) {
+    click_with(e, expr, "LeftButton");
+}
+
+fn click_with(e: &mut Engine, expr: &str, button: &str) {
     let (x, y) = center(e, expr);
     e.mouse_move(x, y);
-    e.mouse_down("LeftButton");
-    e.mouse_up("LeftButton");
+    e.mouse_down(button);
+    e.mouse_up(button);
 }
 
 #[test]
@@ -349,6 +353,16 @@ fn training_dummy_session() {
         return;
     };
 
+    // 4. The scenario's curse on the player shows in the debuff frame
+    // with the magic border.
+    let (shown, border): (bool, String) = e
+        .eval("local f = DebuffFrame.auraFrames[1] return f:IsShown(), f.DebuffBorder:GetAtlas()")
+        .unwrap();
+    assert_eq!(
+        (shown, border.as_str()),
+        (true, "ui-debuff-border-magic-icon")
+    );
+
     // 1. Drag Blinkstep from the spellbook to action button 5.
     press(&mut e, "P");
     e.tick(0.2);
@@ -437,6 +451,13 @@ fn training_dummy_session() {
         .eval("local f = BuffFrame.auraFrames[1] return f.Count:GetText(), f:IsShown()")
         .unwrap();
     assert_eq!((count.as_str(), shown), ("2", true));
+    // A right click on the buff cancels it.
+    click_with(&mut e, "BuffFrame.auraFrames[1]", "RightButton");
+    e.tick(0.1);
+    let left: i64 = e
+        .eval("return #C_UnitAuras.GetUnitAuras('player', 'HELPFUL')")
+        .unwrap();
+    assert_eq!(left, 0, "the buff is still there after a right click");
 
     // Starfall Torrent is channeled; the cast bar drains.
     e.tick(1.6);
@@ -461,6 +482,16 @@ fn training_dummy_session() {
         .eval("return UnitExists('target'), TargetFrame:IsShown()")
         .unwrap();
     assert_eq!((target, frame), (false, false));
+
+    // 2. A click on the player frame targets the player (through the
+    // health bar, which lets clicks through).
+    click(&mut e, "PlayerFrame");
+    e.tick(0.1);
+    let (me, frame): (bool, bool) = e
+        .eval("return UnitIsUnit('target', 'player'), TargetFrame:IsShown()")
+        .unwrap();
+    assert_eq!((me, frame), (true, true));
+    press(&mut e, "ESCAPE");
 
     // The debuff on the dummy ends after 8 s.
     e.tick(5.0);

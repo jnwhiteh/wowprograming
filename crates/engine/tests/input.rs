@@ -825,3 +825,32 @@ fn small_region_and_tooltip_rules() {
         .unwrap();
     assert!(ok);
 }
+
+/// A child with only mouse motion enabled (`SetMouseClickEnabled(false)`,
+/// as on the player frame's health bar) gets OnEnter, but a press goes
+/// to the click-enabled frame below it.
+#[test]
+fn clicks_pass_through_motion_only_frames() {
+    let wtf = tempfile::tempdir().unwrap();
+    let mut e = started(wtf.path());
+    e.exec(TWO_BUTTONS);
+    e.exec(
+        r#"
+        local bar = CreateFrame("StatusBar", "Bar", A)
+        bar:SetAllPoints()
+        bar:SetScript("OnEnter", function() table.insert(Log, "Bar:OnEnter") end)
+        bar:SetScript("OnMouseDown", function() table.insert(Log, "Bar:OnMouseDown") end)
+        bar:SetMouseClickEnabled(false)
+        "#,
+    );
+    e.mouse_move(150.0, 150.0);
+    assert_eq!(log(&e), "Bar:OnEnter");
+    e.mouse_down("LeftButton");
+    e.mouse_up("LeftButton");
+    assert_eq!(
+        log(&e),
+        "A:OnMouseDown(LeftButton) A:OnMouseUp(LeftButton,true) A:PreClick(LeftButton,false) \
+         A:OnClick(LeftButton,false) A:PostClick(LeftButton,false)"
+    );
+    assert!(errors(&e).is_empty());
+}

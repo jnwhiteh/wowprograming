@@ -12,11 +12,27 @@ use crate::widgets::{click, update_button_font};
 
 /// The topmost visible frame under the point that takes mouse input.
 pub fn hit_test(lua: &Lua, x: f64, y: f64) -> Option<FrameId> {
+    hit_test_where(lua, x, y, false)
+}
+
+/// The topmost visible frame under the point that takes mouse clicks.
+/// Frames with only motion enabled (`SetMouseClickEnabled(false)`, as on
+/// the player frame's health bar) let presses through to the frame below.
+pub fn click_test(lua: &Lua, x: f64, y: f64) -> Option<FrameId> {
+    hit_test_where(lua, x, y, true)
+}
+
+fn hit_test_where(lua: &Lua, x: f64, y: f64, clicks_only: bool) -> Option<FrameId> {
     let mut st = state(lua);
     let order = frame_order(&st);
     for &id in order.iter().rev() {
         let f = &st.frames[id];
-        if !(f.mouse_enabled || f.mouse_motion) || !is_visible(&st.frames, id) {
+        let takes = if clicks_only {
+            f.mouse_enabled
+        } else {
+            f.mouse_enabled || f.mouse_motion
+        };
+        if !takes || !is_visible(&st.frames, id) {
             continue;
         }
         let insets = f.hit_insets;
@@ -190,7 +206,8 @@ pub fn mouse_down(lua: &Lua, button: &str) {
         // capture at a time here.
         return;
     }
-    let Some(id) = state(lua).mouse_focus else {
+    let (x, y) = state(lua).mouse;
+    let Some(id) = click_test(lua, x, y) else {
         // Clicking empty space clears keyboard focus.
         let focus = state(lua).focus.take();
         if let Some(f) = focus {
@@ -257,7 +274,7 @@ pub fn mouse_up(lua: &Lua, button: &str) {
         return;
     }
     let (x, y) = state(lua).mouse;
-    let inside = hit_test(lua, x, y) == Some(id);
+    let inside = click_test(lua, x, y) == Some(id);
     fire_script(lua, id, "OnMouseUp", (button, inside));
     if inside {
         crate::hyperlink::click(lua, id, button);

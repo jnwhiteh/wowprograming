@@ -362,15 +362,15 @@ Done when these work in the full UI, each with a headless test:
 7. Clique works: a click on a party frame casts the bound spell on that
    party member.
 
-Progress (2026-11-24): the model is `crates/engine/src/lua/clientstate.lua`,
+Progress (2026-11-25): the model is `crates/engine/src/lua/clientstate.lua`,
 tested with invented data in `scenarios/dummy` (test
-`training_dummy_session`). Criteria 1, 2 and 3 work, except
-`/stopcasting` (Escape works) and a click on a unit frame to target.
-Criterion 4 works for a stacking buff, a debuff on the dummy and its
-end; right-click removal and a scenario debuff on the player are not
-tested yet. Criteria 5 to 7 are not started. The data each step still
-needs is listed in [client-runtime.md](client-runtime.md) ("Client
-state: invented data and where real data is needed").
+`training_dummy_session`). Criteria 1 to 4 work, except `/stopcasting`
+(Escape works), which needs the chat frame's slash commands (criterion
+6). A click on the player frame targets the player; the dummy has no
+frame of its own (no nameplates), so Tab targets it. Criteria 5 to 7
+are not started. The data each step still needs is listed in
+[client-runtime.md](client-runtime.md) ("Client state: invented data
+and where real data is needed").
 
 Unknown behavior is handled as in the frame runtime goal: a best guess
 marked "inferred", and a question for the probe list. Some questions

@@ -6,22 +6,28 @@ work (see "Keeping this file current" below).
 
 For goals, design and the full roadmap, see [scope.md](scope.md).
 
-Last updated: 2026-11-24 (client state model: spellbook, bars, target, casting, auras).
+Last updated: 2026-11-25 (client state: clicks through motion-only frames, click bindings, buff removal, player debuff).
 
 ## Current state
 
-- **Client state goal: in progress**, branch `client-state` (from
-  `main`). The console error fixes were merged into `main` on 2026-11-24
-  (fast-forward, not pushed) as a finished checkpoint, at the user's
-  request. The client state model (`lua/clientstate.lua`) works with an
-  invented character in `scenarios/dummy`: drag a spell from the
-  spellbook to a bar (kept after `/reload`), Tab targets the training
-  dummy, instant, cast and channeled spells fill the cast bar, the global
-  and spell cooldowns show, mana goes down and comes back, buffs and
-  debuffs show with timers and stacks, Escape stops a cast, then clears
-  the target, then opens the game menu. Criteria 1 to 3 of the goal work;
-  4 partly (see scope.md). The user asked to invent fantasy data where
-  needed and to list where real data or templates are needed: see
+- **Client state goal: in progress**, branch `client-state`. The
+  first part (spellbook, bars, target, casting, auras) and the console
+  error fixes were merged into `main` on 2026-11-24 (fast-forward, not
+  pushed) and the branch was deleted; it was created again from `main`
+  on 2026-11-25 for the next three milestones (chosen by the agent from
+  the done criteria in scope.md, at the user's request to "identify the
+  next 3 milestones"):
+  1. Finish criteria 2 to 4: **done** (right-click cancels a buff, the
+     scenario's curse on the player shows with the magic border, a click
+     on the player frame targets the player). `/stopcasting` moved to
+     milestone 3.
+  2. Criterion 5, tooltips from the model for spells, action buttons,
+     auras and units: next.
+  3. Criterion 6, slash commands (`/cast`, `/target`, `/stopcasting`,
+     `/reload`, `/logout`) and a macro on an action bar.
+  The model (`lua/clientstate.lua`) works with an invented character in
+  `scenarios/dummy`. The user asked to invent fantasy data where needed
+  and to list where real data or templates are needed: see
   [client-runtime.md](client-runtime.md), "Client state: invented data
   and where real data is needed".
 - **Console errors fixed (2026-11-24, branch `client-state`):** the user
@@ -117,6 +123,13 @@ Last updated: 2026-11-24 (client state model: spellbook, bars, target, casting, 
 - `scenarios/dummy`: Ilyndra, an invented night elf mage, with two
   spellbook sections of invented spells and the Straw Sentinel training
   dummy. Run it with `gui --scenario scenarios/dummy`.
+- Presses go to the top frame with clicks enabled; frames with only
+  mouse motion let clicks through (the player frame's health bar).
+  `C_ClickBindings` has the client's default profile (left click
+  targets, right click opens the menu), so secure unit frames target on
+  a click.
+- Right-click on a buff cancels it; `State.ApplyAura` puts a debuff from
+  another source on the player (the dummy scenario's magic curse).
 - Escape runs Blizzard's `ToggleGameMenu`: stop a cast, close windows,
   clear the target, then the game menu.
 - `C_CreatureInfo.GetClassInfo` and `GetRaceInfo` (English names).
@@ -325,8 +338,9 @@ Last updated: 2026-11-24 (client state model: spellbook, bars, target, casting, 
 - Taint and secret values.
 - Client state: no tooltips from data, no macros or slash commands such
   as `/cast`, no Clique, no icon at the mouse pointer while a spell is
-  held, no click on a unit frame to target (secure unit buttons not
-  tried), no spell data from DB2 (only invented spells).
+  held, no spell data from DB2 (only invented spells). Modifier keys
+  always read as up (`IsShiftKeyDown` is a stub), so modified clicks and
+  click bindings with modifiers cannot be tried.
 
 ## Next steps
 
@@ -334,19 +348,19 @@ Console errors: ask the user to run the GUI again and report any error
 that is left (interactions such as opening panels can still raise some;
 the headless runs only cover loading and idle play).
 
-Client state goal: continue the done criteria in scope.md with
-`scenarios/dummy` and extend `training_dummy_session` in
-`crates/engine/tests/full_ui.rs` for each step. In order: finish 4
-(right-click a buff to remove it, a scenario debuff on the player with
-its type color), the open parts of 2 and 3 (click the player frame to
-target, `/stopcasting`), then 5 (tooltips: build `C_TooltipInfo` lines
-from the model, using the Monk capture's spell tooltips as the template),
-6 (slash commands and macros from `macros-cache.txt`) and 7 (Clique on
-party frames). Also worth doing: draw the held spell's icon at the mouse
-pointer in the GUI. Real spell data from DB2 can come later, when a
-captured character should use the model; find the tables' FileDataIDs
-first (the CASC lookup by `DBFilesClient/<name>.db2` path finds nothing).
-Ask the user to try `gui --scenario scenarios/dummy` on the desktop.
+Client state goal: continue the three milestones listed under "Current
+state" with `scenarios/dummy`, and extend `training_dummy_session` in
+`crates/engine/tests/full_ui.rs` for each step. Milestone 2 (tooltips):
+build `C_TooltipInfo` lines from the model, using the Monk capture's
+spell tooltips as the template, so Blizzard's `TooltipDataProcessor`
+draws spell, action, aura and unit tooltips. Milestone 3: load the chat
+frame's slash commands, then `/cast`, `/target`, `/stopcasting`, macros
+from `macros-cache.txt` on a bar. Criterion 7 (Clique) comes after.
+Also worth doing: draw the held spell's icon at the mouse pointer in the
+GUI. Real spell data from DB2 can come later, when a captured character
+should use the model; find the tables' FileDataIDs first (the CASC
+lookup by `DBFilesClient/<name>.db2` path finds nothing). Ask the user
+to try `gui --scenario scenarios/dummy` on the desktop.
 
 Desktop feedback (merged). Not reproduced: buff tooltips "adding lines until full"
 (with the fixes, buff tooltips show the aura name, description and time

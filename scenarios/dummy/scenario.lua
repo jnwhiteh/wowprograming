@@ -83,4 +83,12 @@ State.AddHiddenUnit("dummy", {
     guid = "Creature-0-0-0-0-1900900-0000000001",
 })
 
+-- A curse from someone else, so the debuff frame shows a dispellable
+-- debuff with its type color.
+State.ApplyAura("player", 1900801, {
+    name = "Hex of Brittle Bones", icon = icons .. "Spell_Shadow_GrimWard",
+    harmful = true, dispelName = "Magic", duration = 1800, source = "other",
+    description = "Armor reduced by 10%.",
+})
+
 print("Dummy scenario: Ilyndra and the Straw Sentinel")

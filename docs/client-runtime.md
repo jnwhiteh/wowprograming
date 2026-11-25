@@ -168,6 +168,22 @@ Sources: W = warcraft.wiki.gg page named after the function or handler
   under a still cursor (W OnEnter). The sandbox checks the mouse focus
   once per frame, after layout or visibility changed, and fires with
   `motion` false (the timing, next frame, is inferred).
+- **Clicks and motion are separate.** OnEnter and OnLeave go to the top
+  frame with mouse motion or clicks enabled; a press goes to the top
+  frame with clicks enabled. A frame with only motion
+  (`SetMouseClickEnabled(false)`, `enableMouseMotion="true"`) lets
+  presses through to the frame below (B: the player frame's health bar
+  does this so a click on it targets the player; W
+  SetMouseClickEnabled).
+- **Click bindings.** `SecureUnitButton_OnClick` asks
+  `C_ClickBindings.GetBindingType` first and ignores a `target` or
+  `menu` click unless it returns `Interaction` (B). The default profile
+  is left click Target and right click Open menu: every character's
+  `click-bindings-cache.txt` has the lines `1 0 3 1` and `4 0 3 2`
+  (button code, modifiers, `Enum.ClickBindingType`, action: Target 1,
+  OpenContextMenu 2; button 1 is LeftButton, 4 is RightButton). A spell
+  binding looks like `1 48 1 2061`. The sandbox keeps the profile in
+  `lua/client.lua` and does not read the file yet.
 
 ### Dragging
 

@@ -596,3 +596,57 @@ function C_CreatureInfo.GetRaceInfo(raceID)
     if not r then return nil end
     return { raceName = r[1], clientFileString = r[2], raceID = raceID }
 end
+
+-- Click bindings (Blizzard's click casting). The profile starts with the
+-- client's two default interactions, as in every character's
+-- click-bindings-cache.txt: left click targets the unit, right click
+-- opens its menu. SecureUnitButton_OnClick gives up on a target or menu
+-- click unless GetBindingType reports the interaction. No modifier keys
+-- are held in the sandbox, so MakeModifiers is 0.
+C_ClickBindings = C_ClickBindings or {}
+do
+    local INTERACTION, TARGET, MENU = 3, 1, 2 -- Enum.ClickBindingType, ClickBindingInteraction
+    local defaults = {
+        { type = INTERACTION, actionID = TARGET, button = "LeftButton", modifiers = 0 },
+        { type = INTERACTION, actionID = MENU, button = "RightButton", modifiers = 0 },
+    }
+    local profile
+    local function copy(list)
+        local out = {}
+        for i, b in ipairs(list) do
+            out[i] = { type = b.type, actionID = b.actionID, button = b.button, modifiers = b.modifiers }
+        end
+        return out
+    end
+    local function find(button, modifiers)
+        for _, b in ipairs(profile or defaults) do
+            if b.button == button and b.modifiers == (modifiers or 0) then return b end
+        end
+    end
+    function MakeModifiers() return 0 end
+    function C_ClickBindings.GetProfileInfo() return copy(profile or defaults) end
+    function C_ClickBindings.SetProfileByInfo(info) profile = copy(info or {}) end
+    function C_ClickBindings.ResetCurrentProfile() profile = nil end
+    function C_ClickBindings.GetBindingType(button, modifiers)
+        local b = find(button, modifiers)
+        return b and b.type or 0
+    end
+    -- The button whose secure "type" attribute an interaction uses.
+    function C_ClickBindings.GetEffectiveInteractionButton(button, modifiers)
+        local b = find(button, modifiers)
+        if b and b.type == INTERACTION then
+            return b.actionID == TARGET and "LeftButton" or "RightButton"
+        end
+        return button
+    end
+    function C_ClickBindings.CanSpellBeClickBound() return true end
+    function C_ClickBindings.ExecuteBinding(unit, button, modifiers)
+        local b = find(button, modifiers)
+        if not b then return end
+        if b.type == 1 or b.type == 4 then
+            CastSpellByID(b.actionID, unit)
+        elseif b.type == 2 and RunMacro then
+            RunMacro(b.actionID)
+        end
+    end
+end
