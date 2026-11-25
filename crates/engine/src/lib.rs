@@ -36,7 +36,7 @@ pub mod world;
 pub mod xml;
 
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
@@ -871,6 +871,138 @@ impl Engine {
 
     /// Save SavedVariables, rebuild the Lua state and load everything again,
     /// like `/reload` in the client. Output not yet drained is kept.
+    /// Run an interaction spec (`lua/spec.lua`): a Lua file that drives
+    /// the UI with Click, Press, Hold, Wait and friends and checks the
+    /// result. Fails on an error in the spec or any Lua error the UI
+    /// reports meanwhile. The engine must be started.
+    pub fn run_spec(&mut self, path: &Path) -> Result<(), String> {
+        const STEP: f64 = 1.0 / 30.0;
+        let code = std::fs::read_to_string(path)
+            .map_err(|e| format!("cannot read {}: {e}", path.display()))?;
+        let name = path.display().to_string();
+        let mut errors: Vec<String> = Vec::new();
+        fn collect(engine: &Engine, errors: &mut Vec<String>) {
+            for o in engine.drain_output() {
+                if let Output::Error(e) = o {
+                    errors.push(e);
+                }
+            }
+        }
+        collect(self, &mut errors);
+        errors.clear();
+        let lua = self.runtime.lua().clone();
+        let start: Function = match lua.named_registry_value::<Function>(SPEC_KEY) {
+            Ok(f) => f,
+            Err(_) => {
+                let natives = lua.create_table().map_err(|e| e.to_string())?;
+                let set = |k: &str, f: mlua::Result<Function>| -> Result<(), String> {
+                    natives
+                        .set(k, f.map_err(|e| e.to_string())?)
+                        .map_err(|e| e.to_string())
+                };
+                set(
+                    "move",
+                    lua.create_function(|lua, (x, y): (f64, f64)| {
+                        input::mouse_move(lua, x, y);
+                        Ok(())
+                    }),
+                )?;
+                set(
+                    "down",
+                    lua.create_function(|lua, b: String| {
+                        input::mouse_down(lua, &b);
+                        Ok(())
+                    }),
+                )?;
+                set(
+                    "up",
+                    lua.create_function(|lua, b: String| {
+                        input::mouse_up(lua, &b);
+                        Ok(())
+                    }),
+                )?;
+                set(
+                    "keydown",
+                    lua.create_function(|lua, k: String| Ok(input::key_down(lua, &k))),
+                )?;
+                set(
+                    "keyup",
+                    lua.create_function(|lua, k: String| {
+                        input::key_up(lua, &k);
+                        Ok(())
+                    }),
+                )?;
+                set(
+                    "type",
+                    lua.create_function(|lua, t: String| Ok(input::text_input(lua, &t))),
+                )?;
+                let f: Function = lua
+                    .load(include_str!("lua/spec.lua"))
+                    .set_name("=[spec]")
+                    .call(natives)
+                    .map_err(|e| e.to_string())?;
+                lua.set_named_registry_value(SPEC_KEY, f.clone())
+                    .map_err(|e| e.to_string())?;
+                f
+            }
+        };
+        let thread: mlua::Thread = start
+            .call((code, name.clone()))
+            .map_err(|e| wowprogramming_lua::error_message(&e))?;
+        loop {
+            let result = self
+                .runtime
+                .guarded(|_| thread.resume::<mlua::MultiValue>(()));
+            let values = match result {
+                Ok(v) => v,
+                Err(e) => {
+                    collect(self, &mut errors);
+                    let mut msg = wowprogramming_lua::error_message(&e);
+                    if !errors.is_empty() {
+                        msg.push_str(&format!("\nLua errors:\n{}", errors.join("\n")));
+                    }
+                    return Err(msg);
+                }
+            };
+            let mut it = values.into_iter();
+            let kind = match it.next() {
+                Some(Value::String(s)) => s.to_string_lossy(),
+                _ => String::new(),
+            };
+            match kind.as_str() {
+                "wait" => {
+                    let secs = match it.next() {
+                        Some(Value::Number(n)) => n,
+                        Some(Value::Integer(n)) => n as f64,
+                        _ => 0.0,
+                    };
+                    let steps = (secs / STEP).round().max(1.0) as usize;
+                    for _ in 0..steps {
+                        self.tick(secs / steps as f64);
+                    }
+                }
+                "command" => {
+                    if let Some(Value::String(line)) = it.next() {
+                        self.run_command(&line.to_string_lossy());
+                    }
+                    self.tick(STEP);
+                }
+                "reload" => {
+                    self.reload();
+                    self.tick(STEP);
+                }
+                _ => break,
+            }
+            collect(self, &mut errors);
+        }
+        collect(self, &mut errors);
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(format!("Lua errors:\n{}", errors.join("\n")))
+        }
+    }
+
     /// Watch the folders of the loaded third-party addons; the next tick
     /// after a change reloads the UI.
     pub fn start_watching(&mut self) {
@@ -932,6 +1064,9 @@ impl Engine {
             .collect()
     }
 }
+
+/// Registry key of the spec runner (`lua/spec.lua`).
+const SPEC_KEY: &str = "wowprogramming.spec";
 
 /// SavedVariables file name of the Edit Mode layouts the client keeps
 /// (`C_EditMode` in `lua/client.lua`).

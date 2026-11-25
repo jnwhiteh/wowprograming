@@ -23,6 +23,16 @@ enum Command {
     Run(RunArgs),
     /// Load addons and open a window that shows the UI, with a console.
     Gui(RunArgs),
+    /// Run interaction specs: Lua files that drive the UI (Click, Press,
+    /// Hold, Wait, Command) and check the result. Takes the same options
+    /// as `run`. Exits with failure if a spec fails or a Lua error occurs.
+    Test {
+        #[command(flatten)]
+        run: RunArgs,
+        /// Spec files to run, in order, in one session.
+        #[arg(required = true)]
+        specs: Vec<PathBuf>,
+    },
     /// Run a Lua file in the sandbox's Lua environment, without addons.
     Lua { file: PathBuf },
     /// Report which UI.xsd script handlers the engine fires and which
@@ -229,6 +239,13 @@ fn main() -> ExitCode {
         },
         Command::Gui(args) => match build_config(&args) {
             Ok((config, game_dir)) => run_gui(config, game_dir, &args),
+            Err(err) => {
+                eprintln!("{err}");
+                ExitCode::from(2)
+            }
+        },
+        Command::Test { run, specs } => match build_config(&run) {
+            Ok((config, game_dir)) => run_specs(config, game_dir, &specs),
             Err(err) => {
                 eprintln!("{err}");
                 ExitCode::from(2)
@@ -752,6 +769,39 @@ fn run(config: EngineConfig, game_dir: Option<PathBuf>, args: &RunArgs) -> ExitC
     engine.shutdown();
     print_output(&engine);
     ExitCode::SUCCESS
+}
+
+fn run_specs(config: EngineConfig, game_dir: Option<PathBuf>, specs: &[PathBuf]) -> ExitCode {
+    let gamedata = open_game_data(game_dir.as_deref());
+    let mut engine = match Engine::with_gamedata(config, gamedata) {
+        Ok(engine) => engine,
+        Err(err) => {
+            eprintln!("cannot start sandbox: {err}");
+            return ExitCode::FAILURE;
+        }
+    };
+    engine.start();
+    // Let the UI settle; errors from loading count against the first spec.
+    for _ in 0..30 {
+        engine.tick(FRAME_TIME);
+    }
+    let mut failed = 0;
+    for spec in specs {
+        match engine.run_spec(spec) {
+            Ok(()) => println!("PASS {}", spec.display()),
+            Err(err) => {
+                failed += 1;
+                println!("FAIL {}\n  {}", spec.display(), err.replace('\n', "\n  "));
+            }
+        }
+    }
+    engine.shutdown();
+    println!("{} passed, {} failed", specs.len() - failed, failed);
+    if failed == 0 {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
 }
 
 fn run_gui(config: EngineConfig, game_dir: Option<PathBuf>, args: &RunArgs) -> ExitCode {

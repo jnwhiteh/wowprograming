@@ -136,6 +136,11 @@ Last updated: 2026-11-25 (real addons: TomTom, Clique and WowLua work; maps, mov
   pressed alone (or `Engine::set_modifiers`, which the GUI calls every
   frame) drive `IsShiftKeyDown` and friends and fire
   MODIFIER_STATE_CHANGED. The GUI sends keys as `ALT-CTRL-SHIFT-X`.
+- Interaction specs: `wowprogramming test [run options] spec.lua...`
+  runs Lua files that drive the UI (Click, Press, Hold, Wait, Command,
+  Reload, Equal, Near) and fails on a failed check or any Lua error
+  (`Engine::run_spec`, `lua/spec.lua`, examples and the helper list in
+  `specs/`).
 - Reload on change: `--watch` (and `EngineConfig::watch`) reloads the
   UI when a file of a loaded third-party addon changes (`watch.rs`, a
   background thread scanning every 0.5 s).
@@ -521,6 +526,7 @@ Decisions already made with the user. Do not reopen them without a reason.
 | `crates/engine/src/lua/client.lua` | Client functions written in Lua (quality colors, placeholder enums, click bindings) |
 | `crates/engine/src/lua/maps.lua`, `maps.rs` | `C_Map` from the UiMap tables; player position, facing and movement |
 | `crates/engine/src/lua/bindings.lua`, `bindings.rs` | Key map, override bindings, the binding API |
+| `crates/engine/src/lua/spec.lua`, `specs/` | Interaction specs (`wowprogramming test`) and examples |
 | `crates/engine/src/watch.rs` | Reload on change: watches third-party addon folders |
 | `crates/engine/tests/real_addons.rs` | TomTom, Clique and WowLua in the full UI (skipped without them) |
 | `crates/engine/src/lua/macros.lua` | Macro line execution through Blizzard's chat parser, `SecureCmdOptionParse`, `RunMacroText` |

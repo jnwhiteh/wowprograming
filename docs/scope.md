@@ -315,8 +315,9 @@ each building on the one before:
    secret values, so addon authors see "action blocked" errors in the
    sandbox before they ship.
 4. Tools for addon authors: scripted interaction tests that run headless
-   in CI, reload on file change (done 2026-11-25: `--watch`), and
-   showing a UI in the browser.
+   in CI (first version 2026-11-25: `wowprogramming test`, see
+   `specs/README.md`), reload on file change (done 2026-11-25:
+   `--watch`), and showing a UI in the browser.
 
 **Real addons: TomTom, Clique and WowLua (goal set by the user on
 2026-11-25, branch `client-state`).** The sandbox is a simulator for
