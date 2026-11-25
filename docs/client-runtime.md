@@ -583,6 +583,23 @@ WoWDBDefs layouts, Bindings_Standard.xml (B); the rest is inferred.
   the best map changes, ZONE_CHANGED_NEW_AREA when the zone name
   changes. Their order relative to each other in one frame is inferred.
 
+- World map art: UiMapXMapArt (1957217, phase 0 only) gives a map's
+  art, UiMapArt (1957202) its style, UiMapArtStyleLayer (1957208) the
+  layer and tile sizes and zoom range, UiMapArtTile (1957210) the tile
+  textures by row and column (U). `GetMapArtLayerTextures(map, layer)`
+  counts layers from 1 (Blizzard_MapCanvasDetailLayer) and returns the
+  tiles row by row. Exploration overlays are not read yet: the world
+  map shows the base art only.
+- `UnitPositionFrame` (the player arrow) is drawn by the client. The
+  sandbox draws each added unit as a texture on the frame at its map
+  position, turned to the player's facing, and moves it every frame.
+  `UI-WorldMapArrow` is not an atlas in the game data; the sandbox uses
+  `Interface\WorldMap\WorldMapArrow` (inferred). `GetMouseOverUnits`
+  returns nothing (one `nil` breaks Blizzard's tooltip code).
+- Addon textures: a path under `Interface\AddOns\<name>\` that is not
+  in the game data is read from the addons folder, as BLP or TGA (types
+  2, 3, 10 and 11), the extension optional and the case ignored.
+
 ### Key bindings
 
 `lua/bindings.lua`. A key runs the newest priority override binding,

@@ -148,3 +148,171 @@ mod tests {
         assert_eq!((r.left, r.right, r.top, r.bottom), (200.0, 0.0, 200.0, 0.0));
     }
 }
+
+const UI_MAP_X_MAP_ART: u32 = 1957217;
+const UI_MAP_ART: u32 = 1957202;
+const UI_MAP_ART_STYLE_LAYER: u32 = 1957208;
+const UI_MAP_ART_TILE: u32 = 1957210;
+
+/// One layer of a map art style (UiMapArtStyleLayer).
+#[derive(Clone, Debug)]
+pub struct ArtLayer {
+    pub index: u32,
+    pub width: u32,
+    pub height: u32,
+    pub tile_width: u32,
+    pub tile_height: u32,
+    pub min_scale: f64,
+    pub max_scale: f64,
+    pub additional_zoom_steps: u32,
+}
+
+/// A tile of map art: row, column, FileDataID.
+type Tile = (u32, u32, u32);
+/// Tiles by (art ID, layer index).
+type TileMap = std::collections::HashMap<(u32, u32), Vec<Tile>>;
+
+/// Map art: which art a map shows, its layers and its tiles.
+#[derive(Default)]
+pub struct MapArt {
+    /// UiMap ID -> UiMapArt ID (phase 0).
+    art_of_map: std::collections::HashMap<u32, u32>,
+    /// UiMapArt ID -> style ID.
+    style_of_art: std::collections::HashMap<u32, u32>,
+    /// Style ID -> layers, by layer index.
+    layers: std::collections::HashMap<u32, Vec<ArtLayer>>,
+    /// (art ID, layer) -> tiles as (row, column, FileDataID).
+    tiles: TileMap,
+}
+
+impl MapArt {
+    fn load(gd: &crate::gamedata::GameData) -> MapArt {
+        let read = |id| gd.read_file(id).and_then(|d| db2::Table::parse(&d).ok());
+        let mut art = MapArt::default();
+        if let Some(t) = read(UI_MAP_X_MAP_ART) {
+            for r in &t.records {
+                // Phased art (PhaseID != 0) is skipped: the sandbox has no phases.
+                if field(r, 0, 0) == 0 {
+                    art.art_of_map.insert(field(r, 2, 0), field(r, 1, 0));
+                }
+            }
+        }
+        if let Some(t) = read(UI_MAP_ART) {
+            for r in &t.records {
+                art.style_of_art.insert(r.id, field(r, 2, 0));
+            }
+        }
+        if let Some(t) = read(UI_MAP_ART_STYLE_LAYER) {
+            for r in &t.records {
+                art.layers
+                    .entry(field(r, 8, 0))
+                    .or_default()
+                    .push(ArtLayer {
+                        index: field(r, 0, 0),
+                        width: field(r, 1, 0),
+                        height: field(r, 2, 0),
+                        tile_width: field(r, 3, 0),
+                        tile_height: field(r, 4, 0),
+                        min_scale: float(r, 5, 0),
+                        max_scale: float(r, 6, 0),
+                        additional_zoom_steps: field(r, 7, 0),
+                    });
+            }
+            for layers in art.layers.values_mut() {
+                layers.sort_by_key(|l| l.index);
+            }
+        }
+        if let Some(t) = read(UI_MAP_ART_TILE) {
+            for r in &t.records {
+                let key = (field(r, 4, 0), field(r, 2, 0));
+                art.tiles.entry(key).or_default().push((
+                    field(r, 0, 0),
+                    field(r, 1, 0),
+                    field(r, 3, 0),
+                ));
+            }
+            for tiles in art.tiles.values_mut() {
+                tiles.sort();
+            }
+        }
+        art
+    }
+
+    pub fn art_id(&self, map: u32) -> Option<u32> {
+        self.art_of_map.get(&map).copied()
+    }
+
+    pub fn layers(&self, map: u32) -> &[ArtLayer] {
+        self.art_id(map)
+            .and_then(|a| self.style_of_art.get(&a))
+            .and_then(|s| self.layers.get(s))
+            .map(|v| v.as_slice())
+            .unwrap_or(&[])
+    }
+
+    /// Tile textures of a layer, row by row (as Blizzard's tiled map art
+    /// reads them: index (row - 1) * columns + column).
+    pub fn tiles(&self, map: u32, layer: u32) -> Vec<u32> {
+        let Some(art) = self.art_id(map) else {
+            return Vec::new();
+        };
+        self.tiles
+            .get(&(art, layer))
+            .map(|t| t.iter().map(|&(_, _, f)| f).collect())
+            .unwrap_or_default()
+    }
+}
+
+thread_local! {
+    static ART: std::cell::RefCell<Option<std::rc::Rc<MapArt>>> = const { std::cell::RefCell::new(None) };
+}
+
+/// The map art tables, read on first use.
+pub fn art(lua: &Lua) -> Option<std::rc::Rc<MapArt>> {
+    if let Some(a) = ART.with(|a| a.borrow().clone()) {
+        return Some(a);
+    }
+    let gd = state(lua).gamedata.clone()?;
+    let a = std::rc::Rc::new(MapArt::load(&gd));
+    ART.with(|c| *c.borrow_mut() = Some(a.clone()));
+    Some(a)
+}
+
+/// Native `C_Map` functions for map art.
+pub fn install_art(lua: &Lua, c_map: &Table) -> Result<()> {
+    c_map.set(
+        "GetMapArtID",
+        lua.create_function(|lua, map: u32| Ok(art(lua).and_then(|a| a.art_id(map))))?,
+    )?;
+    c_map.set(
+        "GetMapArtLayers",
+        lua.create_function(|lua, map: u32| {
+            let out = lua.create_table()?;
+            if let Some(a) = art(lua) {
+                for (i, l) in a.layers(map).iter().enumerate() {
+                    let t = lua.create_table()?;
+                    t.set("layerWidth", l.width)?;
+                    t.set("layerHeight", l.height)?;
+                    t.set("tileWidth", l.tile_width)?;
+                    t.set("tileHeight", l.tile_height)?;
+                    t.set("minScale", l.min_scale)?;
+                    t.set("maxScale", l.max_scale)?;
+                    t.set("additionalZoomSteps", l.additional_zoom_steps)?;
+                    out.set(i + 1, t)?;
+                }
+            }
+            Ok(out)
+        })?,
+    )?;
+    c_map.set(
+        "GetMapArtLayerTextures",
+        lua.create_function(|lua, (map, layer): (u32, u32)| {
+            // The layer argument counts from 1; tiles store it from 0.
+            let tiles = art(lua)
+                .map(|a| a.tiles(map, layer.saturating_sub(1)))
+                .unwrap_or_default();
+            lua.create_sequence_from(tiles)
+        })?,
+    )?;
+    Ok(())
+}

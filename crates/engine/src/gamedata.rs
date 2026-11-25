@@ -59,6 +59,9 @@ pub struct GameData {
     images: RefCell<HashMap<ImageKey, Option<Rc<Image>>>>,
     extra_atlases: RefCell<HashMap<String, AtlasInfo>>,
     colors: std::cell::OnceCell<Vec<(String, [f32; 4])>>,
+    /// Folders of third-party addons: `Interface\AddOns\<name>\...`
+    /// textures that are not in the game data are read from here.
+    addon_dirs: RefCell<Vec<std::path::PathBuf>>,
 }
 
 /// Cache key for a decoded image.
@@ -97,6 +100,7 @@ impl GameData {
             images: RefCell::new(HashMap::new()),
             extra_atlases: RefCell::new(HashMap::new()),
             colors: std::cell::OnceCell::new(),
+            addon_dirs: RefCell::new(Vec::new()),
         })
     }
 
@@ -212,13 +216,86 @@ impl GameData {
             ImageKey::Id(id) => Some(*id),
             ImageKey::Path(p) => self.file_id(p),
         };
-        let img = id
-            .and_then(|id| self.storage.read_file(id).ok())
-            .and_then(|data| blp::decode(&data).ok())
-            .map(Rc::new);
+        let img = match (id, key) {
+            (Some(id), _) => self
+                .storage
+                .read_file(id)
+                .ok()
+                .and_then(|data| blp::decode(&data).ok()),
+            (None, ImageKey::Path(p)) => self.addon_image(p),
+            _ => None,
+        }
+        .map(Rc::new);
         self.images.borrow_mut().insert(key.clone(), img.clone());
         img
     }
+}
+
+impl GameData {
+    /// Let addon textures be read from these folders (the addons folder).
+    pub fn set_addon_dirs(&self, dirs: Vec<std::path::PathBuf>) {
+        *self.addon_dirs.borrow_mut() = dirs;
+    }
+
+    /// An addon's own texture: `Interface\AddOns\Name\Images\Dot` is
+    /// `Name/Images/Dot.blp` or `.tga` in an addons folder, matched
+    /// without regard to case, as the client does on Windows.
+    fn addon_image(&self, path: &str) -> Option<Image> {
+        let path = path.replace('/', "\\");
+        let lower = path.to_ascii_lowercase();
+        let rest = path
+            .get(lower.find("interface\\addons\\")? + 17..)?
+            .to_string();
+        let parts: Vec<&str> = rest.split('\\').filter(|p| !p.is_empty()).collect();
+        for dir in self.addon_dirs.borrow().iter() {
+            let Some(found) = find_ignoring_case(dir, &parts) else {
+                continue;
+            };
+            let data = std::fs::read(&found).ok()?;
+            let ext = found
+                .extension()
+                .map(|e| e.to_string_lossy().to_ascii_lowercase());
+            return match ext.as_deref() {
+                Some("tga") => wowprogramming_formats::tga::decode(&data).ok(),
+                _ => blp::decode(&data).ok(),
+            };
+        }
+        None
+    }
+}
+
+/// The file `parts` below `dir`, each part matched without case; the last
+/// part may leave out its `.blp` or `.tga` extension.
+fn find_ignoring_case(dir: &std::path::Path, parts: &[&str]) -> Option<std::path::PathBuf> {
+    let (last, folders) = parts.split_last()?;
+    let mut cur = dir.to_path_buf();
+    for part in folders {
+        cur = child_ignoring_case(&cur, part, false)?;
+    }
+    child_ignoring_case(&cur, last, true)
+}
+
+fn child_ignoring_case(
+    dir: &std::path::Path,
+    name: &str,
+    file: bool,
+) -> Option<std::path::PathBuf> {
+    let exact = dir.join(name);
+    if (file && exact.is_file()) || (!file && exact.is_dir()) {
+        return Some(exact);
+    }
+    let want = name.to_ascii_lowercase();
+    let mut fallback = None;
+    for entry in std::fs::read_dir(dir).ok()?.flatten() {
+        let n = entry.file_name().to_string_lossy().to_ascii_lowercase();
+        if n == want && (!file || entry.path().is_file()) {
+            return Some(entry.path());
+        }
+        if file && (n == format!("{want}.blp") || n == format!("{want}.tga")) {
+            fallback = fallback.or(Some(entry.path()));
+        }
+    }
+    fallback
 }
 
 fn read_atlases(storage: &Storage) -> Result<HashMap<String, AtlasInfo>, String> {

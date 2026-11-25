@@ -278,6 +278,7 @@ pub fn install(lua: &Lua) -> Result<()> {
     lua.load(include_str!("lua/maps.lua"))
         .set_name("=[C]")
         .call::<()>((map_data, fire_map))?;
+    crate::maps::install_art(lua, &namespace(lua, "C_Map")?)?;
     // Undocumented client functions the UI calls at load time.
     g.set(
         "RegisterStaticConstants",

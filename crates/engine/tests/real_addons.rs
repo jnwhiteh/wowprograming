@@ -134,6 +134,34 @@ fn tomtom_clique_and_wowlua_work() {
     assert_eq!((shown, title.as_str()), (true, "Testpoint"));
     assert_eq!(status, "105m away");
 
+    // The world map opens on Elwynn Forest with its art, TomTom's
+    // waypoint pin and the player arrow, without errors.
+    assert!(e.key_down("M"));
+    e.key_up("M");
+    run(&mut e, 0.5);
+    let (shown, map, tiles): (bool, i64, i64) = e
+        .eval("return WorldMapFrame:IsShown(), WorldMapFrame:GetMapID(), #C_Map.GetMapArtLayerTextures(37, 1)")
+        .unwrap();
+    assert_eq!((shown, map), (true, 37));
+    assert!(tiles > 0, "no map art tiles");
+    let (pin, arrow): (bool, bool) = e
+        .eval(
+            "local hbd, arrow = false, false
+             for pin in WorldMapFrame:EnumeratePinsByTemplate('HereBeDragonsPinsTemplate') do
+                 hbd = hbd or pin:IsVisible()
+             end
+             for pin in WorldMapFrame:EnumeratePinsByTemplate('GroupMembersPinTemplate') do
+                 local r = pin:GetRegions()
+                 arrow = r ~= nil and r:IsVisible() and r:GetTexture() ~= nil
+             end
+             return hbd, arrow",
+        )
+        .unwrap();
+    assert_eq!((pin, arrow), (true, true));
+    assert!(e.key_down("M"));
+    e.key_up("M");
+    run(&mut e, 0.2);
+
     // 3. Walking north for 5 seconds covers 35 yards; the distance shrinks.
     let x0: f64 = e.eval("return (UnitPosition('player'))").unwrap();
     hold(&mut e, "W", 5.0);

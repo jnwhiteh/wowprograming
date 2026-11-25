@@ -239,6 +239,11 @@ pub fn method_groups(lua: &Lua) -> Result<HashMap<&'static str, Table>> {
             })?,
         ))?;
     groups.insert("GameTooltip", tooltip);
+    let unit_position: Table = lua
+        .load(include_str!("lua/unitposition.lua"))
+        .set_name("=[C]")
+        .call(())?;
+    groups.insert("UnitPositionFrame", unit_position);
     groups.insert("AnimationGroup", anim_group_methods(lua)?);
     groups.insert("Animation", animation_methods(lua)?);
     Ok(groups)

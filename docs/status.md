@@ -127,6 +127,9 @@ Last updated: 2026-11-25 (real addons: TomTom, Clique and WowLua work; maps, mov
   a click.
 - Real addons: TomTom, Clique and WowLua (from `addons_dir`, with
   `--addon`) load and work in the dummy scenario.
+- World map (M): map art tiles from the UiMapArt tables, TomTom's
+  pins, the player arrow (`lua/unitposition.lua`). Addons' own BLP and
+  TGA textures load from the addons folder (`formats/tga.rs`).
 - Maps and movement (`lua/maps.lua`, `maps.rs`): `C_Map` from the
   UiMap tables (info, children, parents, groups, world size, world and
   map positions, map rectangles, best map, player position), zone
@@ -380,10 +383,12 @@ the headless runs only cover loading and idle play).
 Real addons goal (scope.md): the done criteria hold. To make the
 simulator more complete, in order:
 
-1. The world map (`M`, `Blizzard_WorldMap`) and the minimap: open the
-   world map on the player's zone with map art from UiMapArt and
-   UiMapArtTile, and place TomTom's world map and minimap pins
-   (HereBeDragons-Pins). Check for Lua errors when the world map opens.
+1. The world map works (M): map art, TomTom's waypoint pin, the player
+   arrow. Still missing: exploration overlays
+   (`C_MapExplorationInfo.GetExploredMapTextures`, from the
+   WorldMapOverlay tables), the minimap (TomTom's minimap pins are placed
+   but the Minimap widget draws no terrain), zooming the map with the
+   mouse wheel (try it).
 2. Clique's options window (`/clique`, its spellbook tab and binding
    editor) and Clique on party frames: a party scenario (`scenarios/hud`
    has a party) with a spell bound to a click on a party frame.

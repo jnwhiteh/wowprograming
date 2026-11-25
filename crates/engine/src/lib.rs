@@ -235,6 +235,9 @@ impl Engine {
         config: EngineConfig,
         gamedata: Option<Rc<gamedata::GameData>>,
     ) -> mlua::Result<Engine> {
+        if let (Some(gd), Some(dir)) = (&gamedata, &config.addons_dir) {
+            gd.set_addon_dirs(vec![dir.clone()]);
+        }
         let runtime = build_runtime(&config, gamedata.clone())?;
         Ok(Engine {
             config,
