@@ -116,10 +116,19 @@ local function run(key, down)
         held[key] = command
         return runCommand(command, true)
     end
-    local command = held[key]
-    held[key] = nil
-    if not command then return false end
-    return runCommand(command, false)
+    -- A release ends the press of the same key whatever the modifiers
+    -- were ("SHIFT-W" down, "W" up).
+    local base = key:match("([^%-]+)$") or key
+    if key:sub(-1) == "-" then base = "-" end
+    local ran = false
+    for k, command in pairs(held) do
+        local kb = k:sub(-1) == "-" and "-" or (k:match("([^%-]+)$") or k)
+        if k == key or kb == base then
+            held[k] = nil
+            ran = runCommand(command, false) or ran
+        end
+    end
+    return ran
 end
 
 -- Binding API ---------------------------------------------------------------------

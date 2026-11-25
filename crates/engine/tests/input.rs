@@ -893,3 +893,22 @@ fn saved_bindings_come_back_after_reload() {
         .unwrap();
     assert_eq!((k.as_str(), p.as_str()), ("TOGGLESPELLBOOK", ""));
 }
+
+/// A key released without the modifier it was pressed with still ends
+/// the press (a CLICK binding clicks down, then up).
+#[test]
+fn a_release_ends_a_press_with_modifiers() {
+    let wtf = tempfile::tempdir().unwrap();
+    let mut e = started(wtf.path());
+    e.exec(
+        "Log = {}
+         local b = CreateFrame('Button', 'HoldButton', UIParent)
+         b:RegisterForClicks('AnyDown', 'AnyUp')
+         b:SetScript('OnClick', function(_, _, down) table.insert(Log, tostring(down)) end)
+         SetBinding('SHIFT-W', 'CLICK HoldButton:LeftButton')",
+    );
+    e.tick(0.1);
+    assert!(e.key_down("SHIFT-W"));
+    e.key_up("W");
+    assert_eq!(log(&e), "true false");
+}
