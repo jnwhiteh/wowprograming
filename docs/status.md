@@ -414,8 +414,9 @@ simulator more complete, in order:
    tested.
 3. TomTom's own in-game test addon `TomTomTest` (load it with
    `--addon TomTomTest`): run its suites and fix what fails.
-4. WowLua: the other toolbar buttons (pages, undo, lock), its saved
-   pages after `/reload`.
+4. WowLua: saving a page and finding it after `/reload` works (tested).
+   Not tried: undo, redo, lock, delete, rename (Shift-click Save shows a
+   popup).
 5. Save key bindings (`SaveBindings`) and read the character's
    `bindings-cache.wtf`, `macros-cache.txt` and
    `click-bindings-cache.txt`, read only.

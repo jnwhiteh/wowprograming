@@ -271,6 +271,14 @@ fn tomtom_clique_and_wowlua_work() {
         .eval("return (WowLuaFrameOutput:GetMessageInfo(WowLuaFrameOutput:GetNumMessages()))")
         .unwrap();
     assert!(out.contains("hello, 42"), "WowLua printed {out:?}");
+    // The saved page is still there after /reload (SavedVariables).
+    click(&mut e, "WowLuaButton_Save", "LeftButton");
+    e.reload();
+    run(&mut e, 0.5);
+    let page: String = e
+        .eval("local _, entry = WowLua:GetCurrentPage() return entry.content")
+        .unwrap();
+    assert_eq!(page, "print('hello', 6 * 7)");
 
     let errs = errors(&mut e);
     assert!(errs.is_empty(), "Lua errors:\n{}", errs.join("\n"));
