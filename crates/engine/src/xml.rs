@@ -600,6 +600,7 @@ fn apply_attributes(
                 native(lua, table, "SetFrameLevel", f as i64)?;
             }
             "toplevel" => state(lua).frames[id].toplevel = b,
+            "protected" => state(lua).frames[id].protected = b,
             "enableMouse" => {
                 let mut st = state(lua);
                 st.frames[id].mouse_enabled = b;

@@ -367,6 +367,8 @@ pub struct FrameData {
     pub strata_explicit: bool,
     pub level: i64,
     pub toplevel: bool,
+    /// Explicitly protected (`protected="true"`, as on SecureFrameTemplate).
+    pub protected: bool,
     pub mouse_enabled: bool,
     pub mouse_motion: bool,
     pub mouse_over: bool,
@@ -455,6 +457,7 @@ impl FrameData {
             strata_explicit: false,
             level: 0,
             toplevel: false,
+            protected: false,
             mouse_enabled: false,
             mouse_motion: false,
             mouse_over: false,
@@ -669,7 +672,6 @@ pub struct State {
     pub fonts: crate::text::FontCache,
     pub focus: Option<FrameId>,
     pub mouse_focus: Option<FrameId>,
-    pub bindings: HashMap<String, Function>,
     /// Mouse position in screen units.
     pub mouse: (f64, f64),
     /// The mouse button held down, and the frame that captured it.

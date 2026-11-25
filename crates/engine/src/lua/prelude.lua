@@ -77,7 +77,17 @@ end
 
 -- Taint and secret values are not emulated yet. All code counts as secure.
 function issecure() return true end
-function issecurevariable() return true, nil end
+-- Interim rule until taint is tracked: a key in a table other than _G,
+-- asked about from a third-party addon's code, is tainted by that addon.
+-- TaintLess uses this to learn its own addon name. Globals and Blizzard
+-- code are secure.
+function issecurevariable(tbl, key)
+    if type(tbl) ~= "table" or tbl == _G then return true, nil end
+    local stack = debugstack and debugstack(2, 1, 0) or ""
+    local addon = stack:match("AddOns[/\\]([^/\\]+)[/\\]")
+    if addon and not addon:match("^Blizzard_") then return false, addon end
+    return true, nil
+end
 function forceinsecure() end
 function issecretvalue() return false end
 function canaccessvalue() return true end
@@ -93,5 +103,7 @@ function scrub(...)
 end
 function debuglocals() return "" end
 function GetCurrentEnvironment() return _G end
+-- Taint is not tracked yet: compiling "untainted" is plain compiling.
+loadstring_untainted = loadstring
 
 return dispatch, callErrorHandler

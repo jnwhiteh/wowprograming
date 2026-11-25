@@ -332,7 +332,20 @@ fn object_methods(lua: &Lua) -> Result<Table> {
         &this_,
         |f| f.forbidden = true
     ));
-    method!(lua, m, "IsProtected", |_, _this: Value| Ok((false, false)));
+    // Returns isProtected, isExplicitlyProtected. A frame is protected
+    // when it or an ancestor is explicitly protected (inferred).
+    method!(lua, m, "IsProtected", |lua, this_: Value| {
+        let id = this(&this_)?;
+        let st = state(lua);
+        let explicit = st.frames[id].protected;
+        let mut any = explicit;
+        let mut p = st.frames[id].parent;
+        while let Some(pid) = p {
+            any |= st.frames[pid].protected;
+            p = st.frames[pid].parent;
+        }
+        Ok((any, explicit))
+    });
     method!(lua, m, "CanChangeProtectedState", |_, _this: Value| Ok(
         true
     ));

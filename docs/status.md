@@ -10,29 +10,20 @@ Last updated: 2026-11-25 (client state: milestones 1 to 3 done; unit-frame click
 
 ## Current state
 
-- **Client state goal: in progress**, branch `client-state`. The
-  first part (spellbook, bars, target, casting, auras) and the console
-  error fixes were merged into `main` on 2026-11-24 (fast-forward, not
-  pushed) and the branch was deleted; it was created again from `main`
-  on 2026-11-25 for the next three milestones (chosen by the agent from
-  the done criteria in scope.md, at the user's request to "identify the
-  next 3 milestones"):
-  1. Finish criteria 2 to 4: **done** (right-click cancels a buff, the
-     scenario's curse on the player shows with the magic border, a click
-     on the player frame targets the player). `/stopcasting` moved to
-     milestone 3.
-  2. Criterion 5, tooltips from the model for spells, action buttons,
-     auras and units: **done** (spell and action layout from the Monk
-     capture; aura and unit layout inferred).
-  3. Criterion 6, slash commands (`/cast`, `/target`, `/stopcasting`,
-     `/reload`, `/logout`) and a macro on an action bar: **done**.
-  All three milestones are committed on `client-state`, not merged and
-  not pushed. Criterion 7 (Clique) is what is left of the goal.
-  The model (`lua/clientstate.lua`) works with an invented character in
-  `scenarios/dummy`. The user asked to invent fantasy data where needed
-  and to list where real data or templates are needed: see
-  [client-runtime.md](client-runtime.md), "Client state: invented data
-  and where real data is needed".
+- **Real addons goal: in progress** (set by the user on 2026-11-25),
+  on branch `client-state`: TomTom, Clique and WowLua must run without
+  errors and work, and the player must be able to move so TomTom's
+  navigation can be tried. Done criteria in scope.md ("Real addons").
+  Progress: Clique and WowLua load without errors in the full UI;
+  TomTom fails in HereBeDragons because `C_Map` has no map data.
+- **Client state goal: criteria 1 to 6 done** on branch `client-state`
+  (2026-11-25): unit-frame clicks, buff removal, a player debuff,
+  tooltips from the model, slash commands and macros. Criterion 7
+  (Clique) is now part of the real addons goal. The branch is not
+  merged and not pushed. The model (`lua/clientstate.lua`) works with
+  an invented character in `scenarios/dummy`; where real data is
+  needed is listed in [client-runtime.md](client-runtime.md), "Client
+  state: invented data and where real data is needed".
 - **Console errors fixed (2026-11-24, branch `client-state`):** the user
   reported constant errors in the console. The default UI now loads and
   runs without Lua errors in all scenarios (`monk`, `evoker`, `paladin`,
@@ -131,6 +122,16 @@ Last updated: 2026-11-25 (client state: milestones 1 to 3 done; unit-frame click
   `C_ClickBindings` has the client's default profile (left click
   targets, right click opens the menu), so secure unit frames target on
   a click.
+- `xpcall(f, handler, ...)` passes the extra arguments, as in WoW.
+- Key bindings (`lua/bindings.lua`): default keys including movement,
+  `SetBinding*`, override bindings (`SetOverrideBinding*`,
+  `ClearOverrideBindings`, priority first), `CLICK`, `SPELL`, `MACRO`
+  commands, and `runOnUp` actions on key release.
+- Blizzard's restricted environment runs secure handler snippets:
+  `IsProtected` reports `protected="true"` from templates,
+  `C_Widget.IsFrameWidget`, `loadstring_untainted`. `issecurevariable`
+  reports a table key as tainted by the calling third-party addon
+  (an interim rule for TaintLess).
 - Slash commands and macros (`lua/macros.lua`): the console sends slash
   commands to Blizzard's chat parser through the client's macro line
   callback, so `/cast`, `/target`, `/stopcasting` and `/logout` work in
@@ -436,6 +437,7 @@ Decisions already made with the user. Do not reopen them without a reason.
 | 2026-11-24 | Only the default UI loads. Third-party addons load only when named (`--addon`), for testing; never from the character's enabled list in the game | The default UI is the focus now; addons are for testing and later work |
 | 2026-11-24 | One branch per goal or major milestone, merged into `main` when the goal is complete | User's rule |
 | 2026-11-24 | Next goal: the frame runtime (the C++ foundations of the UI), not 3D rendering | The user cares about the interface and its interactions, not the game world |
+| 2026-11-25 | Next goal: a full simulator for addon development; TomTom, Clique and WowLua must run without errors, with a movable player for TomTom | User's request ("Real addons" in scope.md) |
 | 2026-11-24 | Facts come from static sources first: `UI.xsd`, the widget API documentation, `Wow.exe`, Blizzard code, files the client writes, warcraft.wiki.gg. In-game recording is the last resort: questions are collected and answered in one small probe session | Recording is slow for the user, gives single traces and can produce huge files |
 
 ## Environment

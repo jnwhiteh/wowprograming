@@ -16,6 +16,22 @@ use crate::state::state;
 pub fn install(lua: &Lua) -> Result<()> {
     let g = lua.globals();
 
+    // Widgets: whether a value is a widget, or a frame (not a region).
+    let c_widget = namespace(lua, "C_Widget")?;
+    let widget_of = |lua: &Lua, v: &Value| -> Option<bool> {
+        let Value::Table(t) = v else { return None };
+        let id = crate::frames::frame_id(t).ok()?;
+        Some(state(lua).frames[id].is_frame())
+    };
+    c_widget.set(
+        "IsWidget",
+        lua.create_function(move |lua, v: Value| Ok(widget_of(lua, &v).is_some()))?,
+    )?;
+    c_widget.set(
+        "IsFrameWidget",
+        lua.create_function(move |lua, v: Value| Ok(widget_of(lua, &v) == Some(true)))?,
+    )?;
+
     // CVars
     let c_cvar = namespace(lua, "C_CVar")?;
     let get_cvar = lua.create_function(|lua, name: String| Ok(cvar_value(lua, &name)))?;

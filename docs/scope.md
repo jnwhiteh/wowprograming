@@ -304,7 +304,9 @@ best guess, mark it "inferred" in `client-runtime.md`, and add a precise
 question to its "Open questions" list. Do not ask the user to record
 sessions for single questions; one probe session answers the list later.
 
-**Direction after the frame runtime (proposed 2026-11-24).** Four goals,
+**Direction after the frame runtime (proposed 2026-11-24; on
+2026-11-25 the user added running real addons, below, before the
+security model).** Four goals,
 each building on the one before:
 
 1. Frame runtime: the widgets behave like the game's (above).
@@ -314,6 +316,38 @@ each building on the one before:
    sandbox before they ship.
 4. Tools for addon authors: scripted interaction tests that run headless
    in CI, reload on file change, and showing a UI in the browser.
+
+**Real addons: TomTom, Clique and WowLua (goal set by the user on
+2026-11-25, branch `client-state`).** The sandbox is a simulator for
+addon development: real third-party addons load and work without Lua
+errors, so their authors can try them without the game. The three test
+addons are the user's own (in `_retail_/Interface/AddOns`, loaded with
+`--addon NAME`). Each has its own out-of-game test harness with fakes
+(`TomTom/tests`); the sandbox should make those fakes unnecessary.
+
+Done when all of these hold, each with a headless test:
+
+1. TomTom, Clique and WowLua load in the full UI (`scenarios/dummy`)
+   without a Lua error, and run 10 seconds of game time without one.
+2. Maps and position: `C_Map` answers from the game's UiMap tables
+   (map info, children, groups, world positions, map rectangles), and
+   the player has a position on a real map. HereBeDragons (inside
+   TomTom) builds its map data from them.
+3. Moving: the movement keys (W, S, A, D, Q, E, arrows, Num Lock) move
+   and turn the player over time; `UnitPosition`,
+   `C_Map.GetPlayerMapPosition`, `GetPlayerFacing`, `IsPlayerMoving` and
+   the movement and zone events follow.
+4. TomTom: `/way` adds a waypoint; the crazy arrow points at it and its
+   distance goes down as the player walks towards it; the waypoint is
+   cleared on arrival.
+5. Clique: a binding set through Clique's own API casts the bound spell
+   on the party member whose frame is clicked (the secure handler
+   snippets run in Blizzard's restricted environment).
+6. WowLua: `/wowlua` opens the window, code typed into it runs, and its
+   output shows.
+
+Not in this goal: the minimap and world map drawing (TomTom's pins only
+need to be placed), real terrain, collision and flying.
 
 **Client state: a training dummy session (next goal after the frame
 runtime).** The user's character stands in front of a training dummy,

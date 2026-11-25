@@ -128,6 +128,22 @@ impl Runtime {
         let lua = Lua::new();
         restrict_stdlib(&lua)?;
         stdlib::install(&lua)?;
+        // WoW's xpcall passes extra arguments to the function, as Lua 5.2
+        // does (`xpcall(f, handler, ...)`); Lua 5.1 drops them.
+        let xpcall: Function = lua
+            .load(
+                r##"
+                local xpcall, select, unpack = xpcall, select, unpack
+                return function(f, handler, ...)
+                    local n = select("#", ...)
+                    if n == 0 then return xpcall(f, handler) end
+                    local args = { ... }
+                    return xpcall(function() return f(unpack(args, 1, n)) end, handler)
+                end"##,
+            )
+            .set_name("=[C]")
+            .call(())?;
+        lua.globals().set("xpcall", xpcall)?;
         lua.set_memory_limit(DEFAULT_MEMORY_LIMIT)?;
 
         let watchdog = Rc::new(Watchdog {
@@ -212,6 +228,19 @@ mod tests {
         let rt = Runtime::new().unwrap();
         let version: String = rt.lua().globals().get("_VERSION").unwrap();
         assert_eq!(version, "Lua 5.1");
+    }
+
+    #[test]
+    fn xpcall_passes_extra_arguments() {
+        let rt = Runtime::new().unwrap();
+        rt.exec(
+            "local ok, a, b = xpcall(function(x, y) return y, x end, print, 1, nil)
+             assert(ok and a == nil and b == 1)
+             local ok2, err = xpcall(function(t) error(t.msg, 0) end, function(e) return 'h:' .. e end, { msg = 'm' })
+             assert(not ok2 and err == 'h:m')",
+            "test",
+        )
+        .unwrap();
     }
 
     #[test]

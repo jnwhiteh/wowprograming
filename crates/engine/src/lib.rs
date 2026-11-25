@@ -971,7 +971,6 @@ fn build_runtime(
         fonts: Default::default(),
         focus: None,
         mouse_focus: None,
-        bindings: HashMap::new(),
         mouse: (-1.0, -1.0),
         raise_counter: 0,
         press: None,

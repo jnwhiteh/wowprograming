@@ -187,7 +187,7 @@ fn motion_allowed(lua: &Lua, id: FrameId) -> bool {
 }
 
 /// Whether a button is registered for clicks of `button` going up or down.
-fn registered_for(lua: &Lua, id: FrameId, button: &str, down: bool) -> bool {
+pub fn registered_for(lua: &Lua, id: FrameId, button: &str, down: bool) -> bool {
     let st = state(lua);
     let dir = if down { "down" } else { "up" };
     let wanted = format!("{}{dir}", button.to_ascii_lowercase());
@@ -388,6 +388,8 @@ pub fn key_up(lua: &Lua, key: &str) {
     let target = state(lua).key_targets.remove(base_key(key));
     if let Some(id) = target {
         fire_script(lua, id, "OnKeyUp", base_key(key).to_string());
+    } else {
+        crate::bindings::key_up(lua, key);
     }
 }
 
