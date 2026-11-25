@@ -244,6 +244,22 @@ pub fn method_groups(lua: &Lua) -> Result<HashMap<&'static str, Table>> {
         .set_name("=[C]")
         .call(())?;
     groups.insert("UnitPositionFrame", unit_position);
+    // Browser frames (the help frame's knowledge base) show web pages in
+    // the client. The sandbox has no web view: navigation does nothing.
+    let browser: Table = lua
+        .load(
+            r#"local m = {}
+            for _, name in ipairs({ "NavigateHome", "NavigateBack", "NavigateForward",
+                    "NavigateReload", "NavigateStop", "NavigateTo", "OpenExternalLink",
+                    "CopyExternalLink", "ClearFocus", "DeleteCookies", "SetZoom",
+                    "OpenTicket", "SetFocus", "OpenEmbeddedLink", "SetIgnoreClicks" }) do
+                m[name] = function() end
+            end
+            return m"#,
+        )
+        .set_name("=[C]")
+        .call(())?;
+    groups.insert("Browser", browser);
     groups.insert("AnimationGroup", anim_group_methods(lua)?);
     groups.insert("Animation", animation_methods(lua)?);
     Ok(groups)

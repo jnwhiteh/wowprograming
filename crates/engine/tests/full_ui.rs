@@ -603,3 +603,21 @@ fn training_dummy_session() {
     let errs = errors(&mut e);
     assert!(errs.is_empty(), "Lua errors:\n{}", errs.join("\n"));
 }
+
+/// Every panel of the default UI opens and closes without a Lua error
+/// (specs/default_ui_panels.lua lists them and the known gaps).
+#[test]
+fn every_panel_opens_without_errors() {
+    let wtf = tempfile::tempdir().unwrap();
+    let Some(mut e) = full_ui(wtf.path(), "dummy") else {
+        return;
+    };
+    let spec = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../specs/default_ui_panels.lua");
+    let outcome = e.run_spec(&spec);
+    assert_eq!(
+        outcome.error,
+        None,
+        "panel sweep:\n{}",
+        outcome.printed.join("\n")
+    );
+}

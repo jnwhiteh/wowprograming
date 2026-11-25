@@ -662,6 +662,14 @@ do
         TRINKET0SLOT = { 13, "Trinket" }, TRINKET1SLOT = { 14, "Trinket" }, BACKSLOT = { 15, "Chest" },
         MAINHANDSLOT = { 16, "MainHand" }, SECONDARYHANDSLOT = { 17, "SecondaryHand" },
         RANGEDSLOT = { 18, "Ranged" }, TABARDSLOT = { 19, "Tabard" },
+        PROF0TOOLSLOT = { 20, "MainHand" }, PROF0GEAR0SLOT = { 21, "Chest" },
+        PROF0GEAR1SLOT = { 22, "Chest" }, PROF1TOOLSLOT = { 23, "MainHand" },
+        PROF1GEAR0SLOT = { 24, "Chest" }, PROF1GEAR1SLOT = { 25, "Chest" },
+        COOKINGTOOLSLOT = { 26, "MainHand" }, COOKINGGEAR0SLOT = { 27, "Chest" },
+        FISHINGTOOLSLOT = { 28, "MainHand" }, FISHINGGEAR0SLOT = { 29, "Chest" },
+        FISHINGGEAR1SLOT = { 30, "Chest" },
+        BAG0SLOT = { 31, "Bag" }, BAG1SLOT = { 32, "Bag" }, BAG2SLOT = { 33, "Bag" },
+        BAG3SLOT = { 34, "Bag" }, REAGENTBAG0SLOT = { 35, "Bag" },
     }
     function GetInventorySlotInfo(name)
         local s = type(name) == "string" and slots[name:upper()]
@@ -757,3 +765,109 @@ end
 -- not nil, so the client must return nil outside such zones.
 C_PvP = C_PvP or {}
 function C_PvP.GetOutdoorPvPWaitTime() return nil end
+
+-- The calendar: real months from the system clock, no events. The client
+-- keeps a viewed month; GetMonthInfo(offset) counts from it (SetAbsMonth
+-- and SetMonth move it). Weekdays count from 1 = Sunday.
+C_Calendar = C_Calendar or {}
+C_DateAndTime = C_DateAndTime or {}
+do
+    local viewedMonth, viewedYear
+    local function today() return date("*t") end
+    local function daysIn(month, year)
+        local t = time({ year = year + math.floor(month / 12), month = month % 12 + 1, day = 0, hour = 12 })
+        return tonumber(date("%d", t))
+    end
+    local function firstWeekday(month, year)
+        return tonumber(date("%w", time({ year = year, month = month, day = 1, hour = 12 }))) + 1
+    end
+    local function shift(month, year, offset)
+        local m = month - 1 + (offset or 0)
+        return m % 12 + 1, year + math.floor(m / 12)
+    end
+    local function viewed()
+        if not viewedMonth then
+            local t = today()
+            viewedMonth, viewedYear = t.month, t.year
+        end
+        return viewedMonth, viewedYear
+    end
+    local function calendarTime(t)
+        return { year = t.year, month = t.month, monthDay = t.day, weekday = t.wday,
+                 hour = t.hour, minute = t.min }
+    end
+    function C_DateAndTime.GetCurrentCalendarTime() return calendarTime(today()) end
+    function C_Calendar.GetMonthInfo(offset)
+        local m, y = viewed()
+        m, y = shift(m, y, offset)
+        return { month = m, year = y, numDays = daysIn(m, y), firstWeekday = firstWeekday(m, y) }
+    end
+    function C_Calendar.SetAbsMonth(month, year) viewedMonth, viewedYear = month, year end
+    function C_Calendar.SetMonth(offset)
+        local m, y = viewed()
+        viewedMonth, viewedYear = shift(m, y, offset)
+    end
+    function C_Calendar.GetMinDate()
+        return { year = 2004, month = 11, monthDay = 23, weekday = 3, hour = 0, minute = 0 }
+    end
+    function C_Calendar.GetMaxDate()
+        local t = today()
+        return { year = t.year + 1, month = 12, monthDay = 31, weekday = 1, hour = 23, minute = 59 }
+    end
+    C_Calendar.GetMaxCreateDate = C_Calendar.GetMaxDate
+    function C_Calendar.GetNumDayEvents() return 0 end
+    function C_Calendar.GetDayEvent() return nil end
+    function C_Calendar.GetNumPendingInvites() return 0 end
+    function C_Calendar.GetFirstPendingInvite() return nil end
+    function C_Calendar.GetHolidayInfo() return nil end
+    function C_Calendar.GetNumInvites() return 0 end
+    function C_Calendar.GetEventIndex() return nil end
+    function C_Calendar.OpenCalendar() end
+    function C_Calendar.AreNamesReady() return true end
+    function C_Calendar.IsActionPending() return false end
+end
+
+-- Settings: the client opens the panel by firing SETTINGS_PANEL_OPEN at
+-- once (the event is synchronous in the API documentation).
+C_SettingsUtil = C_SettingsUtil or {}
+function C_SettingsUtil.OpenSettingsPanel(categoryID, scrollToElementName)
+    fireNow("SETTINGS_PANEL_OPEN", categoryID, scrollToElementName)
+end
+
+-- The group finder is open to the player.
+C_LFGInfo = C_LFGInfo or {}
+function C_LFGInfo.CanPlayerUseGroupFinder() return true, "" end
+
+-- Bags: an empty 16-slot backpack, no other bags (a new character's).
+C_Container = C_Container or {}
+do
+    local BACKPACK_SLOTS = 16
+    function C_Container.GetContainerNumSlots(bag)
+        if bag == 0 then return BACKPACK_SLOTS end
+        return 0
+    end
+    function C_Container.GetContainerNumFreeSlots(bag)
+        if bag == 0 then return BACKPACK_SLOTS, 0 end
+        return 0, 0
+    end
+    function C_Container.GetContainerItemInfo() return nil end
+    function C_Container.GetContainerItemID() return nil end
+    function C_Container.GetContainerItemLink() return nil end
+end
+
+-- Display: one monitor, the window at the physical screen size.
+C_VideoOptions = C_VideoOptions or {}
+do
+    local function size()
+        local w, h = GetPhysicalScreenSize()
+        return CreateVector2D(w or 1920, h or 1080)
+    end
+    function GetMonitorCount() return 1 end
+    function GetMonitorName() return "Monitor 1", true end
+    function C_VideoOptions.GetCurrentGameWindowSize() return size() end
+    function C_VideoOptions.GetDefaultGameWindowSize() return size() end
+    function C_VideoOptions.GetGameWindowSizes() return { size() } end
+    function C_VideoOptions.GetGxAdapterInfo()
+        return { { name = "Sandbox renderer", isLowPower = false, isExternal = false } }
+    end
+end

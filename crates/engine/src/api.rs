@@ -274,6 +274,9 @@ pub fn install(lua: &Lua) -> Result<()> {
     lua.load(include_str!("lua/client.lua"))
         .set_name("=[C]")
         .call::<()>(fire)?;
+    lua.load(include_str!("lua/undocumented.lua"))
+        .set_name("=[C]")
+        .call::<()>(())?;
     lua.load(include_str!("lua/macros.lua"))
         .set_name("=[C]")
         .call::<()>(())?;

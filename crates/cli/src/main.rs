@@ -781,18 +781,36 @@ fn run_specs(config: EngineConfig, game_dir: Option<PathBuf>, specs: &[PathBuf])
         }
     };
     engine.start();
-    // Let the UI settle; errors from loading count against the first spec.
+    // Let the UI settle; Lua errors while loading are a failure of their own.
     for _ in 0..30 {
         engine.tick(FRAME_TIME);
     }
-    let mut failed = 0;
+    let (mut passed, mut failed) = (0, 0);
+    let load_errors: Vec<String> = engine
+        .drain_output()
+        .into_iter()
+        .filter_map(|o| match o {
+            Output::Error(e) => Some(e),
+            _ => None,
+        })
+        .collect();
+    if !load_errors.is_empty() {
+        failed += 1;
+        println!(
+            "FAIL loading the UI\n  {}",
+            load_errors.join("\n").replace('\n', "\n  ")
+        );
+    }
     for spec in specs {
         let outcome = engine.run_spec(spec);
         for line in &outcome.printed {
             println!("{line}");
         }
         match outcome.error {
-            None => println!("PASS {}", spec.display()),
+            None => {
+                passed += 1;
+                println!("PASS {}", spec.display())
+            }
             Some(err) => {
                 failed += 1;
                 println!("FAIL {}\n  {}", spec.display(), err.replace('\n', "\n  "));
@@ -800,7 +818,7 @@ fn run_specs(config: EngineConfig, game_dir: Option<PathBuf>, specs: &[PathBuf])
         }
     }
     engine.shutdown();
-    println!("{} passed, {} failed", specs.len() - failed, failed);
+    println!("{passed} passed, {failed} failed");
     if failed == 0 {
         ExitCode::SUCCESS
     } else {

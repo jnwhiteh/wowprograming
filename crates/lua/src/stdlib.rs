@@ -84,6 +84,12 @@ fn install_string(lua: &Lua) -> Result<()> {
     // which localized strings use to reorder words.
     let original: Function = string.get("format")?;
     let format = lua.create_function(move |lua, (fmt, args): (LuaString, MultiValue)| {
+        // The client also takes %F (as %f; Blizzard's lifesteal tooltip
+        // uses "%.2F%%"), which Lua 5.1 rejects.
+        let fmt = match upper_f_to_lower(&fmt.as_bytes()) {
+            Some(fixed) => lua.create_string(&fixed)?,
+            None => fmt,
+        };
         let Some((rewritten, order)) = rewrite_positional(&fmt.as_bytes()) else {
             return original.call::<MultiValue>((fmt, args));
         };
@@ -98,6 +104,39 @@ fn install_string(lua: &Lua) -> Result<()> {
     string.set("format", format)?;
 
     Ok(())
+}
+
+/// Replace the conversion `F` of format specifiers with `f`. Returns
+/// `None` when there is none.
+fn upper_f_to_lower(fmt: &[u8]) -> Option<Vec<u8>> {
+    if !fmt.contains(&b'F') {
+        return None;
+    }
+    let mut out = fmt.to_vec();
+    let mut changed = false;
+    let mut i = 0;
+    while i < out.len() {
+        if out[i] != b'%' {
+            i += 1;
+            continue;
+        }
+        if out.get(i + 1) == Some(&b'%') {
+            i += 2;
+            continue;
+        }
+        // Flags, width, precision and an optional position, then the
+        // conversion letter.
+        let mut j = i + 1;
+        while j < out.len() && (out[j].is_ascii_digit() || b"-+ #.$".contains(&out[j])) {
+            j += 1;
+        }
+        if out.get(j) == Some(&b'F') {
+            out[j] = b'f';
+            changed = true;
+        }
+        i = j + 1;
+    }
+    changed.then_some(out)
 }
 
 /// Rewrite a format string with positional specifiers (`%2$s`) into plain
@@ -410,6 +449,7 @@ mod tests {
             assert(string.format("%1$d%%-%1$d", 7) == "7%-7")
             assert(("%s=%d"):format("x", 3) == "x=3")
             assert(string.format("%2$5.1f|%1$s", "n", 2.5) == "  2.5|n")
+            assert(string.format("%.2F%%", 1.5) == "1.50%")
             "#,
         );
     }

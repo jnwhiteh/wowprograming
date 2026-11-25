@@ -310,8 +310,9 @@ fn show_and_hide_fire_scripts_through_the_hierarchy() {
         vec![
             "TestParent:hide",
             "TestParentChild:hide",
-            "TestParent:show",
+            // Children get OnShow before their parent (client-runtime.md).
             "TestParentChild:show",
+            "TestParent:show",
             "TestParentChild:hide"
         ]
     );

@@ -442,6 +442,15 @@ data on each run.
   `SetPaused` freeze the swipe. Not yet: countdown numbers, the edge and
   bling textures, rotation.
 
+### Show order
+
+When a frame becomes visible, its visible descendants get OnShow before
+it does (children first, siblings in order); OnHide goes parent first
+(inferred). Evidence: `CommunitiesFrameMixin:OnShow` scrolls its
+`CommunitiesList`, whose scroll box has no data provider until the
+list's own OnShow fills it; parent first would raise an error in the
+game. A probe question (21 in the list) can confirm it.
+
 ### Loading XML and client answers
 
 - A frame from an XML file that is visible after its OnLoad gets OnShow

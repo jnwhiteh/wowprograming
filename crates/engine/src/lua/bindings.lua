@@ -12,7 +12,7 @@
 -- runOnUp set, a check for click registrations, a function that fires an
 -- event and one that saves the bindings file. Returns run(key, down) and
 -- apply(fileText).
-local actions, runOnUp, registeredFor, fire, saveFile = ...
+local actions, runOnUp, registeredFor, fire, saveFile, modifiedClicks, bindingList = ...
 local type, pairs, ipairs, tostring, table, string, select, unpack =
       type, pairs, ipairs, tostring, table, string, select, unpack
 
@@ -235,6 +235,42 @@ function ClearOverrideBindings(owner)
         if overrides[i].owner == owner then table.remove(overrides, i) end
     end
     bindingsChanged()
+end
+
+-- The binding list for the key bindings page, in Bindings_Standard order:
+-- action, category, then the keys bound to it.
+function GetNumBindings() return #bindingList end
+function GetBinding(index)
+    local b = bindingList[index]
+    if not b then return nil end
+    return b.name, b.category, GetBindingKey(b.name)
+end
+
+C_KeyBindings = C_KeyBindings or {}
+function C_KeyBindings.GetBindingIndex(action)
+    for i, b in ipairs(bindingList) do
+        if b.name == action then return i end
+    end
+    return nil
+end
+
+-- Modified clicks: an action ("SELFCAST") and its modifier ("ALT",
+-- "SHIFT-BUTTON1"), defaults from Bindings_Standard.xml.
+function GetModifiedClick(action) return modifiedClicks[action] end
+function SetModifiedClick(action, value) modifiedClicks[action] = value end
+function SaveModifiedClicks() end
+-- Whether the modifier of an action is held now. A mouse button in the
+-- value is not checked (the sandbox does not know which button is down).
+function IsModifiedClick(action)
+    local value = modifiedClicks[action or ""]
+    if not value or value == "NONE" then return false end
+    for _, mod in ipairs({ "ALT", "CTRL", "SHIFT" }) do
+        local wanted = value:find(mod, 1, true) ~= nil
+        local held = (mod == "ALT" and IsAltKeyDown()) or (mod == "CTRL" and IsControlKeyDown())
+            or (mod == "SHIFT" and IsShiftKeyDown())
+        if wanted ~= (held == true) then return false end
+    end
+    return true
 end
 
 return run, apply

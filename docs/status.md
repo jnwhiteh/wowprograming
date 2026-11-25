@@ -12,6 +12,10 @@ Last updated: 2026-11-25 (real addons work; world map, modifiers, hover casting,
 
 - **Full default UI and playable world goal: in progress** (set by the
   user on 2026-11-25, branch `client-state`). Done criteria in scope.md.
+  Criterion 1: `specs/default_ui_panels.lua` (also the test
+  `every_panel_opens_without_errors`) opens 34 panels; all open and
+  close without a Lua error. Known gap: talents (needs specialization
+  and talent tree data). Next: the playable world (criteria 2 to 5).
 - **Real addons goal: criteria done** (set by the user on 2026-11-25),
   on branch `client-state`: TomTom, Clique and WowLua must run without
   errors and work, and the player must be able to move so TomTom's
@@ -146,7 +150,8 @@ Last updated: 2026-11-25 (real addons work; world map, modifiers, hover casting,
 - Interaction specs: `wowprogramming test [run options] spec.lua...`
   runs Lua files that drive the UI (Click, Press, Hold, Wait, Command,
   Reload, Equal, Near) and fails on a failed check or any Lua error;
-  printed lines show in the report
+  printed lines show in the report; Lua errors while the UI loads fail
+  the run
   (`Engine::run_spec`, `lua/spec.lua`, examples and the helper list in
   `specs/`).
 - Reload on change: `--watch` (and `EngineConfig::watch`) reloads the

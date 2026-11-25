@@ -110,6 +110,7 @@ fn method_chain(object_type: &str) -> Vec<&'static str> {
                 }
                 "ModelScene" => chain.push("ModelScene"),
                 "MapScene" => chain.push("MapScene"),
+                "Browser" => chain.push("Browser"),
                 "ModelFFX" => chain.extend(["Model", "ModelFFX"]),
                 "Minimap" => chain.push("Minimap"),
                 "QuestPOIFrame" => chain.push("QuestPOIFrame"),
@@ -457,6 +458,35 @@ fn visible_subtree(frames: &[FrameData], id: FrameId) -> Vec<FrameId> {
     out
 }
 
+/// `list` (parents before children) reordered so every frame comes after
+/// its descendants in the list; siblings keep their order.
+fn children_first(frames: &[FrameData], list: &[FrameId]) -> Vec<FrameId> {
+    let set: std::collections::HashSet<FrameId> = list.iter().copied().collect();
+    let mut out = Vec::with_capacity(list.len());
+    let mut done = std::collections::HashSet::new();
+    fn visit(
+        frames: &[FrameData],
+        f: FrameId,
+        set: &std::collections::HashSet<FrameId>,
+        done: &mut std::collections::HashSet<FrameId>,
+        out: &mut Vec<FrameId>,
+    ) {
+        if !done.insert(f) {
+            return;
+        }
+        for &c in &frames[f].children {
+            if set.contains(&c) {
+                visit(frames, c, set, done, out);
+            }
+        }
+        out.push(f);
+    }
+    for &f in list {
+        visit(frames, f, &set, &mut done, &mut out);
+    }
+    out
+}
+
 /// Apply a change that may alter visibility, then fire `OnShow` for frames
 /// that became visible and `OnHide` for frames that became hidden.
 pub fn change_visibility(lua: &Lua, id: FrameId, change: impl FnOnce(&mut Vec<FrameData>)) {
@@ -489,6 +519,13 @@ pub fn change_visibility(lua: &Lua, id: FrameId, change: impl FnOnce(&mut Vec<Fr
         crate::movement::stop(lua, f);
         fire_script(lua, f, "OnHide", ());
     }
+    // Children get OnShow before their parent (inferred: Blizzard's
+    // CommunitiesFrame OnShow scrolls its list, which its own OnShow
+    // must have filled first).
+    let shown = {
+        let st = state(lua);
+        children_first(&st.frames, &shown)
+    };
     for f in shown {
         if is_visible(&state(lua).frames, f) {
             if state(lua).frames[f].toplevel {

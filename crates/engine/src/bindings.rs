@@ -38,16 +38,33 @@ pub fn apply_file(lua: &Lua, text: &str) {
 pub fn load(lua: &Lua) -> Result<()> {
     let actions = lua.create_table()?;
     let run_on_up = lua.create_table()?;
+    let modified_clicks = lua.create_table()?;
+    // Every binding in file order: { name, category } (GetBinding).
+    let list = lua.create_table()?;
     let ui = state(lua).ui_source_dir.clone();
     if let Some(path) = ui.map(|d| d.join(BINDINGS_FILE))
         && let Ok(text) = std::fs::read_to_string(&path)
     {
         let doc = roxmltree::Document::parse(text.trim_start_matches('\u{feff}'))
             .map_err(mlua::Error::external)?;
+        for node in doc
+            .descendants()
+            .filter(|n| n.has_tag_name("ModifiedClick"))
+        {
+            if let (Some(action), Some(default)) =
+                (node.attribute("action"), node.attribute("default"))
+            {
+                modified_clicks.set(action, default)?;
+            }
+        }
         for node in doc.descendants().filter(|n| n.has_tag_name("Binding")) {
             let Some(name) = node.attribute("name") else {
                 continue;
             };
+            let entry = lua.create_table()?;
+            entry.set("name", name)?;
+            entry.set("category", node.attribute("category"))?;
+            list.push(entry)?;
             let body: String = node.children().filter_map(|c| c.text()).collect();
             if body.trim().is_empty() {
                 continue;
@@ -96,7 +113,15 @@ pub fn load(lua: &Lua) -> Result<()> {
     let (run, apply): (Function, Function) = lua
         .load(include_str!("lua/bindings.lua"))
         .set_name("=[C]")
-        .call((actions, run_on_up, registered, fire, save))?;
+        .call((
+            actions,
+            run_on_up,
+            registered,
+            fire,
+            save,
+            modified_clicks,
+            list,
+        ))?;
     lua.set_named_registry_value(RUN_KEY, run)?;
     lua.set_named_registry_value(APPLY_KEY, apply)?;
     Ok(())
