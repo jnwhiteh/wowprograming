@@ -39,12 +39,14 @@ fn a_spec_clicks_waits_and_checks() {
         "Click('SpecButton') Click(SpecButton)
          local t = GetTime() Wait(2)
          Near(GetTime() - t, 2, 0.05, 'time passed')
-         Equal(Clicks, 2)",
+         Equal(Clicks, 2) print('done')",
     );
-    assert_eq!(e.run_spec(&ok), Ok(()));
+    let outcome = e.run_spec(&ok);
+    assert_eq!(outcome.error, None);
+    assert_eq!(outcome.printed, ["done"]);
 
     let bad = spec(dir.path(), "bad.lua", "Equal(Clicks, 3, 'clicks')");
-    let err = e.run_spec(&bad).unwrap_err();
+    let err = e.run_spec(&bad).error.unwrap();
     assert!(err.contains("bad.lua:1"), "{err}");
     assert!(err.contains("clicks: expected 3, got 2"), "{err}");
 
@@ -54,6 +56,6 @@ fn a_spec_clicks_waits_and_checks() {
         "ui_error.lua",
         "C_Timer.After(0.1, function() error('boom') end) Wait(0.5)",
     );
-    let err = e.run_spec(&ui_error).unwrap_err();
+    let err = e.run_spec(&ui_error).error.unwrap();
     assert!(err.contains("boom"), "{err}");
 }

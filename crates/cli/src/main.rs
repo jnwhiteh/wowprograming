@@ -787,9 +787,13 @@ fn run_specs(config: EngineConfig, game_dir: Option<PathBuf>, specs: &[PathBuf])
     }
     let mut failed = 0;
     for spec in specs {
-        match engine.run_spec(spec) {
-            Ok(()) => println!("PASS {}", spec.display()),
-            Err(err) => {
+        let outcome = engine.run_spec(spec);
+        for line in &outcome.printed {
+            println!("{line}");
+        }
+        match outcome.error {
+            None => println!("PASS {}", spec.display()),
+            Some(err) => {
                 failed += 1;
                 println!("FAIL {}\n  {}", spec.display(), err.replace('\n', "\n  "));
             }

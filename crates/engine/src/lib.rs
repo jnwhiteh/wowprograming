@@ -898,21 +898,31 @@ impl Engine {
     /// the UI with Click, Press, Hold, Wait and friends and checks the
     /// result. Fails on an error in the spec or any Lua error the UI
     /// reports meanwhile. The engine must be started.
-    pub fn run_spec(&mut self, path: &Path) -> Result<(), String> {
+    pub fn run_spec(&mut self, path: &Path) -> SpecOutcome {
+        let mut printed = Vec::new();
+        let error = self.run_spec_inner(path, &mut printed).err();
+        SpecOutcome { printed, error }
+    }
+
+    fn run_spec_inner(&mut self, path: &Path, printed: &mut Vec<String>) -> Result<(), String> {
         const STEP: f64 = 1.0 / 30.0;
         let code = std::fs::read_to_string(path)
             .map_err(|e| format!("cannot read {}: {e}", path.display()))?;
         let name = path.display().to_string();
         let mut errors: Vec<String> = Vec::new();
-        fn collect(engine: &Engine, errors: &mut Vec<String>) {
+        // Lua errors fail the spec; printed lines are kept for the report.
+        let collect = |engine: &Engine, errors: &mut Vec<String>, printed: &mut Vec<String>| {
             for o in engine.drain_output() {
-                if let Output::Error(e) = o {
-                    errors.push(e);
+                match o {
+                    Output::Error(e) => errors.push(e),
+                    Output::Print(p) => printed.push(p),
+                    _ => {}
                 }
             }
-        }
-        collect(self, &mut errors);
+        };
+        collect(self, &mut errors, printed);
         errors.clear();
+        printed.clear();
         let lua = self.runtime.lua().clone();
         let start: Function = match lua.named_registry_value::<Function>(SPEC_KEY) {
             Ok(f) => f,
@@ -979,7 +989,7 @@ impl Engine {
             let values = match result {
                 Ok(v) => v,
                 Err(e) => {
-                    collect(self, &mut errors);
+                    collect(self, &mut errors, printed);
                     let mut msg = wowprogramming_lua::error_message(&e);
                     if !errors.is_empty() {
                         msg.push_str(&format!("\nLua errors:\n{}", errors.join("\n")));
@@ -1016,9 +1026,9 @@ impl Engine {
                 }
                 _ => break,
             }
-            collect(self, &mut errors);
+            collect(self, &mut errors, printed);
         }
-        collect(self, &mut errors);
+        collect(self, &mut errors, printed);
         if errors.is_empty() {
             Ok(())
         } else {
@@ -1086,6 +1096,14 @@ impl Engine {
             .map(|a| a.name.clone())
             .collect()
     }
+}
+
+/// The result of an interaction spec: the lines it printed and the
+/// failure, if any.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SpecOutcome {
+    pub printed: Vec<String>,
+    pub error: Option<String>,
 }
 
 /// Registry key of the spec runner (`lua/spec.lua`).

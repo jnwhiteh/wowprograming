@@ -143,7 +143,8 @@ Last updated: 2026-11-25 (real addons work; world map, modifiers, hover casting,
   MODIFIER_STATE_CHANGED. The GUI sends keys as `ALT-CTRL-SHIFT-X`.
 - Interaction specs: `wowprogramming test [run options] spec.lua...`
   runs Lua files that drive the UI (Click, Press, Hold, Wait, Command,
-  Reload, Equal, Near) and fails on a failed check or any Lua error
+  Reload, Equal, Near) and fails on a failed check or any Lua error;
+  printed lines show in the report
   (`Engine::run_spec`, `lua/spec.lua`, examples and the helper list in
   `specs/`).
 - Reload on change: `--watch` (and `EngineConfig::watch`) reloads the
@@ -422,8 +423,16 @@ simulator more complete, in order:
    options window (click a spell, press a key or mouse button). Modifier
    clicks and hover casting (a key over a unit frame) work and are
    tested.
-3. TomTom's own in-game test addon `TomTomTest` (load it with
-   `--addon TomTomTest`): run its suites and fix what fails.
+3. TomTom's own in-game checks: `specs/tomtomtest_auto.lua` runs every
+   TomTomTest test without a person (steps, then checks). On
+   2026-11-25: 49 passed, 31 failed, 4 skipped (they reload), 13 not for
+   this client. Most failures need a hand step the spec does not do
+   (walk to a point, right-click menus, Alt-right-click on the map,
+   pasting text). Some need sandbox features: combat state (HC-1,
+   ST-14: `InCombatLockdown` and PLAYER_REGEN events), pet battles
+   (PB-1), quest data (QO-*), corpse (CO-1), the TomTom coordinate block
+   on the world map (MC-1). Teach the spec the hand steps per test, or
+   add these features; then handle the reload tests.
 4. WowLua: saving a page and finding it after `/reload` works (tested).
    Not tried: undo, redo, lock, delete, rename (Shift-click Save shows a
    popup).
