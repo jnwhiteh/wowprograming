@@ -650,3 +650,22 @@ do
         end
     end
 end
+
+-- Equipment slots: GetInventorySlotInfo("HEADSLOT") returns the slot ID
+-- and the empty slot's texture (the client's fixed table).
+do
+    local slots = {
+        HEADSLOT = { 1, "Head" }, NECKSLOT = { 2, "Neck" }, SHOULDERSLOT = { 3, "Shoulder" },
+        SHIRTSLOT = { 4, "Shirt" }, CHESTSLOT = { 5, "Chest" }, WAISTSLOT = { 6, "Waist" },
+        LEGSSLOT = { 7, "Legs" }, FEETSLOT = { 8, "Feet" }, WRISTSLOT = { 9, "Wrists" },
+        HANDSSLOT = { 10, "Hands" }, FINGER0SLOT = { 11, "Finger" }, FINGER1SLOT = { 12, "Finger" },
+        TRINKET0SLOT = { 13, "Trinket" }, TRINKET1SLOT = { 14, "Trinket" }, BACKSLOT = { 15, "Chest" },
+        MAINHANDSLOT = { 16, "MainHand" }, SECONDARYHANDSLOT = { 17, "SecondaryHand" },
+        RANGEDSLOT = { 18, "Ranged" }, TABARDSLOT = { 19, "Tabard" },
+    }
+    function GetInventorySlotInfo(name)
+        local s = type(name) == "string" and slots[name:upper()]
+        if not s then error("Invalid inventory slot in GetInventorySlotInfo", 2) end
+        return s[1], "Interface\\PaperDoll\\UI-PaperDoll-Slot-" .. s[2], false
+    end
+end

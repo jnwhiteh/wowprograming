@@ -127,6 +127,9 @@ Last updated: 2026-11-25 (real addons: TomTom, Clique and WowLua work; maps, mov
   a click.
 - Real addons: TomTom, Clique and WowLua (from `addons_dir`, with
   `--addon`) load and work in the dummy scenario.
+- Clique's options window (`/clique`, with the action catalog of the
+  model's spells and macros) and TomTom's test addon window (`/tttest`,
+  `--addon TomTomTest`) open without errors. `GetInventorySlotInfo`.
 - World map (M): map art tiles from the UiMapArt tables, TomTom's
   pins, the player arrow (`lua/unitposition.lua`). Addons' own BLP and
   TGA textures load from the addons folder (`formats/tga.rs`).
